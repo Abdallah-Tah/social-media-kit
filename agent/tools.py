@@ -127,6 +127,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     "items": {"type": "integer"},
                     "description": "Tag IDs.",
                 },
+                "cover_image_url": {
+                    "type": "string",
+                    "description": "Optional cover/featured image URL (from generate_cover).",
+                },
                 "draft": {
                     "type": "boolean",
                     "description": "Save as draft instead of publishing.",
@@ -138,12 +142,20 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
     {
         "name": "post_facebook",
-        "description": "Post a text update (optionally with a link) to the Facebook Page.",
+        "description": (
+            "Post to the Facebook Page. If `image` (a local path from "
+            "generate_cover) is given, posts it as a photo with the message as "
+            "caption; otherwise posts text with an optional link."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "message": {"type": "string"},
                 "link": {"type": "string", "description": "Optional URL to attach."},
+                "image": {
+                    "type": "string",
+                    "description": "Optional local image path to post as a photo.",
+                },
             },
             "required": ["message"],
         },
@@ -245,6 +257,26 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "generate_cover",
+        "description": (
+            "Generate a cover/hero image for the article using AI (FAL.ai or "
+            "OpenAI) with a free branded-card fallback. Returns the local image "
+            "path and, when available, a hosted URL. Use the path with "
+            "post_facebook (image=) and the URL with publish_blog (cover_image_url=)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "prompt": {
+                    "type": "string",
+                    "description": "Optional custom image prompt (else derived from title).",
+                },
+            },
+            "required": ["title"],
+        },
+    },
+    {
         "name": "generate_card",
         "description": (
             "Generate a branded square social card (PNG) with a title and "
@@ -300,7 +332,8 @@ class ToolBox:
     # `finish` is included so a direct dispatch("finish") terminates cleanly;
     # in the normal loop the orchestrator intercepts it before dispatch.
     UTILITY_TOOLS = {
-        "web_search", "fetch_url", "save_article", "generate_card", "finish",
+        "web_search", "fetch_url", "save_article",
+        "generate_card", "generate_cover", "finish",
     }
 
     def __init__(self, config, profile: dict[str, Any]):
@@ -327,6 +360,7 @@ class ToolBox:
             "post_mastodon": self._post_mastodon,
             "post_webhook": self._post_webhook,
             "generate_card": self._generate_card,
+            "generate_cover": self._generate_cover,
             "finish": self._finish,
         }
 
@@ -438,6 +472,7 @@ class ToolBox:
             category_id=args.get("category_id") or blog.get("category_id"),
             tags=args.get("tags") or blog.get("tags"),
             publish=not args.get("draft", False),
+            cover_image_url=args.get("cover_image_url", ""),
         )
         return self._capture(
             "Blog publish", lambda: result, already=result
@@ -446,6 +481,12 @@ class ToolBox:
     def _post_facebook(self, args: dict) -> str:
         import fb_poster
 
+        image = args.get("image")
+        if image:
+            return self._capture(
+                "Facebook",
+                lambda: fb_poster.post_photo(image, caption=args["message"]),
+            )
         return self._capture(
             "Facebook", lambda: fb_poster.post_text(args["message"], link=args.get("link"))
         )
@@ -514,6 +555,24 @@ class ToolBox:
         )
 
     # ── Assets ──────────────────────────────────────────────────────────
+    def _generate_cover(self, args: dict) -> str:
+        import image_generator
+
+        branding = dict(self.profile.get("branding", {}))
+        result = image_generator.generate_cover(
+            args["title"],
+            prompt=args.get("prompt"),
+            provider=self.profile.get("image_provider"),
+            branding=branding,
+        )
+        if not result:
+            return "Cover generation failed on all providers."
+        url_part = f" url={result['url']}" if result.get("url") else ""
+        return (
+            f"Cover image ready (provider={result['provider']}): "
+            f"path={result['path']}{url_part}"
+        )
+
     def _generate_card(self, args: dict) -> str:
         import make_assets
 

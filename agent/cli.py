@@ -138,21 +138,38 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         "Mastodon": ["MASTODON_BASE_URL", "MASTODON_ACCESS_TOKEN"],
         "Webhook": ["WEBHOOK_URL"],
         "Web search": ["BRAVE_API_KEY"],
+        "Cover images": ["FAL_KEY"],
     }
+    OPTIONAL = {"Web search", "Cover images"}
     print("Channel credentials:")
     for label, keys in checks.items():
         present = [k for k in keys if os.environ.get(k)]
-        if label == "Slack":  # either method is fine
-            ok = bool(present)
-        elif label == "Web search":
-            ok = bool(present)  # optional (DuckDuckGo fallback exists)
+        if label in ("Slack", "Web search", "Cover images"):
+            ok = bool(present)  # any one key (or optional with a free fallback)
         else:
             ok = len(present) == len(keys)
         mark = "✅" if ok else ("◻️ " if not present else "⚠️ ")
         detail = "" if ok else f"(missing: {', '.join(k for k in keys if k not in present)})"
         if label == "Web search" and not ok:
-            detail = "(optional — falls back to DuckDuckGo)"
+            detail = "(optional — falls back to DuckDuckGo / Wikipedia)"
+        if label == "Cover images" and not ok:
+            detail = "(optional — falls back to a branded card; or set OPENAI_API_KEY)"
         print(f"  {mark} {label} {detail}")
+
+    # ── Secret health: catch truncated copy-pastes (e.g. a UI '…' elision) ──
+    all_keys = {k for keys in checks.values() for k in keys}
+    all_keys |= {
+        "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "FAL_KEY",
+        "SLACK_BOT_TOKEN", "MASTODON_ACCESS_TOKEN", "LINKEDIN_ACCESS_TOKEN",
+    }
+    warnings = []
+    for key in sorted(all_keys):
+        reason = _looks_truncated(os.environ.get(key, ""))
+        if reason:
+            warnings.append(f"  ⚠️  {key}: {reason}")
+    if warnings:
+        print("\nSecret health:")
+        print("\n".join(warnings))
 
     print(f"\nProfiles : {', '.join(list_profiles()) or '(none — run `smkit wizard`)'}")
     return 0
@@ -202,6 +219,19 @@ def cmd_install_skill(args: argparse.Namespace) -> int:
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
+def _looks_truncated(value: str) -> str | None:
+    """Heuristics for a credential that was truncated when copied."""
+    if not value:
+        return None
+    if "…" in value:  # the '…' ellipsis a UI inserts when eliding text
+        return "contains '…' — looks like a truncated copy; re-paste the full key"
+    if value.endswith("...") or value.endswith(".."):
+        return "ends with '...' — likely truncated; re-paste the full key"
+    if len(value) < 8:
+        return f"only {len(value)} chars — looks too short to be a real key"
+    return None
+
+
 def _banner(config, profile, goal) -> None:
     mode = "DRY RUN (no posts go live)" if config.dry_run else "LIVE"
     print("=" * 60)

@@ -10,9 +10,12 @@ the way Claude Code reasons and calls tools:
 1. **Research** — `web_search` for 3-6 strong sources, `fetch_url` on the best.
 2. **Write** — a full article in Markdown (not a template), grounded in those
    sources, with a Sources section. Saved via `save_article`.
+2b. **Cover image** — `generate_cover` makes a hero image (FAL.ai → OpenAI →
+   free branded card), returning a local path and a hosted URL.
 3. **Adapt** — a *native* post per platform (X ≤ 280 chars, LinkedIn/Facebook
    a few paragraphs + CTA, Slack/Discord/Telegram concise, Mastodon ≤ 500).
-4. **Publish** — calls the posting tool for each enabled channel + the blog.
+4. **Publish** — calls the posting tool for each enabled channel + the blog,
+   attaching the cover (URL → `publish_blog`, path → `post_facebook`).
 5. **Report** — `finish` with a summary of what shipped and what was skipped.
 
 The loop is bounded by `max_steps` (default 20) as a safety stop.

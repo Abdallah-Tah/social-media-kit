@@ -45,7 +45,7 @@ def strip_front_matter(content):
 
 def publish_article(title, slug, content, excerpt="", category_id=None,
                     tags=None, publish=True, featured=False,
-                    meta_title="", meta_description=""):
+                    meta_title="", meta_description="", cover_image_url=""):
     """Publish an article to the blog."""
     api_url, api_token = load_credentials()
 
@@ -74,6 +74,10 @@ def publish_article(title, slug, content, excerpt="", category_id=None,
         payload["meta_title"] = meta_title
     if meta_description:
         payload["meta_description"] = meta_description
+    if cover_image_url:
+        # Common field names across CMSs — send the ones most APIs accept.
+        payload["cover_image"] = cover_image_url
+        payload["featured_image"] = cover_image_url
 
     headers = {
         "Authorization": f"Bearer {api_token}",
