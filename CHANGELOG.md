@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.0.1 — Field-test fixes (Ollama + search)
+
+Fixes from real-world testing with an OpenClaw agent.
+
+### Fixed
+- **Web search returned no results**: the DuckDuckGo fallback dropped every
+  result because DDG wraps target URLs in `duckduckgo.com/l/?uddg=` redirects.
+  We now decode those redirects, strip/unescape titles, dedupe, and fall back
+  across HTML + lite endpoints.
+- **Ollama tool calls ignored**: Ollama returns tool-call `arguments` as a JSON
+  *object* (OpenAI sends a string) — the parser now accepts both, and
+  synthesizes a tool-call id when one isn't provided.
+- **Thinking models looked empty**: responses with an empty `content` but a
+  `reasoning` / `reasoning_content` field now surface that text instead of a
+  blank turn.
+
+### Added
+- **Two free, no-key search providers**: SearXNG (`SEARXNG_URL`) and Wikipedia
+  (always-on fallback). Search order is Brave → SearXNG → DuckDuckGo →
+  Wikipedia; force one with `SEARCH_PROVIDER`.
+- **Ollama Cloud** docs/config: `base_url: https://ollama.com/v1` +
+  `OLLAMA_API_KEY`, using base model names (no `:cloud` suffix), with guidance
+  to choose tool-calling-capable models.
+
 ## 2.0.0 — The Agent Release
 
 The kit graduates from a set of standalone scripts into a complete, sellable

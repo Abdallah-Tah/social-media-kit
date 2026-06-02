@@ -11,62 +11,200 @@ import json
 import os
 import sys
 import re
+import html
 from datetime import datetime, date
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse, parse_qs, unquote
 
 import requests
 
+# A realistic browser UA — DuckDuckGo blocks bare/empty agents.
+_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
+
 
 def web_search(query, count=10):
-    """Search the web using a search API. Falls back to DuckDuckGo HTML."""
-    # Try Brave Search API first (set BRAVE_API_KEY in secrets.env)
+    """Search the web, trying providers in order until one returns results.
+
+    Order (each is skipped if not configured/available):
+      1. Brave    — best quality; needs BRAVE_API_KEY
+      2. SearXNG  — free, no key; set SEARXNG_URL (self-host or any instance)
+      3. DuckDuckGo — free, no key, but best-effort (can be rate-limited)
+      4. Wikipedia — free, no key, always available (fallback grounding)
+
+    Force one with SEARCH_PROVIDER=brave|searxng|duckduckgo|wikipedia.
+    """
+    providers = {
+        "brave": _search_brave,
+        "searxng": _search_searxng,
+        "duckduckgo": _search_duckduckgo,
+        "wikipedia": _search_wikipedia,
+    }
+    forced = os.environ.get("SEARCH_PROVIDER", "").strip().lower()
+    order = [forced] if forced in providers else [
+        "brave", "searxng", "duckduckgo", "wikipedia"
+    ]
+
+    for name in order:
+        results = providers[name](query, count)
+        if results:
+            return results[:count]
+
+    print("❌ Search returned no results from any provider.")
+    return []
+
+
+def _search_brave(query, count):
     api_key = os.environ.get("BRAVE_API_KEY", "")
-    if api_key:
+    if not api_key:
+        return []
+    try:
         resp = requests.get(
             "https://api.search.brave.com/res/v1/web/search",
             headers={"Accept": "application/json", "X-Subscription-Token": api_key},
             params={"q": query, "count": count},
             timeout=15,
         )
-        if resp.ok:
-            data = resp.json()
-            results = []
-            for item in data.get("web", {}).get("results", []):
-                results.append({
-                    "title": item.get("title", ""),
-                    "url": item.get("url", ""),
-                    "description": item.get("description", ""),
-                    "source": "brave",
-                })
-            return results
+        if not resp.ok:
+            return []
+        return [
+            {
+                "title": item.get("title", ""),
+                "url": item.get("url", ""),
+                "description": item.get("description", ""),
+                "source": "brave",
+            }
+            for item in resp.json().get("web", {}).get("results", [])
+        ]
+    except requests.RequestException:
+        return []
 
-    # Fallback: DuckDuckGo HTML search
-    resp = requests.get(
-        "https://html.duckduckgo.com/html/",
-        params={"q": query},
-        headers={"User-Agent": "Mozilla/5.0"},
-        timeout=15,
-    )
-    if not resp.ok:
-        print(f"❌ Search failed: {resp.status_code}")
+
+def _search_searxng(query, count):
+    """Free, no-key web search via a SearXNG instance (JSON API).
+
+    Set SEARXNG_URL to your instance (self-hosted is most reliable), e.g.
+    https://searxng.example.com. Public instances often enable JSON output.
+    """
+    base = os.environ.get("SEARXNG_URL", "").rstrip("/")
+    if not base:
+        return []
+    try:
+        resp = requests.get(
+            f"{base}/search",
+            params={"q": query, "format": "json", "safesearch": 1},
+            headers={"User-Agent": _UA, "Accept": "application/json"},
+            timeout=15,
+        )
+        if not resp.ok:
+            return []
+        data = resp.json()
+    except (requests.RequestException, ValueError):
         return []
 
     results = []
-    # Parse DDG HTML results
-    for match in re.finditer(
-        r'<a rel="nofollow" class="result__a" href="([^"]+)"[^>]*>(.*?)</a>',
-        resp.text, re.DOTALL
-    ):
-        url = match.group(1)
-        title = re.sub(r"<[^>]+>", "", match.group(2)).strip()
-        if url and title and "duckduckgo" not in url.lower():
+    for item in data.get("results", []):
+        url = item.get("url", "")
+        title = (item.get("title") or "").strip()
+        if url and title:
             results.append({
                 "title": title,
                 "url": url,
-                "description": "",
-                "source": "duckduckgo",
+                "description": (item.get("content") or "")[:300],
+                "source": "searxng",
             })
-    return results[:count]
+            if len(results) >= count:
+                break
+    return results
+
+
+def _search_wikipedia(query, count):
+    """Free, no-key fallback search using the Wikipedia API (always available)."""
+    try:
+        resp = requests.get(
+            "https://en.wikipedia.org/w/api.php",
+            params={
+                "action": "query", "list": "search", "srsearch": query,
+                "srlimit": count, "format": "json",
+            },
+            headers={"User-Agent": _UA},
+            timeout=15,
+        )
+        if not resp.ok:
+            return []
+        hits = resp.json().get("query", {}).get("search", [])
+    except (requests.RequestException, ValueError):
+        return []
+
+    results = []
+    for hit in hits:
+        title = hit.get("title", "")
+        if not title:
+            continue
+        snippet = html.unescape(re.sub(r"<[^>]+>", "", hit.get("snippet", "")))
+        results.append({
+            "title": title,
+            "url": "https://en.wikipedia.org/wiki/" + quote_plus(title.replace(" ", "_")),
+            "description": snippet,
+            "source": "wikipedia",
+        })
+    return results
+
+
+def _ddg_decode(href):
+    """DuckDuckGo wraps result URLs as //duckduckgo.com/l/?uddg=<encoded>."""
+    if href.startswith("//"):
+        href = "https:" + href
+    if "duckduckgo.com/l/" in href or href.startswith("/l/"):
+        qs = parse_qs(urlparse(href).query)
+        if "uddg" in qs:
+            return unquote(qs["uddg"][0])
+    return href
+
+
+def _search_duckduckgo(query, count):
+    """Scrape DuckDuckGo's HTML/lite endpoints, decoding redirect links."""
+    results = []
+    seen = set()
+    for url in ("https://html.duckduckgo.com/html/", "https://lite.duckduckgo.com/lite/"):
+        try:
+            resp = requests.post(
+                url, data={"q": query}, headers={"User-Agent": _UA}, timeout=15
+            )
+        except requests.RequestException:
+            continue
+        if not resp.ok:
+            continue
+
+        # Prefer the precise result anchor class; fall back to all anchors.
+        anchors = re.findall(
+            r'<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
+            resp.text, re.DOTALL,
+        )
+        if not anchors:
+            anchors = re.findall(
+                r'<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', resp.text, re.DOTALL
+            )
+
+        for href, raw_title in anchors:
+            target = _ddg_decode(href)
+            if not target.startswith("http"):
+                continue
+            if "duckduckgo.com" in urlparse(target).netloc:
+                continue
+            title = html.unescape(re.sub(r"<[^>]+>", "", raw_title)).strip()
+            if not title or target in seen:
+                continue
+            seen.add(target)
+            results.append(
+                {"title": title, "url": target, "description": "", "source": "duckduckgo"}
+            )
+            if len(results) >= count:
+                return results
+        if results:
+            return results
+    return results
 
 
 def extract_article(url, max_chars=5000):

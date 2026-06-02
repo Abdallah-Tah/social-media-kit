@@ -54,8 +54,23 @@ Override per-run: `--provider ollama --model qwen2.5`.
   writing, `claude-sonnet-4-6` for speed/cost.
 - **openai** needs `OPENAI_API_KEY`; point `base_url` at OpenRouter or any
   compatible endpoint to use other models.
-- **ollama** needs nothing — it runs locally. Use a model that supports tool
-  calling (e.g. `llama3.1`, `qwen2.5`, `mistral-nemo`).
+- **ollama** needs nothing for local use. **Pick a model that supports tool
+  calling** (e.g. `llama3.1`, `qwen2.5`, `mistral-nemo`, `kimi-k2.6`). Small or
+  pure "thinking" models (e.g. `gemma3:4b`) will echo tool code as text instead
+  of calling tools — avoid them.
+  - **Ollama Cloud**: set `base_url: https://ollama.com/v1` in `agent.yaml`,
+    put `OLLAMA_API_KEY` in `secrets.env`, and use the **base model name with
+    no `:cloud` suffix** (the `:cloud` alias is an OpenClaw routing convention,
+    not an ollama.com model id). The client also tolerates thinking models that
+    return tool calls/prose in a `reasoning` field.
+
+> **Web search** tries four providers in order — **Brave → SearXNG →
+> DuckDuckGo → Wikipedia** — and uses the first that returns results:
+> - `BRAVE_API_KEY` — best quality (free tier).
+> - `SEARXNG_URL` — free, no key; self-host or point at any SearXNG instance.
+> - DuckDuckGo — free, no key, but best-effort (can be rate-limited).
+> - Wikipedia — free, no key, **always works out of the box** as a last resort.
+> Force one with `SEARCH_PROVIDER=brave|searxng|duckduckgo|wikipedia`.
 
 ## Brand profiles
 

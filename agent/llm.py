@@ -173,18 +173,33 @@ class LLMClient:
         choice = (data.get("choices") or [{}])[0]
         msg = choice.get("message", {})
         blocks: list[dict[str, Any]] = []
-        if msg.get("content"):
-            blocks.append({"type": "text", "text": msg["content"]})
+
+        # Some "thinking" models (and Ollama cloud) leave `content` empty and
+        # put their prose in a `reasoning` / `reasoning_content` field. Fall
+        # back to it so the orchestrator never sees a totally empty turn.
+        text = msg.get("content") or msg.get("reasoning") or msg.get(
+            "reasoning_content"
+        )
+        if text:
+            blocks.append({"type": "text", "text": text})
+
         for tc in msg.get("tool_calls") or []:
             fn = tc.get("function", {})
-            try:
-                args = json.loads(fn.get("arguments") or "{}")
-            except json.JSONDecodeError:
+            raw_args = fn.get("arguments")
+            # OpenAI sends a JSON *string*; Ollama often sends a JSON *object*.
+            if isinstance(raw_args, dict):
+                args = raw_args
+            elif isinstance(raw_args, str):
+                try:
+                    args = json.loads(raw_args or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+            else:
                 args = {}
             blocks.append(
                 {
                     "type": "tool_use",
-                    "id": tc.get("id", ""),
+                    "id": tc.get("id") or f"call_{len(blocks)}",
                     "name": fn.get("name", ""),
                     "input": args,
                 }
