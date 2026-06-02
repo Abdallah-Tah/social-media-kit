@@ -30,7 +30,7 @@ DEFAULT_MODELS = {
 }
 ALL_CHANNELS = [
     "blog", "facebook", "x", "linkedin",
-    "slack", "discord", "telegram", "mastodon", "webhook",
+    "slack", "discord", "telegram", "mastodon", "bluesky", "threads", "webhook",
 ]
 
 

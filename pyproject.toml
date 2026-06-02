@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "social-media-agent"
-version = "2.1.0"
+version = "2.2.0"
 description = "Orchestrated, provider-agnostic AI agent that researches, writes, and publishes content across any social platform."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,6 +21,12 @@ dependencies = [
 [project.optional-dependencies]
 # Optional: programmatic registration into an OpenClaw agent.
 openclaw = ["openclaw-sdk>=2026.3"]
+# Development / test tooling.
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
 
 [project.scripts]
 smkit = "agent.cli:main"

@@ -136,6 +136,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         "Discord": ["DISCORD_WEBHOOK_URL"],
         "Telegram": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"],
         "Mastodon": ["MASTODON_BASE_URL", "MASTODON_ACCESS_TOKEN"],
+        "Bluesky": ["BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"],
+        "Threads": ["THREADS_USER_ID", "THREADS_ACCESS_TOKEN"],
         "Webhook": ["WEBHOOK_URL"],
         "Web search": ["BRAVE_API_KEY"],
         "Cover images": ["FAL_KEY"],

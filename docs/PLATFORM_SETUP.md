@@ -180,6 +180,33 @@ Two options — pick one:
 
 ---
 
+## Bluesky
+
+1. In the Bluesky app: **Settings → App Passwords → Add App Password** (do NOT
+   use your main login password).
+2. Set:
+   ```
+   BLUESKY_HANDLE=you.bsky.social
+   BLUESKY_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx
+   ```
+   Supports text + one image (≤ 300 chars). Self-hosted PDS? Set `BLUESKY_PDS`.
+
+---
+
+## Threads
+
+1. At https://developers.facebook.com/ add the **Threads API** product and get
+   a long-lived user token + your Threads user id.
+2. Set:
+   ```
+   THREADS_USER_ID=
+   THREADS_ACCESS_TOKEN=
+   ```
+   Text posts work directly; image posts need a **public image URL** (the agent
+   passes the blog cover URL automatically).
+
+---
+
 ## Any other platform (Generic Webhook)
 
 For Zapier, Make, n8n, Buffer, a custom CMS, or an internal service:

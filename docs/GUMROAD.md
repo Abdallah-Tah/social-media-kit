@@ -104,7 +104,35 @@ Attach the EULA snippet from
 [`docs/COMMERCIAL_LICENSE.md`](COMMERCIAL_LICENSE.md) in Gumroad's product
 "License" field. The code is MIT (resale-friendly); the EULA sets buyer terms.
 
-## 9. Pre-launch checklist
+## 8b. Positioning (don't compete with free schedulers)
+
+Free self-hosted tools (Postiz, Mixpost) already own "social media dashboard."
+**Do not sell this as another scheduler** — you'll lose on UI and price. Sell
+the wedge they don't have:
+
+> **The autonomous content agent for developers & AI agents.** It researches,
+> writes, illustrates, and publishes on *your* infrastructure and *your* LLM
+> (Claude, OpenAI, or free local Ollama) — and plugs into OpenClaw / Claude Code
+> as a skill. Not a dashboard you babysit; an agent that ships content for you.
+
+Target buyers: indie devs, AI-agent builders, and small agencies who want a
+self-hosted, scriptable, multi-brand pipeline — not marketers who want a GUI.
+
+## 9. Trust builders (buyers of code expect these)
+
+Reports on selling code on Gumroad are consistent — at $39–79 buyers expect:
+
+- **A demo.** Record a 20–30s terminal cast (asciinema or a screen recorder) of
+  `smkit doctor` → `smkit run --topic "..." --dry-run --verbose`. Embed the GIF.
+- **Real docs + Quick Start.** ✅ Already shipped (README + `docs/`).
+- **Tests + CI.** ✅ `tests/` + `.github/workflows/ci.yml` — mention "CI-tested"
+  on the page; it converts.
+- **A support channel.** Create a Discord (or a support email) and link it in
+  the README and the product page. Buyers helping each other lowers your load.
+- **A refund policy.** A **14-day, no-questions money-back guarantee** measurably
+  lifts conversion on digital products and costs little (downloads are low-churn).
+
+## 9b. Pre-launch checklist
 
 - [ ] `bash scripts/make_release.sh` runs clean; archive has **no** secrets.
 - [ ] Fresh-machine test: unzip → `pip install -r requirements.txt && pip install -e .` → `smkit wizard` → `smkit run --dry-run`.

@@ -26,7 +26,7 @@ Most "social media tools" are dumb schedulers — *you* still write everything. 
 ```
 
 - 🧠 **Provider-agnostic brain** — Claude (`claude-opus-4-8` / `claude-sonnet-4-6`), any OpenAI-compatible API (OpenAI, OpenRouter, …), or **local Ollama** with no API key.
-- 🌐 **Publishes anywhere** — Blog (Laravel/WordPress/Ghost), X, LinkedIn, Facebook, Slack, Discord, Telegram, Mastodon, and a **generic webhook** for *any* other platform (Zapier, Make, n8n, Buffer…).
+- 🌐 **Publishes anywhere** — Blog (Laravel/WordPress/Ghost), X, LinkedIn, Facebook, Slack, Discord, Telegram, Mastodon, **Bluesky, Threads**, and a **generic webhook** for *any* other platform (Zapier, Make, n8n, Buffer…). Images attach on X, LinkedIn, Facebook, Mastodon & Bluesky.
 - 🖼️ **Auto cover images** — generates a hero image per article via **FAL.ai** (flux-pro) or **OpenAI Images**, with a free branded-card fallback, and attaches it on publish.
 - 🎭 **Brand profiles** — run it for multiple brands/clients, each with its own voice, audience, hashtags, and allowed channels.
 - 🧪 **Dry-run first** — rehearse a complete run with zero side effects, see exactly what *would* post, then go live.
