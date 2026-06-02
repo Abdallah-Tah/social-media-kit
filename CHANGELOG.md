@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.3.0 — Brand DNA, dedupe, native blogs, pro polish
+
+### Added
+- **`smkit learn <url>`** — reads your website and writes a brand profile in
+  your voice (the "ingest my site to learn my brand" capability buyers want).
+- **Published-posts log + dedupe** — every real run is recorded to
+  `content/published.json`; the agent won't re-publish a topic you've already
+  shipped (override with `--force`). View with **`smkit history`**.
+- **Native WordPress + Ghost adapters** for the blog publisher (set
+  `BLOG_PLATFORM`); Ghost JWT is generated with no extra dependency. The
+  generic Laravel/custom adapter is unchanged.
+- **Docker**: a `Dockerfile` + `.dockerignore` to run the whole agent in a
+  container.
+- **CONTRIBUTING.md**, **SECURITY.md**, and a **demo recipe** (`scripts/demo.sh`)
+  for recording the Gumroad GIF.
+- More tests (brand-learn JSON extraction, history dedupe, Ghost JWT, blog
+  platform dispatch).
+
 ## 2.2.0 — More platforms, images everywhere, tests + CI
 
 ### Added

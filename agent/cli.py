@@ -13,7 +13,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import __version__
+from . import __version__, history
 from .config import AgentConfig, list_profiles, load_env, load_profile
 from .orchestrator import run_agent
 from .prompts import build_goal
@@ -60,6 +60,14 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"❌ {exc}")
         return 1
 
+    # Dedupe: don't re-publish a topic we've already shipped.
+    if args.topic and not args.force and history.has_topic(args.topic):
+        print(
+            f"⏭️  Already published a run for \"{args.topic}\" "
+            "(see `smkit history`). Re-run with --force to do it again."
+        )
+        return 0
+
     _banner(config, profile, goal)
 
     if not config.dry_run and not config.auto_confirm:
@@ -71,6 +79,16 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     print("=" * 60)
     if result.ok:
+        # Record real publishes (not dry-runs) for the track record + dedupe.
+        if not config.dry_run:
+            history.record({
+                "topic": args.topic or args.goal or "",
+                "profile": profile.get("name"),
+                "provider": config.provider,
+                "channels": profile.get("platforms", []),
+                "steps": result.steps,
+                "summary": result.summary,
+            })
         print(f"🎉 Done in {result.steps} steps.\n{result.summary}")
         return 0
     print(f"Run ended with an error after {result.steps} steps:\n{result.error}")
@@ -199,6 +217,36 @@ def cmd_wizard(args: argparse.Namespace) -> int:
     return run_wizard()
 
 
+def cmd_learn(args: argparse.Namespace) -> int:
+    """Build a brand profile by reading the buyer's website."""
+    from .learn import learn_brand
+
+    config = AgentConfig.load(provider=args.provider, model=args.model)
+    platforms = (
+        [p.strip() for p in args.platforms.split(",")] if args.platforms else None
+    )
+    print(f"🧬 Learning brand voice from {args.url} via {config.provider}/{config.model} …")
+    ok, msg = learn_brand(args.url, args.profile, platforms, config)
+    if ok:
+        print(f"✅ Wrote profile → {msg}\n   Review it, then: smkit run --topic \"...\" --profile {args.profile} --dry-run")
+        return 0
+    print(f"❌ {msg}")
+    return 1
+
+
+def cmd_history(args: argparse.Namespace) -> int:
+    entries = history.load()
+    if not entries:
+        print("No published runs yet.")
+        return 0
+    print(f"📜 Published runs ({len(entries)}):")
+    for e in entries[-args.limit:]:
+        date = (e.get("date", "")[:10])
+        channels = ", ".join(e.get("channels", []))
+        print(f"  • {date}  {e.get('topic','')[:60]}  → [{channels}]")
+    return 0
+
+
 def cmd_install_skill(args: argparse.Namespace) -> int:
     """Permanently register the kit as an OpenClaw / Claude Code skill."""
     from .install import detect_skills_dir, install_skill
@@ -275,6 +323,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Simulate publishing (no posts go live)")
         p.add_argument("--yes", "-y", action="store_true",
                        help="Skip the live-mode confirmation prompt")
+        p.add_argument("--force", action="store_true",
+                       help="Run even if this topic was already published")
         p.add_argument("--verbose", "-v", action="store_true", help="Full output")
 
     p_run = sub.add_parser("run", help="Run the agent on a topic or goal")
@@ -297,6 +347,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_wizard = sub.add_parser("wizard", help="Interactive first-time setup")
     p_wizard.set_defaults(func=cmd_wizard)
+
+    p_learn = sub.add_parser(
+        "learn", help="Build a brand profile by reading your website"
+    )
+    p_learn.add_argument("url", help="Your site/blog URL to learn the brand voice from")
+    p_learn.add_argument("--profile", "-p", default="default", help="Profile name to write")
+    p_learn.add_argument("--platforms", help="Comma-separated channels for the profile")
+    p_learn.add_argument("--provider", choices=["anthropic", "openai", "ollama"])
+    p_learn.add_argument("--model", help="Override the model id")
+    p_learn.set_defaults(func=cmd_learn)
+
+    p_history = sub.add_parser("history", help="List previously published runs")
+    p_history.add_argument("--limit", "-n", type=int, default=20, help="How many to show")
+    p_history.set_defaults(func=cmd_history)
 
     p_install = sub.add_parser(
         "install-skill",

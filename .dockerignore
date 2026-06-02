@@ -1,0 +1,13 @@
+.git
+.github
+dist
+node_modules
+__pycache__
+*.pyc
+.venv
+content/raw
+content/drafts
+content/assets
+config/secrets.env
+tests
+deploy

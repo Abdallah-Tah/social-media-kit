@@ -56,45 +56,125 @@ def publish_article(title, slug, content, excerpt="", category_id=None,
     # Strip front matter if present
     body = strip_front_matter(content) if content.startswith("---") else content
 
+    platform = (os.environ.get("BLOG_PLATFORM", "") or "generic").lower()
+    fields = {
+        "title": title, "slug": slug, "body": body, "excerpt": excerpt,
+        "publish": publish, "featured": featured, "category_id": category_id,
+        "tags": tags, "meta_title": meta_title, "meta_description": meta_description,
+        "cover_image_url": cover_image_url,
+    }
+    try:
+        if platform == "wordpress":
+            return _publish_wordpress(api_url, api_token, fields)
+        if platform == "ghost":
+            return _publish_ghost(api_url, api_token, fields)
+        return _publish_generic(api_url, api_token, fields)
+    except requests.RequestException as e:
+        print(f"❌ Blog request failed: {e}")
+        return None
+
+
+def _publish_generic(api_url, api_token, f):
     payload = {
-        "title": title,
-        "slug": slug,
-        "body": body,
-        "publish": publish,
-        "featured": featured,
+        "title": f["title"], "slug": f["slug"], "body": f["body"],
+        "publish": f["publish"], "featured": f["featured"],
     }
-
-    if excerpt:
-        payload["excerpt"] = excerpt
-    if category_id:
-        payload["category_id"] = category_id
-    if tags:
-        payload["tags"] = tags
-    if meta_title:
-        payload["meta_title"] = meta_title
-    if meta_description:
-        payload["meta_description"] = meta_description
-    if cover_image_url:
-        # Common field names across CMSs — send the ones most APIs accept.
-        payload["cover_image"] = cover_image_url
-        payload["featured_image"] = cover_image_url
-
-    headers = {
-        "Authorization": f"Bearer {api_token}",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
-
-    resp = requests.post(f"{api_url}/posts", json=payload, headers=headers)
+    for k_src, k_dst in [("excerpt", "excerpt"), ("category_id", "category_id"),
+                          ("tags", "tags"), ("meta_title", "meta_title"),
+                          ("meta_description", "meta_description")]:
+        if f.get(k_src):
+            payload[k_dst] = f[k_src]
+    if f.get("cover_image_url"):
+        payload["cover_image"] = f["cover_image_url"]
+        payload["featured_image"] = f["cover_image_url"]
+    resp = requests.post(
+        f"{api_url}/posts", json=payload,
+        headers={"Authorization": f"Bearer {api_token}",
+                 "Content-Type": "application/json", "Accept": "application/json"},
+        timeout=30,
+    )
     result = resp.json()
-
     if resp.status_code in (200, 201) and "data" in result:
         post = result["data"]
         print(f"✅ Published: Post ID {post.get('id')}, Slug: {post.get('slug')}")
         return post
-    else:
-        print(f"❌ Blog API error ({resp.status_code}): {json.dumps(result, indent=2)[:500]}")
-        return None
+    print(f"❌ Blog API error ({resp.status_code}): {json.dumps(result, indent=2)[:500]}")
+    return None
+
+
+def _publish_wordpress(api_url, api_token, f):
+    """WordPress REST API. BLOG_API_URL=site root, auth=user:app_password.
+
+    Set BLOG_API_USER + BLOG_API_TOKEN (an Application Password).
+    """
+    user = os.environ.get("BLOG_API_USER", "")
+    payload = {
+        "title": f["title"], "content": f["body"], "slug": f["slug"],
+        "status": "publish" if f["publish"] else "draft",
+    }
+    if f.get("excerpt"):
+        payload["excerpt"] = f["excerpt"]
+    if f.get("category_id"):
+        payload["categories"] = [f["category_id"]]
+    if f.get("tags"):
+        payload["tags"] = f["tags"]
+    resp = requests.post(
+        f"{api_url.rstrip('/')}/wp-json/wp/v2/posts",
+        json=payload, auth=(user, api_token), timeout=30,
+    )
+    if resp.status_code in (200, 201):
+        post = resp.json()
+        print(f"✅ Published to WordPress: ID {post.get('id')} → {post.get('link')}")
+        return post
+    print(f"❌ WordPress error ({resp.status_code}): {resp.text[:400]}")
+    return None
+
+
+def _ghost_jwt(admin_key):
+    """Build a short-lived Ghost Admin API JWT (HS256) without external deps."""
+    import hmac, hashlib, base64, time
+
+    kid, secret = admin_key.split(":")
+    secret_bytes = bytes.fromhex(secret)
+
+    def b64(obj):
+        raw = json.dumps(obj, separators=(",", ":")).encode()
+        return base64.urlsafe_b64encode(raw).rstrip(b"=")
+
+    iat = int(time.time())
+    signing = b64({"alg": "HS256", "typ": "JWT", "kid": kid}) + b"." + b64(
+        {"iat": iat, "exp": iat + 300, "aud": "/admin/"}
+    )
+    sig = base64.urlsafe_b64encode(
+        hmac.new(secret_bytes, signing, hashlib.sha256).digest()
+    ).rstrip(b"=")
+    return (signing + b"." + sig).decode()
+
+
+def _publish_ghost(api_url, api_token, f):
+    """Ghost Admin API. BLOG_API_URL=site root, BLOG_API_TOKEN=Admin API key (id:secret)."""
+    token = _ghost_jwt(api_token)
+    post = {
+        "title": f["title"], "html": f["body"], "slug": f["slug"],
+        "status": "published" if f["publish"] else "draft",
+        "featured": bool(f.get("featured")),
+    }
+    if f.get("excerpt"):
+        post["custom_excerpt"] = f["excerpt"][:300]
+    if f.get("cover_image_url"):
+        post["feature_image"] = f["cover_image_url"]
+    resp = requests.post(
+        f"{api_url.rstrip('/')}/ghost/api/admin/posts/?source=html",
+        json={"posts": [post]},
+        headers={"Authorization": f"Ghost {token}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    if resp.status_code in (200, 201):
+        created = resp.json().get("posts", [{}])[0]
+        print(f"✅ Published to Ghost: {created.get('url', created.get('id'))}")
+        return created
+    print(f"❌ Ghost error ({resp.status_code}): {resp.text[:400]}")
+    return None
 
 
 def main():

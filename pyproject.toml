@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "social-media-agent"
-version = "2.2.0"
+version = "2.3.0"
 description = "Orchestrated, provider-agnostic AI agent that researches, writes, and publishes content across any social platform."
 readme = "README.md"
 requires-python = ">=3.10"
