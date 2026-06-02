@@ -1,0 +1,30 @@
+# Secrets — NEVER commit this file
+config/secrets.env
+
+# Content
+content/raw/
+content/drafts/
+content/assets/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log

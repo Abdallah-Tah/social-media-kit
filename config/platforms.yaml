@@ -1,0 +1,28 @@
+# Social Media Kit — Platform Settings
+# Override these values in secrets.env or environment variables
+
+facebook:
+  page_id: ""           # Set in secrets.env
+  graph_version: "v21.0"
+
+twitter:
+  # OAuth 1.0a credentials set in secrets.env
+  api_version: "2"
+
+linkedin:
+  # OAuth2 credentials set in secrets.env
+  scopes: "w_member_social r_liteprofile r_emailaddress"
+
+blog:
+  # API URL and token set in secrets.env
+  default_category: null
+  default_publish: true
+
+assets:
+  bg_color: "#0f172a"
+  accent_color: "#2563eb"
+  logo_size: 1024
+  banner_width: 1640
+  banner_height: 660
+  card_width: 1080
+  card_height: 1080

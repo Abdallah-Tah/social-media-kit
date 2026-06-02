@@ -1,0 +1,11 @@
+{
+  "name": "social-media-kit",
+  "version": "1.0.0",
+  "description": "Social media automation toolkit — research, process, and publish content",
+  "scripts": {
+    "render-card": "node scripts/render_card.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.40.0"
+  }
+}
