@@ -1,0 +1,9 @@
+# Live topic queue consumed by `smkit queue config/topics.txt` and the
+# scheduled GitHub Action. One topic per line; lines starting with # are
+# ignored. The queue starts EMPTY (all samples commented) so a scheduled
+# run is a safe no-op until you add real topics below.
+#
+# Uncomment or add your own:
+# Laravel 13 new features every developer should know
+# Python asyncio patterns for production services
+# Self-hosting open-source AI agents in 2026

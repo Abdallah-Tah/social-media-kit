@@ -1,0 +1,26 @@
+# Channel-locked profile for SAFE live runs: posts ONLY to Facebook + X.
+# Use this for your first real run so nothing can fire on blog/LinkedIn/Slack:
+#   smkit run --topic "..." --profile live-fb-x --yes
+
+name: My Brand
+tone: clear, practical, and friendly — confident but never hypey
+audience: developers, founders, and tech builders
+language: English
+cta: Follow for more hands-on engineering content.
+link: ""
+hashtags:
+  - "#dev"
+  - "#AI"
+
+# The agent will ONLY publish to these two channels.
+platforms:
+  - facebook
+  - x
+
+branding:
+  bg_color: "#0f172a"
+  accent_color: "#2563eb"
+
+blog:
+  category_id: null
+  tags: []

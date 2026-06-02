@@ -1,0 +1,42 @@
+# Social Media Agent — orchestrator settings
+# The wizard (`smkit wizard`) can write this for you.
+
+# Which brain drives the routine: anthropic | openai | ollama
+provider: anthropic
+
+# Max tool-using steps before the agent must finish (safety bound).
+max_steps: 20
+
+# When true, publishing tools are simulated and nothing goes live.
+# You can also pass --dry-run on the CLI.
+dry_run: false
+
+# ── Provider-specific settings ──────────────────────────────────────────
+# API keys live in config/secrets.env (NOT here). See secrets.env.example.
+
+anthropic:
+  model: claude-sonnet-4-6      # or claude-opus-4-8 for top quality
+  max_tokens: 4096
+  temperature: 0.4
+
+openai:
+  model: gpt-4o
+  base_url: https://api.openai.com/v1   # or an OpenRouter / compatible URL
+  max_tokens: 4096
+  temperature: 0.4
+
+ollama:
+  # IMPORTANT: pick a model that supports TOOL CALLING (e.g. llama3.1,
+  # qwen2.5, mistral-nemo, kimi-k2.6). Pure "thinking" models that only emit
+  # a reasoning field, and small models like gemma3:4b, won't call tools.
+  model: llama3.1
+  base_url: http://localhost:11434/v1   # local Ollama
+  max_tokens: 4096
+  temperature: 0.4
+  # ── Ollama Cloud ──────────────────────────────────────────────────────
+  # To use ollama.com cloud models instead of local:
+  #   1. base_url: https://ollama.com/v1
+  #   2. set OLLAMA_API_KEY in config/secrets.env
+  #   3. use the BASE model name WITHOUT a ":cloud" suffix (e.g. kimi-k2.6).
+  #      The ":cloud" alias is an OpenClaw routing convention, not an
+  #      ollama.com model name.

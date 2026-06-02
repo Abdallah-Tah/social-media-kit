@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "social-media-agent"
+version = "2.0.6"
+description = "Orchestrated, provider-agnostic AI agent that researches, writes, and publishes content across any social platform."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Abdallah Mohamed" }]
+keywords = ["ai-agent", "social-media", "automation", "claude", "openai", "ollama", "openclaw"]
+dependencies = [
+    "requests>=2.31.0",
+    "requests-oauthlib>=1.3.1",
+    "PyYAML>=6.0",
+    "Pillow>=11.0.0",
+]
+
+[project.optional-dependencies]
+# Optional: programmatic registration into an OpenClaw agent.
+openclaw = ["openclaw-sdk>=2026.3"]
+
+[project.scripts]
+smkit = "agent.cli:main"
+
+[tool.setuptools]
+packages = ["agent"]

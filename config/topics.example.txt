@@ -1,0 +1,8 @@
+# Topic queue for scheduled runs.
+# One topic per line. Lines starting with # are ignored.
+# `smkit queue config/topics.txt` consumes the FIRST topic each run and
+# appends it to topics.txt.done after a successful publish.
+
+Laravel 13 new features every developer should know
+Python asyncio patterns for production services
+Self-hosting open-source AI agents in 2026

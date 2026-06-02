@@ -1,6 +1,14 @@
 # Secrets — NEVER commit this file
 config/secrets.env
 
+# Consumed topic-queue archive (generated at runtime)
+config/topics.txt.done
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
 # Content
 content/raw/
 content/drafts/
