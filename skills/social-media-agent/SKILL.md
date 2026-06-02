@@ -10,10 +10,8 @@ metadata:
         "emoji": "📡",
         "requires":
           {
-            "bins": ["python3"],
-            "env": ["ANTHROPIC_API_KEY"]
+            "bins": ["python3"]
           },
-        "primaryEnv": "ANTHROPIC_API_KEY",
         "install":
           [
             {

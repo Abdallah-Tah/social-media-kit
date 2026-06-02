@@ -180,6 +180,27 @@ def cmd_wizard(args: argparse.Namespace) -> int:
     return run_wizard()
 
 
+def cmd_install_skill(args: argparse.Namespace) -> int:
+    """Permanently register the kit as an OpenClaw / Claude Code skill."""
+    from .install import detect_skills_dir, install_skill
+
+    if not args.skills_dir:
+        detected = detect_skills_dir()
+        print(f"🔎 Skills directory: {detected or '(none detected)'}")
+    ok, msg = install_skill(
+        skills_dir=args.skills_dir, copy=args.copy, force=args.force
+    )
+    print(("✅ " if ok else "❌ ") + msg)
+    if ok:
+        print(
+            "\nNext: ensure the package is installed so `smkit` is on PATH:\n"
+            "   pip install -e .\n"
+            "Then your OpenClaw agent will auto-discover 'social-media-agent'\n"
+            "on its next start. Verify with:  smkit doctor"
+        )
+    return 0 if ok else 1
+
+
 # ── Helpers ─────────────────────────────────────────────────────────────
 def _banner(config, profile, goal) -> None:
     mode = "DRY RUN (no posts go live)" if config.dry_run else "LIVE"
@@ -244,6 +265,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_wizard = sub.add_parser("wizard", help="Interactive first-time setup")
     p_wizard.set_defaults(func=cmd_wizard)
+
+    p_install = sub.add_parser(
+        "install-skill",
+        help="Register as a permanent OpenClaw / Claude Code skill",
+    )
+    p_install.add_argument(
+        "--skills-dir", help="Skills root (auto-detected if omitted)"
+    )
+    p_install.add_argument(
+        "--copy", action="store_true",
+        help="Copy the skill instead of symlinking",
+    )
+    p_install.add_argument(
+        "--force", action="store_true", help="Replace an existing install"
+    )
+    p_install.set_defaults(func=cmd_install_skill)
 
     return parser
 

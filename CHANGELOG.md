@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.3 — Permanent OpenClaw install
+
+### Added
+- **`smkit install-skill`** — one command to register the kit as a permanent,
+  auto-discovered OpenClaw / Claude Code skill (auto-detects the skills root,
+  symlink or `--copy`, idempotent, `--force` to replace).
+
+### Changed
+- The skill is now **provider-agnostic**: it only requires `python3` (dropped
+  the hard `ANTHROPIC_API_KEY` gate) so it stays available on Ollama/OpenAI too.
+
 ## 2.0.2 — Search self-hosting, safe live profile, Gumroad kit
 
 ### Added

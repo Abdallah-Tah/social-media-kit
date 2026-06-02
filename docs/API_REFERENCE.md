@@ -12,7 +12,11 @@ smkit queue config/topics.txt --yes              # run next queued topic
 smkit wizard                                      # interactive setup
 smkit doctor                                      # check providers + channels
 smkit profiles                                    # list brand profiles
+smkit install-skill                               # register as a permanent OpenClaw skill
 ```
+
+`smkit install-skill [--skills-dir PATH] [--copy] [--force]` links the kit into
+your OpenClaw / Claude Code skills root so the agent uses it every session.
 
 | Flag | Description |
 |------|-------------|

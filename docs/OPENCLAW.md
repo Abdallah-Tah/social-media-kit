@@ -4,6 +4,34 @@ This kit is built so your existing agent can call it. It ships in the standard
 **`SKILL.md`** format used by both [OpenClaw](https://github.com/openclaw/openclaw)
 and Claude Code, plus a Python adapter for custom runtimes.
 
+## 0. Make it permanent (one command)
+
+To have your OpenClaw agent use this kit **from now on, every session**:
+
+```bash
+pip install -e .          # puts `smkit` on PATH
+smkit install-skill       # links the skill into your OpenClaw skills root
+```
+
+`install-skill` auto-detects the skills directory (`$OPENCLAW_SKILLS_DIR`,
+`$OPENCLAW_HOME/skills`, `~/.openclaw/skills`, `~/.config/openclaw/skills`, or
+Claude Code's `~/.claude/skills`). Override or pin it:
+
+```bash
+smkit install-skill --skills-dir ~/.openclaw/skills   # explicit
+smkit install-skill --copy                            # copy instead of symlink
+smkit install-skill --force                           # replace an existing one
+```
+
+It's idempotent and survives restarts. After installing, restart your agent and
+it will discover `social-media-agent` and reach for it on any "research /
+write / publish to social" request. Verify with `smkit doctor`.
+
+> The skill is **provider-agnostic** — it only requires `python3`, so it stays
+> available whether you run Claude, OpenAI, or local Ollama.
+
+The sections below explain the manual alternatives.
+
 ## 1. Declarative skill (recommended)
 
 The skill lives at:
