@@ -56,8 +56,29 @@ def get_credentials():
     return creds
 
 
-def post_tweet(text, credentials=None):
-    """Post a tweet using OAuth 1.0a."""
+def _upload_media(credentials, media_path):
+    """Upload an image to X and return its media_id (v1.1 upload endpoint)."""
+    oauth = OAuth1(
+        credentials["consumer_key"],
+        credentials["consumer_secret"],
+        credentials["access_token"],
+        credentials["access_token_secret"],
+    )
+    with open(media_path, "rb") as f:
+        resp = requests.post(
+            "https://upload.twitter.com/1.1/media/upload.json",
+            auth=oauth,
+            files={"media": f},
+            timeout=60,
+        )
+    if resp.status_code in (200, 201):
+        return resp.json().get("media_id_string")
+    print(f"❌ X media upload error ({resp.status_code}): {resp.text[:200]}")
+    return None
+
+
+def post_tweet(text, credentials=None, media_path=None):
+    """Post a tweet using OAuth 1.0a, optionally with an image."""
     if not credentials:
         credentials = get_credentials()
     if not credentials:
@@ -72,6 +93,10 @@ def post_tweet(text, credentials=None):
 
     headers = {"Content-Type": "application/json"}
     payload = {"text": text}
+    if media_path:
+        media_id = _upload_media(credentials, media_path)
+        if media_id:
+            payload["media"] = {"media_ids": [media_id]}
 
     resp = requests.post(
         "https://api.x.com/2/tweets",

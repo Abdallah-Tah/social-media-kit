@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.2.0 — More platforms, images everywhere, tests + CI
+
+### Added
+- **Bluesky** (AT Protocol, app password) and **Threads** (Meta API) publishers
+  — both wired into the agent with character-limit enforcement. Closes the
+  biggest 2026 platform gap.
+- **Image attachment across channels**: X, LinkedIn, Mastodon, and Bluesky now
+  upload the generated cover (Facebook already did). Threads uses the cover
+  URL. The routine attaches covers automatically.
+- **Test suite + CI**: a `pytest` suite (`tests/`) covering the agent loop,
+  provider abstraction, security guards (allowlist, draft-path sandbox,
+  base_url scoping), search parsers, and the doctor heuristic — run by a GitHub
+  Actions workflow (`.github/workflows/ci.yml`) on Python 3.10–3.12.
+
+### Changed
+- `doctor`, the wizard, and `secrets.env.example` now list Bluesky + Threads.
+- Gumroad kit: positioning guidance (don't compete with free schedulers) plus
+  a trust-builders section (demo, support channel, 14-day refund).
+
 ## 2.1.0 — Cover image generation
 
 ### Added

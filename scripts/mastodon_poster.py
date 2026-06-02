@@ -21,17 +21,37 @@ except ValueError:
     MASTODON_LIMIT = 500
 
 
-def post_status(text, visibility="public"):
-    """Post a status to Mastodon."""
+def _upload_media(image_path):
+    """Upload an image to Mastodon; returns the media id."""
+    with open(image_path, "rb") as f:
+        resp = requests.post(
+            f"{MASTODON_BASE_URL}/api/v2/media",
+            headers={"Authorization": f"Bearer {MASTODON_ACCESS_TOKEN}"},
+            files={"file": f},
+            timeout=60,
+        )
+    if resp.status_code in (200, 202):
+        return resp.json().get("id")
+    print(f"❌ Mastodon media error ({resp.status_code}): {resp.text[:200]}")
+    return None
+
+
+def post_status(text, visibility="public", image_path=None):
+    """Post a status to Mastodon, optionally with an image."""
     if not MASTODON_BASE_URL or not MASTODON_ACCESS_TOKEN:
         print("❌ MASTODON_BASE_URL / MASTODON_ACCESS_TOKEN not set.")
         return None
 
+    data = {"status": text[:MASTODON_LIMIT], "visibility": visibility}
     try:
+        if image_path:
+            media_id = _upload_media(image_path)
+            if media_id:
+                data["media_ids[]"] = media_id
         resp = requests.post(
             f"{MASTODON_BASE_URL}/api/v1/statuses",
             headers={"Authorization": f"Bearer {MASTODON_ACCESS_TOKEN}"},
-            data={"status": text[:MASTODON_LIMIT], "visibility": visibility},
+            data=data,
             timeout=15,
         )
     except requests.RequestException as e:

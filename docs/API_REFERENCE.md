@@ -147,8 +147,14 @@ python scripts/webhook_poster.py "Any platform" --url https://hooks.example.com/
 | `slack_poster.py` | `SLACK_WEBHOOK_URL` **or** `SLACK_BOT_TOKEN`+`SLACK_CHANNEL` | `--channel` override |
 | `discord_poster.py` | `DISCORD_WEBHOOK_URL` | ≤ 2000 chars; `--username` override |
 | `telegram_poster.py` | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | `--chat` override |
-| `mastodon_poster.py` | `MASTODON_BASE_URL`, `MASTODON_ACCESS_TOKEN` | `--visibility` |
+| `mastodon_poster.py` | `MASTODON_BASE_URL`, `MASTODON_ACCESS_TOKEN` | `--visibility`, `--image`? via agent |
+| `bluesky_poster.py` | `BLUESKY_HANDLE`, `BLUESKY_APP_PASSWORD` | `--image`, `--alt`; ≤ 300 chars |
+| `threads_poster.py` | `THREADS_USER_ID`, `THREADS_ACCESS_TOKEN` | `--image-url` (public URL); ≤ 500 chars |
 | `webhook_poster.py` | `WEBHOOK_URL` | `--url`, `--extra '{"k":"v"}'` |
+
+Image attachment in the agent: pass a local cover `path` to `post_x`,
+`post_linkedin`, `post_facebook`, `post_mastodon`, `post_bluesky`; Threads takes
+a public `image_url`; the blog takes `cover_image_url`.
 
 ---
 

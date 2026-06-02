@@ -19,6 +19,8 @@ PLATFORM_TOOLS = {
     "discord": "post_discord",
     "telegram": "post_telegram",
     "mastodon": "post_mastodon",
+    "bluesky": "post_bluesky",
+    "threads": "post_threads",
     "webhook": "post_webhook",
 }
 
@@ -85,9 +87,11 @@ a link, and a question or CTA.
    Do NOT reuse identical text across platforms — adapt length and style.
 4. PUBLISH: Call the appropriate posting tool for each enabled channel, and \
 `publish_blog` if "blog" is enabled. Attach the cover when you have one: pass \
-the cover `url` to `publish_blog` as `cover_image_url`, and the cover `path` to \
-`post_facebook` as `image`. If a tool reports it is not configured, note it and \
-continue with the others — partial success is fine.
+the cover `path` as `image` to post_facebook/post_x/post_linkedin/post_mastodon/\
+post_bluesky, the cover `url` to `publish_blog` as `cover_image_url`, and the \
+cover `url` to `post_threads` as `image_url` (Threads needs a public URL, not a \
+file). If a tool reports it is not configured, note it and continue with the \
+others — partial success is fine.
 5. FINISH: Call `finish` with a concise summary: what you researched, the \
 article title/slug, and which channels succeeded or were skipped.
 

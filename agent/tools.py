@@ -164,21 +164,26 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "name": "post_x",
         "description": (
             f"Post a tweet to X (Twitter). Must be <= {X_LIMIT} characters; "
-            "the call is rejected otherwise so you can shorten it."
+            "the call is rejected otherwise so you can shorten it. Pass `image` "
+            "(a local cover path) to attach a photo."
         ),
         "input_schema": {
             "type": "object",
-            "properties": {"text": {"type": "string"}},
+            "properties": {
+                "text": {"type": "string"},
+                "image": {"type": "string", "description": "Optional local image path."},
+            },
             "required": ["text"],
         },
     },
     {
         "name": "post_linkedin",
-        "description": "Post a text update to LinkedIn.",
+        "description": "Post a text (or image) update to LinkedIn. Pass `image` to attach a photo.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "text": {"type": "string"},
+                "image": {"type": "string", "description": "Optional local image path."},
                 "visibility": {
                     "type": "string",
                     "enum": ["PUBLIC", "CONNECTIONS"],
@@ -223,16 +228,46 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
     {
         "name": "post_mastodon",
-        "description": "Post a status to Mastodon (<= ~500 chars on most instances).",
+        "description": "Post a status to Mastodon (<= ~500 chars). Pass `image` to attach a photo.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "text": {"type": "string"},
+                "image": {"type": "string", "description": "Optional local image path."},
                 "visibility": {
                     "type": "string",
                     "enum": ["public", "unlisted", "private", "direct"],
                     "default": "public",
                 },
+            },
+            "required": ["text"],
+        },
+    },
+    {
+        "name": "post_bluesky",
+        "description": (
+            "Post to Bluesky (<= 300 chars). Pass `image` (local path) to attach a photo."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "image": {"type": "string", "description": "Optional local image path."},
+            },
+            "required": ["text"],
+        },
+    },
+    {
+        "name": "post_threads",
+        "description": (
+            "Post to Threads (<= 500 chars). Pass `image_url` (a PUBLIC URL, e.g. "
+            "the blog cover_image_url) to attach a photo — Threads needs a URL, not a file."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "image_url": {"type": "string", "description": "Optional PUBLIC image URL."},
             },
             "required": ["text"],
         },
@@ -315,6 +350,8 @@ PUBLISHING_TOOLS = {
     "post_discord",
     "post_telegram",
     "post_mastodon",
+    "post_bluesky",
+    "post_threads",
     "post_webhook",
 }
 
@@ -358,6 +395,8 @@ class ToolBox:
             "post_discord": self._post_discord,
             "post_telegram": self._post_telegram,
             "post_mastodon": self._post_mastodon,
+            "post_bluesky": self._post_bluesky,
+            "post_threads": self._post_threads,
             "post_webhook": self._post_webhook,
             "generate_card": self._generate_card,
             "generate_cover": self._generate_cover,
@@ -410,6 +449,10 @@ class ToolBox:
                 )
         if name == "post_discord" and len(args.get("text", "")) > 2000:
             return "ERROR: Discord message exceeds 2000 chars. Shorten it."
+        if name == "post_bluesky" and len(args.get("text", "")) > 300:
+            return "ERROR: Bluesky post exceeds 300 chars. Shorten it and retry."
+        if name == "post_threads" and len(args.get("text", "")) > 500:
+            return "ERROR: Threads post exceeds 500 chars. Shorten it and retry."
         return None
 
     # ── Research ────────────────────────────────────────────────────────
@@ -500,7 +543,9 @@ class ToolBox:
                 f"ERROR: tweet is {len(text)} chars (limit {X_LIMIT}). "
                 "Shorten it and call post_x again."
             )
-        return self._capture("X", lambda: x_poster.post_tweet(text))
+        return self._capture(
+            "X", lambda: x_poster.post_tweet(text, media_path=args.get("image"))
+        )
 
     def _post_linkedin(self, args: dict) -> str:
         import linkedin_poster
@@ -508,7 +553,9 @@ class ToolBox:
         return self._capture(
             "LinkedIn",
             lambda: linkedin_poster.post_text(
-                args["text"], visibility=args.get("visibility", "PUBLIC")
+                args["text"],
+                visibility=args.get("visibility", "PUBLIC"),
+                image_path=args.get("image"),
             ),
         )
 
@@ -542,8 +589,26 @@ class ToolBox:
         return self._capture(
             "Mastodon",
             lambda: mastodon_poster.post_status(
-                args["text"], visibility=args.get("visibility", "public")
+                args["text"],
+                visibility=args.get("visibility", "public"),
+                image_path=args.get("image"),
             ),
+        )
+
+    def _post_bluesky(self, args: dict) -> str:
+        import bluesky_poster
+
+        return self._capture(
+            "Bluesky",
+            lambda: bluesky_poster.post(args["text"], image_path=args.get("image")),
+        )
+
+    def _post_threads(self, args: dict) -> str:
+        import threads_poster
+
+        return self._capture(
+            "Threads",
+            lambda: threads_poster.post(args["text"], image_url=args.get("image_url")),
         )
 
     def _post_webhook(self, args: dict) -> str:

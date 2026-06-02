@@ -49,8 +49,45 @@ def get_profile(token):
         return None
 
 
-def post_text(text, visibility="PUBLIC"):
-    """Post a text update to LinkedIn."""
+def _upload_image(token, author, image_path):
+    """Register + upload an image, returning its asset URN (or None)."""
+    reg = requests.post(
+        "https://api.linkedin.com/v2/assets?action=registerUpload",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json={
+            "registerUploadRequest": {
+                "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
+                "owner": author,
+                "serviceRelationships": [
+                    {"relationshipType": "OWNER", "identifier": "urn:li:userGeneratedContent"}
+                ],
+            }
+        },
+        timeout=30,
+    )
+    if not reg.ok:
+        print(f"❌ LinkedIn registerUpload error: {reg.text[:200]}")
+        return None
+    value = reg.json()["value"]
+    upload_url = value["uploadMechanism"][
+        "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"
+    ]["uploadUrl"]
+    asset = value["asset"]
+    with open(image_path, "rb") as f:
+        up = requests.put(
+            upload_url,
+            headers={"Authorization": f"Bearer {token}"},
+            data=f.read(),
+            timeout=60,
+        )
+    if up.status_code not in (200, 201):
+        print(f"❌ LinkedIn image upload error ({up.status_code})")
+        return None
+    return asset
+
+
+def post_text(text, visibility="PUBLIC", image_path=None):
+    """Post a text (or image) update to LinkedIn."""
     token = load_token()
     if not token:
         return None
@@ -62,15 +99,17 @@ def post_text(text, visibility="PUBLIC"):
 
     author = f"urn:li:person:{profile_id}"
 
+    content = {"shareCommentary": {"text": text}, "shareMediaCategory": "NONE"}
+    if image_path:
+        asset = _upload_image(token, author, image_path)
+        if asset:
+            content["shareMediaCategory"] = "IMAGE"
+            content["media"] = [{"status": "READY", "media": asset}]
+
     payload = {
         "author": author,
         "lifecycleState": "PUBLISHED",
-        "specificContent": {
-            "com.linkedin.ugc.PostContent": {
-                "shareCommentary": {"text": text},
-                "shareMediaCategory": "NONE",
-            }
-        },
+        "specificContent": {"com.linkedin.ugc.PostContent": content},
         "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": visibility},
     }
 
