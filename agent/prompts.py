@@ -72,6 +72,9 @@ quotes. Never invent facts — ground every claim in a source.
 comparison piece, not a template with placeholders. Include a compelling \
 title, a hook, well-structured sections, and a "Sources" list with links. \
 Then call `save_article`.
+2b. COVER IMAGE: Call `generate_cover` with the article title to create a hero \
+image. Keep the returned `path` (for Facebook) and `url` (for the blog) — you \
+will attach them when publishing. If it fails, continue without a cover.
 3. ADAPT PER PLATFORM: Write native posts tailored to each enabled channel:
    - X/Twitter: <= 280 characters, punchy, 1-2 hashtags. If too long, shorten \
 and retry.
@@ -81,8 +84,10 @@ a link, and a question or CTA.
    - Mastodon: <= ~500 characters.
    Do NOT reuse identical text across platforms — adapt length and style.
 4. PUBLISH: Call the appropriate posting tool for each enabled channel, and \
-`publish_blog` if "blog" is enabled. If a tool reports it is not configured, \
-note it and continue with the others — partial success is fine.
+`publish_blog` if "blog" is enabled. Attach the cover when you have one: pass \
+the cover `url` to `publish_blog` as `cover_image_url`, and the cover `path` to \
+`post_facebook` as `image`. If a tool reports it is not configured, note it and \
+continue with the others — partial success is fine.
 5. FINISH: Call `finish` with a concise summary: what you researched, the \
 article title/slug, and which channels succeeded or were skipped.
 

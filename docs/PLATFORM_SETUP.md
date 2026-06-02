@@ -207,3 +207,20 @@ OPENAI_API_KEY=sk-...
 # Ollama (local) needs no key — just run `ollama serve`
 ```
 Set the active provider in `config/agent.yaml` (`provider: anthropic|openai|ollama`).
+
+---
+
+## Cover Images (optional)
+
+The agent generates a hero image per article. It tries FAL.ai → OpenAI Images
+→ a free branded Pillow card (no key). Configure whichever you want:
+
+```
+# FAL.ai (flux-pro) — get a key at https://fal.ai/dashboard/keys
+FAL_KEY=your_fal_key
+# Or reuse OpenAI for images (uses OPENAI_API_KEY above)
+# Force a provider:
+# IMAGE_PROVIDER=fal        # fal | openai | card
+```
+
+No key set? You still get a branded title card automatically — nothing breaks.

@@ -152,6 +152,28 @@ python scripts/webhook_poster.py "Any platform" --url https://hooks.example.com/
 
 ---
 
+## image_generator.py
+
+Generate a cover/hero image (FAL.ai → OpenAI Images → free branded card).
+
+```bash
+python scripts/image_generator.py "Laravel 13 AI SDK" --out cover.png
+python scripts/image_generator.py "My Title" --provider fal
+```
+
+| Flag | Description |
+|------|-------------|
+| `title` (positional) | Article/post title (drives the default prompt) |
+| `--prompt`, `-p` | Override the image prompt |
+| `--out`, `-o` | Output PNG path |
+| `--provider` | `fal` \| `openai` \| `card` |
+
+Env: `FAL_KEY` (FAL.ai), `OPENAI_API_KEY` (OpenAI), `IMAGE_PROVIDER` to force one,
+`FAL_MODEL` / `OPENAI_IMAGE_MODEL` to override models. With no key it falls back
+to a branded Pillow card.
+
+---
+
 ## blog_publisher.py
 
 Push articles to a blog via REST API.

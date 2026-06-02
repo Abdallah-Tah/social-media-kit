@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.1.0 — Cover image generation
+
+### Added
+- **Cover images**: a `generate_cover` agent tool + `scripts/image_generator.py`
+  that creates a hero image per article. Provider chain: **FAL.ai (flux-pro) →
+  OpenAI Images → a free branded Pillow card** (no key required for the
+  fallback). Force one with `IMAGE_PROVIDER`.
+- The routine now generates a cover and **attaches it on publish** — the hosted
+  URL goes to `publish_blog` (`cover_image_url` → `cover_image`/`featured_image`)
+  and the local path to `post_facebook` (posts as a photo).
+- **`smkit doctor` secret-health check**: warns when a credential looks
+  truncated (contains a `…` ellipsis, ends in `...`, or is implausibly short) —
+  catches copy-paste truncation like a masked-token paste.
+
+### Changed
+- `blog_publisher.publish_article` accepts `cover_image_url`; the Facebook tool
+  accepts an optional `image` path.
+
 ## 2.0.6 — Re-review fixes (round 2)
 
 - `ToolBox`: register a `finish` handler and allow it through the channel
