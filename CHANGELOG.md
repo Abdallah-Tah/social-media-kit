@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.2 — Search self-hosting, safe live profile, Gumroad kit
+
+### Added
+- **Self-hosted SearXNG** (`deploy/searxng/`) for free, no-key, high-quality
+  web search, with a setup guide (`docs/SEARCH.md`).
+- **`live-fb-x` profile** — a channel-locked profile that publishes ONLY to
+  Facebook + X, for safe first live runs.
+- **Release builder** (`scripts/make_release.sh`) that produces a clean,
+  secrets-free `dist/*.zip`, plus a full Gumroad launch kit (`docs/GUMROAD.md`)
+  with copy, pricing, and a pre-launch checklist.
+
 ## 2.0.1 — Field-test fixes (Ollama + search)
 
 Fixes from real-world testing with an OpenClaw agent.

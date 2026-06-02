@@ -135,8 +135,10 @@ skills root and it's discovered automatically. There's also a Python adapter
 
 - **[docs/AGENT_GUIDE.md](docs/AGENT_GUIDE.md)** — how the agent works, providers, profiles, scheduling, dry-run
 - **[docs/OPENCLAW.md](docs/OPENCLAW.md)** — OpenClaw / Claude Code skill integration
+- **[docs/SEARCH.md](docs/SEARCH.md)** — search providers + free self-hosted SearXNG setup
 - **[docs/PLATFORM_SETUP.md](docs/PLATFORM_SETUP.md)** — getting API keys for every channel
 - **[docs/API_REFERENCE.md](docs/API_REFERENCE.md)** — every script and flag
+- **[docs/GUMROAD.md](docs/GUMROAD.md)** — packaging & launch kit for selling
 
 ---
 

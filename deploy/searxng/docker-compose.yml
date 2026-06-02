@@ -1,0 +1,24 @@
+# Self-hosted SearXNG for the Social Media Agent — free, no-key web search.
+# Usage:
+#   cd deploy/searxng
+#   sed -i "s/change-me-please/$(openssl rand -hex 16)/" searxng/settings.yml
+#   docker compose up -d
+# Then set in config/secrets.env:  SEARXNG_URL=http://localhost:8888
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: smkit-searxng
+    ports:
+      - "8888:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888/
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
