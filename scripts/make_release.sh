@@ -42,6 +42,8 @@ unzip -l "$ROOT/dist/${NAME}.zip" | tail -n +2 | head -n 20
 
 # Final guard: confirm no secrets leaked into the archive.
 if unzip -l "$ROOT/dist/${NAME}.zip" | grep -q 'secrets.env$'; then
-  echo "❌ secrets.env found in archive — aborting!"; exit 1
+  rm -f "$ROOT/dist/${NAME}.zip"
+  echo "❌ secrets.env found in archive — deleted the zip and aborting!"
+  exit 1
 fi
 echo "🔒 Verified: no secrets.env in the archive."

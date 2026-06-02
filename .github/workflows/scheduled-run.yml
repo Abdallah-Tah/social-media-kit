@@ -44,6 +44,13 @@ jobs:
 
       - name: Run agent
         env:
+          # User-controlled workflow inputs — passed via env (NOT expanded
+          # directly into the shell) to prevent script injection.
+          INPUT_TOPIC: ${{ github.event.inputs.topic }}
+          INPUT_PROFILE: ${{ github.event.inputs.profile }}
+          INPUT_DRY_RUN: ${{ github.event.inputs.dry_run }}
+          EVENT_NAME: ${{ github.event_name }}
+          GO_LIVE_VAR: ${{ vars.GO_LIVE }}
           # LLM providers
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -68,22 +75,17 @@ jobs:
           MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: |
-          EVENT="${{ github.event_name }}"
-          DRY_INPUT="${{ github.event.inputs.dry_run }}"
-          GO_LIVE="${{ vars.GO_LIVE }}"
-          PROFILE="${{ github.event.inputs.profile }}"
-          PROFILE="${PROFILE:-default}"
+          PROFILE="${INPUT_PROFILE:-default}"
           FLAGS="--yes --profile $PROFILE"
           # Scheduled runs are dry-run unless the repo var GO_LIVE is set.
           # Manual runs honour the dry_run toggle (default true).
-          if [ "$EVENT" = "schedule" ]; then
-            if [ -z "$GO_LIVE" ]; then FLAGS="$FLAGS --dry-run"; fi
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            if [ -z "$GO_LIVE_VAR" ]; then FLAGS="$FLAGS --dry-run"; fi
           else
-            if [ "$DRY_INPUT" != "false" ]; then FLAGS="$FLAGS --dry-run"; fi
+            if [ "$INPUT_DRY_RUN" != "false" ]; then FLAGS="$FLAGS --dry-run"; fi
           fi
-          TOPIC="${{ github.event.inputs.topic }}"
-          if [ -n "$TOPIC" ]; then
-            python -m agent run --topic "$TOPIC" $FLAGS
+          if [ -n "$INPUT_TOPIC" ]; then
+            python -m agent run --topic "$INPUT_TOPIC" $FLAGS
           else
             python -m agent queue config/topics.txt $FLAGS
           fi

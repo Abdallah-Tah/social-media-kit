@@ -4,25 +4,16 @@ description: Research a topic on the web, write a high-quality article, and publ
 homepage: https://github.com/Abdallah-Tah/social-media-kit
 user-invocable: true
 metadata:
-  {
-    "openclaw":
-      {
-        "emoji": "📡",
-        "requires":
-          {
-            "bins": ["python3"]
-          },
-        "install":
-          [
-            {
-              "id": "pip",
-              "kind": "shell",
-              "command": "pip install -r {baseDir}/../../requirements.txt && pip install -e {baseDir}/../..",
-              "label": "Install Social Media Agent dependencies"
-            }
-          ]
-      }
-  }
+  openclaw:
+    emoji: "📡"
+    requires:
+      bins:
+        - python3
+    install:
+      - id: pip
+        kind: shell
+        command: "python3 -m pip install -r {baseDir}/../../requirements.txt && python3 -m pip install -e {baseDir}/../.."
+        label: "Install Social Media Agent dependencies"
 ---
 
 # Social Media Agent
