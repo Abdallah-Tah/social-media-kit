@@ -1,0 +1,36 @@
+# Brand profile — the agent writes in this voice and posts to these channels.
+# Duplicate this file (e.g. client-acme.yaml) to run multiple brands:
+#   smkit run --topic "..." --profile client-acme
+
+name: My Brand
+tone: clear, practical, and friendly — confident but never hypey
+audience: developers, founders, and tech builders
+language: English
+
+# A call to action the agent weaves into posts (optional).
+cta: Follow for more hands-on engineering content.
+
+# Canonical link to promote when no source URL is more relevant (optional).
+link: ""
+
+# Hashtags the agent should favor (used sparingly, mostly on X / Mastodon).
+hashtags:
+  - "#dev"
+  - "#AI"
+
+# Channels the agent is allowed to publish to. Remove any you don't use.
+# Options: blog, facebook, x, linkedin, slack, discord, telegram, mastodon, webhook
+platforms:
+  - blog
+  - x
+  - linkedin
+
+# Visual branding for generated social cards.
+branding:
+  bg_color: "#0f172a"
+  accent_color: "#2563eb"
+
+# Defaults applied when publishing to the blog.
+blog:
+  category_id: null
+  tags: []

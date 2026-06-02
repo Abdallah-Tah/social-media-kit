@@ -1,0 +1,32 @@
+# Social Media Agent — orchestrator settings
+# The wizard (`smkit wizard`) can write this for you.
+
+# Which brain drives the routine: anthropic | openai | ollama
+provider: anthropic
+
+# Max tool-using steps before the agent must finish (safety bound).
+max_steps: 20
+
+# When true, publishing tools are simulated and nothing goes live.
+# You can also pass --dry-run on the CLI.
+dry_run: false
+
+# ── Provider-specific settings ──────────────────────────────────────────
+# API keys live in config/secrets.env (NOT here). See secrets.env.example.
+
+anthropic:
+  model: claude-sonnet-4-6      # or claude-opus-4-8 for top quality
+  max_tokens: 4096
+  temperature: 0.4
+
+openai:
+  model: gpt-4o
+  base_url: https://api.openai.com/v1   # or an OpenRouter / compatible URL
+  max_tokens: 4096
+  temperature: 0.4
+
+ollama:
+  model: llama3.1               # any local model with tool-calling support
+  base_url: http://localhost:11434/v1
+  max_tokens: 4096
+  temperature: 0.4

@@ -126,3 +126,84 @@ npm install playwright
 # Render a card
 node scripts/render_card.mjs card.html card.png 1080 1080
 ```
+
+---
+
+## Slack
+
+Two options — pick one:
+
+**Incoming Webhook (simplest)**
+1. https://api.slack.com/apps → Create App → "Incoming Webhooks" → enable.
+2. "Add New Webhook to Workspace", pick a channel, copy the URL.
+3. `SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...`
+
+**Bot token**
+1. Create an app → OAuth & Permissions → add `chat:write` scope → install.
+2. Copy the Bot User OAuth Token (`xoxb-...`) and set:
+   ```
+   SLACK_BOT_TOKEN=xoxb-...
+   SLACK_CHANNEL=#general
+   ```
+
+---
+
+## Discord
+
+1. Server Settings → Integrations → Webhooks → New Webhook.
+2. Pick a channel, "Copy Webhook URL".
+3. `DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...`
+
+---
+
+## Telegram
+
+1. Message [@BotFather](https://t.me/BotFather) → `/newbot` → copy the token.
+2. Add the bot to your channel/group as an admin.
+3. Set:
+   ```
+   TELEGRAM_BOT_TOKEN=123456:ABC...
+   TELEGRAM_CHAT_ID=@yourchannel   # or a numeric id
+   ```
+
+---
+
+## Mastodon
+
+1. On your instance: Preferences → Development → New application.
+2. Grant `write:statuses`, create it, copy "Your access token".
+3. Set:
+   ```
+   MASTODON_BASE_URL=https://mastodon.social
+   MASTODON_ACCESS_TOKEN=...
+   ```
+
+---
+
+## Any other platform (Generic Webhook)
+
+For Zapier, Make, n8n, Buffer, a custom CMS, or an internal service:
+```
+WEBHOOK_URL=https://your-endpoint.example.com/post
+# Optional: match your endpoint's expected JSON key (default "text")
+WEBHOOK_TEXT_KEY=message
+# Optional: auth header
+WEBHOOK_AUTH_HEADER=Bearer your_token
+```
+The poster sends `{"<WEBHOOK_TEXT_KEY>": "<message>"}` as JSON.
+
+---
+
+## LLM Providers
+
+The agent needs ONE of these (set in `config/secrets.env`):
+
+```
+# Claude
+ANTHROPIC_API_KEY=sk-ant-...
+# OpenAI / OpenRouter / compatible
+OPENAI_API_KEY=sk-...
+# OPENAI_BASE_URL=https://openrouter.ai/api/v1
+# Ollama (local) needs no key — just run `ollama serve`
+```
+Set the active provider in `config/agent.yaml` (`provider: anthropic|openai|ollama`).

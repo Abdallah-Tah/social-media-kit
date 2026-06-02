@@ -1,7 +1,9 @@
-# Python dependencies
-python-telegram-bot>=20.0
-requests>=2.31.0
-requests-oauthlib>=1.3.1
-Pillow>=10.0.0
-PyYAML>=6.0
-python-dotenv>=1.0.0
+# Core runtime dependencies (standard library handles the rest).
+requests>=2.31.0          # all HTTP: LLM providers + platform APIs
+requests-oauthlib>=1.3.1  # X (Twitter) OAuth 1.0a
+PyYAML>=6.0               # config + brand profiles
+Pillow>=10.0.0            # social card / logo / banner generation
+
+# No SDK is required for the LLM layer — Claude, OpenAI, and Ollama are all
+# called over plain HTTP. python-dotenv is NOT required; we ship a tiny .env
+# loader in agent/config.py.

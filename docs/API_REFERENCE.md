@@ -1,4 +1,34 @@
-# API Reference — Social Media Kit Scripts
+# API Reference — Social Media Agent
+
+## smkit (the agent CLI)
+
+The orchestrated agent. See [AGENT_GUIDE.md](AGENT_GUIDE.md) for the full picture.
+
+```bash
+smkit run --topic "Your topic" --dry-run        # research → write → publish (simulated)
+smkit run --goal "Free-form instruction" --yes  # explicit goal, go live
+smkit run --topic "..." --provider ollama        # local model, no API key
+smkit queue config/topics.txt --yes              # run next queued topic
+smkit wizard                                      # interactive setup
+smkit doctor                                      # check providers + channels
+smkit profiles                                    # list brand profiles
+```
+
+| Flag | Description |
+|------|-------------|
+| `--topic`, `-t` | Topic to research, write, and publish |
+| `--goal`, `-g` | Explicit free-form goal (instead of `--topic`) |
+| `--profile`, `-p` | Brand profile name (default `default`) |
+| `--provider` | `anthropic` \| `openai` \| `ollama` (overrides agent.yaml) |
+| `--model` | Override the model id |
+| `--dry-run` | Simulate publishing (nothing goes live) |
+| `--yes`, `-y` | Skip the live-mode confirmation |
+| `--max-steps` | Max agent steps before forced finish |
+| `--verbose`, `-v` | Show full reasoning + tool output |
+
+`python -m agent ...` is an exact alias for `smkit ...`.
+
+---
 
 ## fb_poster.py
 
@@ -93,6 +123,28 @@ python scripts/linkedin_poster.py "Internal update" --visibility CONNECTIONS
 |------|-------------|
 | `text` (positional) | Post text |
 | `--visibility`, `-v` | `PUBLIC` (default) or `CONNECTIONS` |
+
+---
+
+## slack_poster.py / discord_poster.py / telegram_poster.py / mastodon_poster.py / webhook_poster.py
+
+Post a message to the respective channel. All take the text as a positional arg.
+
+```bash
+python scripts/slack_poster.py "Shipping a new post 🚀"
+python scripts/discord_poster.py "New article is live"
+python scripts/telegram_poster.py "New article is live"
+python scripts/mastodon_poster.py "New article is live" --visibility public
+python scripts/webhook_poster.py "Any platform" --url https://hooks.example.com/x
+```
+
+| Script | Required env | Notes |
+|--------|--------------|-------|
+| `slack_poster.py` | `SLACK_WEBHOOK_URL` **or** `SLACK_BOT_TOKEN`+`SLACK_CHANNEL` | `--channel` override |
+| `discord_poster.py` | `DISCORD_WEBHOOK_URL` | ≤ 2000 chars; `--username` override |
+| `telegram_poster.py` | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | `--chat` override |
+| `mastodon_poster.py` | `MASTODON_BASE_URL`, `MASTODON_ACCESS_TOKEN` | `--visibility` |
+| `webhook_poster.py` | `WEBHOOK_URL` | `--url`, `--extra '{"k":"v"}'` |
 
 ---
 

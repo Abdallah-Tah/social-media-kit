@@ -1,189 +1,155 @@
-# 📡 Social Media Kit
+# 📡 Social Media Agent
 
-**Research, process, and publish content across multiple platforms from the command line.**
+**An autonomous AI agent that researches a topic, writes a high-quality article, and publishes it — plus native posts — across every channel you use. From one command.**
 
-Self-contained Python + Node scripts for content research, article processing, and multi-platform publishing. No SaaS subscriptions — just clean API calls you control.
+Point it at a topic. It searches the web, reads sources, writes a real article in your brand voice, adapts a native post for each platform, and publishes everywhere. Runs on **Claude, OpenAI, or a local model (Ollama)** — your choice, your keys. Plugs into **[OpenClaw](https://github.com/openclaw/openclaw)** and Claude Code as a drop-in skill.
 
-## Features
+```bash
+smkit run --topic "Laravel 13 new features" --dry-run     # rehearse safely
+smkit run --topic "Laravel 13 new features" --yes         # go live
+```
 
-### 🔍 Content Research
-- **Web search** — Find articles, tutorials, and news by topic
-- **Content extraction** — Pull readable text from any URL
-- **Save research** — Export results as JSON for processing
+---
 
-### 📝 Content Processing
-- **Article drafts** — Generate news, tutorial, or comparison templates
-- **Key point extraction** — Automatically pull factual claims from sources
-- **Social post generation** — Create platform-specific post variants
+## Why this is different
 
-### 📢 Multi-Platform Publishing
-- 📘 **Facebook Page** — Text, links, and photos
-- 🐦 **X (Twitter)** — Tweets with OAuth 1.0a
-- 💼 **LinkedIn** — Text updates with OAuth2
-- 🌐 **Blog** — Push articles via REST API (Laravel, WordPress, Ghost)
+Most "social media tools" are dumb schedulers — *you* still write everything. This is an **agent**: it runs the full routine the way an expert content marketer would, and decides what to do at each step.
 
-### 🎨 Asset Generation
-- Logos, banners, and social cards with Pillow
-- HTML → retina PNG with Playwright
-- Customizable colors and branding
+```
+        ┌─────────────────────────────────────────────────────┐
+        │                  THE ROUTINE (per run)               │
+        │                                                      │
+  topic →  🔍 research  →  📝 write  →  🎯 adapt  →  📢 publish  → ✅ report
+        │   web search     full          per-platform   blog +     summary of
+        │   + extract      article       native posts   socials    what shipped
+        └─────────────────────────────────────────────────────┘
+```
+
+- 🧠 **Provider-agnostic brain** — Claude (`claude-opus-4-8` / `claude-sonnet-4-6`), any OpenAI-compatible API (OpenAI, OpenRouter, …), or **local Ollama** with no API key.
+- 🌐 **Publishes anywhere** — Blog (Laravel/WordPress/Ghost), X, LinkedIn, Facebook, Slack, Discord, Telegram, Mastodon, and a **generic webhook** for *any* other platform (Zapier, Make, n8n, Buffer…).
+- 🎭 **Brand profiles** — run it for multiple brands/clients, each with its own voice, audience, hashtags, and allowed channels.
+- 🧪 **Dry-run first** — rehearse a complete run with zero side effects, see exactly what *would* post, then go live.
+- ⏰ **Scheduled & autonomous** — a topic queue + GitHub Action publishes on a cron without you lifting a finger.
+- 🔌 **OpenClaw / Claude Code skill** — ships as a `SKILL.md` so your existing agent can call it, plus a Python adapter for custom runtimes.
+- 🔒 **You own everything** — your keys, your data, plain HTTP calls. No SaaS, no middleman, no per-post fees.
+
+---
 
 ## Quick Start
 
 ```bash
-# Clone the repo
-git clone https://github.com/Abdallah-Tah/social-media-kit.git
-cd social-media-kit
-
-# Install Python dependencies
+# 1. Install
 pip install -r requirements.txt
+pip install -e .            # gives you the `smkit` command
+npm install                 # optional: HTML→PNG social cards
 
-# Install Node dependencies (for card rendering)
-npm install
+# 2. Configure (interactive)
+smkit wizard                # pick provider, paste a key, set your brand voice
 
-# Copy and fill in your API credentials
-cp config/secrets.env.example config/secrets.env
-nano config/secrets.env
+# 3. Check everything
+smkit doctor                # shows which providers + channels are ready
+
+# 4. Run — rehearse, then ship
+smkit run --topic "Your topic" --dry-run
+smkit run --topic "Your topic" --yes
 ```
 
-## Workflow
-
-### 1. Research a Topic
-
-```bash
-# Search for articles + extract content
-python scripts/content_research.py "Laravel 13 new features" --count 5 --extract --save
-
-# Search for tutorials
-python scripts/content_research.py "Python asyncio tutorial 2026" --count 5 --save
-
-# Search for news
-python scripts/content_research.py "AI agents open source" --count 5 --extract --save
-```
-
-### 2. Process Into a Draft
-
-```bash
-# Generate a tutorial draft
-python scripts/content_processor.py content/raw/2026-06-01_laravel-13-new-features.json --template tutorial --social
-
-# Generate a news article
-python scripts/content_processor.py content/raw/2026-06-01_ai-agents-open-source.json --template news --social
-
-# Generate a comparison
-python scripts/content_processor.py content/raw/2026-06-01_framework-comparison.json --template comparison
-```
-
-### 3. Edit & Publish
-
-```bash
-# Edit the draft in your editor
-nano content/drafts/2026-06-01_laravel-13-new-features.md
-
-# Publish everywhere (dry run first!)
-python scripts/publish_all.py --file content/drafts/2026-06-01_laravel-13-new-features.md \
-  --title "Laravel 13 Deep Dive" --dry-run
-
-# Publish for real
-python scripts/publish_all.py --file content/drafts/2026-06-01_laravel-13-new-features.md \
-  --title "Laravel 13 Deep Dive"
-
-# Publish to specific platforms only
-python scripts/publish_all.py --file article.md --title "My Article" --blog --facebook
-```
-
-### 4. Generate Assets
-
-```bash
-# Logo + banner
-python scripts/make_assets.py --logo --brand "B"
-python scripts/make_assets.py --banner --name "MyBrand" --tagline "Tech • AI • Innovation"
-
-# Social card from HTML template
-node scripts/render_card.mjs card.html card.png 1080 1080
-```
-
-### Individual Platform Scripts
-
-```bash
-# Facebook
-python scripts/fb_poster.py --message "Check this out!" --link "https://example.com"
-python scripts/fb_poster.py --image photo.png --caption "My photo"
-
-# X (Twitter)
-python scripts/x_poster.py "Tweeting from the command line!"
-python scripts/x_oauth_exchange.py --setup   # First-time OAuth setup
-
-# LinkedIn
-python scripts/linkedin_oauth.py              # First-time OAuth
-python scripts/linkedin_poster.py "Sharing an update"
-
-# Blog
-python scripts/blog_publisher.py --title "My Article" --file article.md --category 3 --tags "2,5"
-```
-
-## Scripts
-
-| Script | Purpose |
-|--------|---------|
-| `content_research.py` | Search web for articles/tutorials, extract content, save JSON |
-| `content_processor.py` | Transform research into article drafts + social posts |
-| `publish_all.py` | Publish to blog + all social platforms in one command |
-| `fb_poster.py` | Post text, links, or photos to Facebook Page |
-| `x_poster.py` | Post tweets via X API v2 |
-| `x_oauth_exchange.py` | X OAuth 1.0a setup flow |
-| `linkedin_oauth.py` | LinkedIn OAuth2 token generator |
-| `linkedin_poster.py` | Post text updates to LinkedIn |
-| `blog_publisher.py` | Push articles to blog via REST API |
-| `make_assets.py` | Generate logos, banners, social cards |
-| `convert_code_blocks.py` | Convert Markdown code blocks to HTML |
-| `render_card.mjs` | Render HTML templates to retina PNG |
-
-## Architecture
-
-```
-social-media-kit/
-├── config/
-│   ├── secrets.env.example    # API keys template (gitignored)
-│   └── platforms.yaml         # Platform-specific settings
-├── content/
-│   ├── raw/                   # Research results (JSON)
-│   ├── drafts/                # Article drafts (Markdown)
-│   │   └── social/           # Social media post variants
-│   └── assets/                # Generated logos, banners, cards
-├── scripts/
-│   ├── content_research.py   # Web search + extraction
-│   ├── content_processor.py  # Research → drafts + social posts
-│   ├── publish_all.py        # Multi-platform publisher
-│   ├── fb_poster.py          # Facebook Page API
-│   ├── x_poster.py           # X API v2
-│   ├── x_oauth_exchange.py   # X OAuth setup
-│   ├── linkedin_oauth.py     # LinkedIn OAuth2
-│   ├── linkedin_poster.py    # LinkedIn API
-│   ├── blog_publisher.py     # Blog REST API
-│   ├── make_assets.py        # Asset generation (Pillow)
-│   ├── convert_code_blocks.py # Markdown → HTML code blocks
-│   └── render_card.mjs       # HTML → PNG (Playwright)
-├── docs/
-│   ├── PLATFORM_SETUP.md     # Platform API setup guides
-│   └── API_REFERENCE.md      # Script usage docs
-├── requirements.txt
-├── package.json
-├── .gitignore
-├── LICENSE
-└── README.md
-```
-
-## Security
-
-- **Never commit `secrets.env`** — it's gitignored
-- API tokens loaded from environment variables or `.env` files only
-- OAuth tokens stored locally, never transmitted
-- No browser session cookies or session hijacking
-
-## License
-
-MIT — use it, modify it, build on it.
+No `smkit` command? Use `python -m agent ...` — identical.
 
 ---
 
-Built by [Abdallah Mohamed](https://github.com/Abdallah-Tah) — running social media automation on a Raspberry Pi since 2026.
+## Usage
+
+```bash
+# Research + write + publish to the channels in your profile
+smkit run --topic "Python asyncio in production"
+
+# Free-form goal instead of a topic
+smkit run --goal "Compare Postgres vs SQLite for small apps; post to X and LinkedIn"
+
+# Use a specific brand profile
+smkit run --topic "..." --profile client-acme
+
+# Run locally with no API key
+smkit run --topic "..." --provider ollama --dry-run
+
+# Pull the next topic from the queue (for scheduled jobs)
+smkit queue config/topics.txt --yes
+```
+
+| Command | What it does |
+|---------|--------------|
+| `smkit run` | Run the full routine on a `--topic` or `--goal` |
+| `smkit queue <file>` | Run the next topic from a queue file (scheduling) |
+| `smkit wizard` | Interactive setup (provider, keys, brand profile) |
+| `smkit doctor` | Report configured providers and channel credentials |
+| `smkit profiles` | List your brand profiles |
+
+Key flags: `--dry-run` (simulate), `--yes` (skip live confirmation), `--provider`, `--model`, `--profile`, `--max-steps`, `--verbose`.
+
+---
+
+## Choose your brain
+
+Set it in `config/agent.yaml` or per-run with `--provider`.
+
+| Provider | Best for | Key |
+|----------|----------|-----|
+| `anthropic` | Highest-quality writing | `ANTHROPIC_API_KEY` |
+| `openai` | OpenAI / OpenRouter / compatible | `OPENAI_API_KEY` (+ `OPENAI_BASE_URL`) |
+| `ollama` | Fully local & free, offline | none — runs at `localhost:11434` |
+
+The LLM layer talks plain HTTP — **no SDK required** for any provider.
+
+---
+
+## Brand profiles
+
+A profile (`config/profiles/<name>.yaml`) defines the voice and the rules:
+
+```yaml
+name: My Brand
+tone: clear, practical, and friendly
+audience: developers and founders
+hashtags: ["#dev", "#AI"]
+platforms: [blog, x, linkedin, slack]   # the ONLY channels it may post to
+branding: { bg_color: "#0f172a", accent_color: "#2563eb" }
+blog: { category_id: 3, tags: [2, 5] }
+```
+
+Duplicate it per client and pass `--profile client-name`.
+
+---
+
+## Use it from OpenClaw or Claude Code
+
+This kit ships as a skill at `skills/social-media-agent/SKILL.md` (the same
+skill format OpenClaw and Claude Code use). Drop the repo under your agent's
+skills root and it's discovered automatically. There's also a Python adapter
+(`agent/openclaw_skill.py`) to register the tools programmatically. See
+**[docs/OPENCLAW.md](docs/OPENCLAW.md)**.
+
+---
+
+## Documentation
+
+- **[docs/AGENT_GUIDE.md](docs/AGENT_GUIDE.md)** — how the agent works, providers, profiles, scheduling, dry-run
+- **[docs/OPENCLAW.md](docs/OPENCLAW.md)** — OpenClaw / Claude Code skill integration
+- **[docs/PLATFORM_SETUP.md](docs/PLATFORM_SETUP.md)** — getting API keys for every channel
+- **[docs/API_REFERENCE.md](docs/API_REFERENCE.md)** — every script and flag
+
+---
+
+## Security
+
+- `config/secrets.env` is **gitignored** — your keys never leave your machine.
+- Tokens are read from env vars / the local secrets file only.
+- Every external call is a plain, auditable HTTP request you can read in `scripts/`.
+
+## License
+
+See **[LICENSE](LICENSE)** (MIT) and **[docs/COMMERCIAL_LICENSE.md](docs/COMMERCIAL_LICENSE.md)** for terms when reselling or bundling.
+
+---
+
+Built by [Abdallah Mohamed](https://github.com/Abdallah-Tah).

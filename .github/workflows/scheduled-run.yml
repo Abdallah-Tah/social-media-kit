@@ -1,0 +1,90 @@
+name: Scheduled Content Run
+
+# Runs the agent on a schedule (and on demand), pulling the next topic from
+# config/topics.txt. Put your API keys in the repo's Actions → Secrets.
+#
+# Manual runs let you pass a one-off topic and toggle dry-run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "One-off topic (blank = next from config/topics.txt)"
+        required: false
+        default: ""
+      dry_run:
+        description: "Dry run (no posts go live)?"
+        type: boolean
+        default: true
+      profile:
+        description: "Brand profile name"
+        required: false
+        default: "default"
+  schedule:
+    # 09:00 UTC every weekday. Adjust or remove as you like.
+    - cron: "0 9 * * 1-5"
+
+permissions:
+  contents: write   # so a scheduled run can consume the topic queue
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Run agent
+        env:
+          # LLM providers
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AGENT_PROVIDER: ${{ vars.AGENT_PROVIDER }}
+          # Web search (optional)
+          BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
+          # Channels
+          BLOG_API_URL: ${{ secrets.BLOG_API_URL }}
+          BLOG_API_TOKEN: ${{ secrets.BLOG_API_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          MASTODON_BASE_URL: ${{ secrets.MASTODON_BASE_URL }}
+          MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+        run: |
+          DRY="${{ github.event.inputs.dry_run }}"
+          PROFILE="${{ github.event.inputs.profile || 'default' }}"
+          FLAGS="--yes --profile $PROFILE"
+          if [ "$DRY" = "true" ] || [ -z "$DRY" -a "${{ github.event_name }}" = "schedule" ] && [ -z "${{ vars.GO_LIVE }}" ]; then
+            FLAGS="$FLAGS --dry-run"
+          fi
+          if [ -n "${{ github.event.inputs.topic }}" ]; then
+            python -m agent run --topic "${{ github.event.inputs.topic }}" $FLAGS
+          else
+            python -m agent queue config/topics.txt $FLAGS
+          fi
+
+      - name: Commit consumed topic queue
+        if: github.event_name == 'schedule'
+        run: |
+          git config user.name "social-media-agent[bot]"
+          git config user.email "bot@users.noreply.github.com"
+          git add config/topics.txt config/topics.txt.done 2>/dev/null || true
+          git commit -m "chore: consume topic from queue" || echo "nothing to commit"
+          git push || echo "nothing to push"
