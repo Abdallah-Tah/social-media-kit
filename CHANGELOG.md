@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.5 — Re-review fixes
+
+- **🔴 Workflow script-injection hardening**: `scheduled-run.yml` now passes
+  `workflow_dispatch` inputs through the `env:` block instead of expanding
+  `${{ github.event.inputs.* }}` directly in the shell `run:` script.
+- **Release guard**: `make_release.sh` deletes the archive if the secrets
+  leak-check ever trips, so a compromised zip can't be uploaded by mistake.
+- **Skill manifest**: installer uses `python3 -m pip` (bound to the declared
+  runtime), and the `metadata` block is rewritten as plain block YAML.
+
 ## 2.0.4 — Review hardening (security + robustness)
 
 Addresses the automated code review on PR #1.
