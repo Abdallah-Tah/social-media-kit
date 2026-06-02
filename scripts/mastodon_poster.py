@@ -15,7 +15,10 @@ MASTODON_BASE_URL = os.environ.get("MASTODON_BASE_URL", "").rstrip("/")
 MASTODON_ACCESS_TOKEN = os.environ.get("MASTODON_ACCESS_TOKEN", "")
 
 # Most instances allow 500 chars; some allow more. 500 is the safe default.
-MASTODON_LIMIT = int(os.environ.get("MASTODON_CHAR_LIMIT", "500"))
+try:
+    MASTODON_LIMIT = int(os.environ.get("MASTODON_CHAR_LIMIT", "500"))
+except ValueError:
+    MASTODON_LIMIT = 500
 
 
 def post_status(text, visibility="public"):
@@ -24,12 +27,16 @@ def post_status(text, visibility="public"):
         print("❌ MASTODON_BASE_URL / MASTODON_ACCESS_TOKEN not set.")
         return None
 
-    resp = requests.post(
-        f"{MASTODON_BASE_URL}/api/v1/statuses",
-        headers={"Authorization": f"Bearer {MASTODON_ACCESS_TOKEN}"},
-        data={"status": text[:MASTODON_LIMIT], "visibility": visibility},
-        timeout=15,
-    )
+    try:
+        resp = requests.post(
+            f"{MASTODON_BASE_URL}/api/v1/statuses",
+            headers={"Authorization": f"Bearer {MASTODON_ACCESS_TOKEN}"},
+            data={"status": text[:MASTODON_LIMIT], "visibility": visibility},
+            timeout=15,
+        )
+    except requests.RequestException as e:
+        print(f"❌ Mastodon request failed: {e}")
+        return None
     if resp.status_code in (200, 201):
         data = resp.json()
         print(f"✅ Posted to Mastodon: {data.get('url', '')}")

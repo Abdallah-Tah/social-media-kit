@@ -8,7 +8,6 @@ Posts messages to Slack via either:
 Setup: https://api.slack.com/messaging/sending
 """
 import os
-import sys
 import json
 import argparse
 import requests
@@ -25,7 +24,11 @@ def post_message(text, channel=None, blocks=None):
         payload = {"text": text}
         if blocks:
             payload["blocks"] = blocks
-        resp = requests.post(SLACK_WEBHOOK_URL, json=payload, timeout=15)
+        try:
+            resp = requests.post(SLACK_WEBHOOK_URL, json=payload, timeout=15)
+        except requests.RequestException as e:
+            print(f"❌ Slack webhook request failed: {e}")
+            return None
         if resp.ok and resp.text in ("ok", ""):
             print("✅ Posted to Slack (webhook)")
             return {"ok": True, "via": "webhook"}
@@ -41,16 +44,20 @@ def post_message(text, channel=None, blocks=None):
         payload = {"channel": target, "text": text}
         if blocks:
             payload["blocks"] = blocks
-        resp = requests.post(
-            "https://slack.com/api/chat.postMessage",
-            headers={
-                "Authorization": f"Bearer {SLACK_BOT_TOKEN}",
-                "Content-Type": "application/json; charset=utf-8",
-            },
-            json=payload,
-            timeout=15,
-        )
-        result = resp.json()
+        try:
+            resp = requests.post(
+                "https://slack.com/api/chat.postMessage",
+                headers={
+                    "Authorization": f"Bearer {SLACK_BOT_TOKEN}",
+                    "Content-Type": "application/json; charset=utf-8",
+                },
+                json=payload,
+                timeout=15,
+            )
+            result = resp.json()
+        except requests.RequestException as e:
+            print(f"❌ Slack request failed: {e}")
+            return None
         if result.get("ok"):
             print(f"✅ Posted to Slack channel {target}: {result.get('ts')}")
             return result

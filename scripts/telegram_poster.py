@@ -17,8 +17,12 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 
-def post_message(text, chat_id=None, parse_mode="HTML"):
-    """Send a message to a Telegram chat/channel."""
+def post_message(text, chat_id=None, parse_mode=None):
+    """Send a message to a Telegram chat/channel.
+
+    parse_mode defaults to None (plain text) — sending as HTML/Markdown by
+    default makes messages with `<`, `>`, `&`, or `_` fail to send.
+    """
     if not TELEGRAM_BOT_TOKEN:
         print("❌ TELEGRAM_BOT_TOKEN not set.")
         return None
@@ -27,17 +31,24 @@ def post_message(text, chat_id=None, parse_mode="HTML"):
         print("❌ TELEGRAM_CHAT_ID not set.")
         return None
 
-    resp = requests.post(
-        f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-        json={
-            "chat_id": target,
-            "text": text[:4096],  # Telegram message limit
-            "parse_mode": parse_mode,
-            "disable_web_page_preview": False,
-        },
-        timeout=15,
-    )
-    result = resp.json()
+    payload = {
+        "chat_id": target,
+        "text": text[:4096],  # Telegram message limit
+        "disable_web_page_preview": False,
+    }
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+
+    try:
+        resp = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            json=payload,
+            timeout=15,
+        )
+        result = resp.json()
+    except requests.RequestException as e:
+        print(f"❌ Telegram request failed: {e}")
+        return None
     if result.get("ok"):
         print(f"✅ Posted to Telegram chat {target}")
         return result

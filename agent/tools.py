@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .config import ROOT
+from .prompts import PLATFORM_TOOLS
 
 # Make the standalone scripts importable as plain modules.
 SCRIPTS_DIR = ROOT / "scripts"
@@ -295,9 +296,19 @@ def _slugify(text: str) -> str:
 class ToolBox:
     """Stateful dispatcher: holds config + profile, runs tool calls."""
 
+    # Tools that are always permitted regardless of the brand profile.
+    UTILITY_TOOLS = {"web_search", "fetch_url", "save_article", "generate_card"}
+
     def __init__(self, config, profile: dict[str, Any]):
         self.config = config
         self.profile = profile or {}
+        # The profile's `platforms` list is an allowlist: only those channels'
+        # posting tools may run, so a misaligned/injected model can't publish
+        # to a channel the brand didn't enable.
+        enabled = self.profile.get("platforms", [])
+        self._allowed_tools = self.UTILITY_TOOLS | {
+            PLATFORM_TOOLS[p] for p in enabled if p in PLATFORM_TOOLS
+        }
         self._handlers: dict[str, Callable[[dict], str]] = {
             "web_search": self._web_search,
             "fetch_url": self._fetch_url,
@@ -319,6 +330,13 @@ class ToolBox:
         handler = self._handlers.get(name)
         if handler is None:
             return f"ERROR: unknown tool '{name}'."
+
+        if name not in self._allowed_tools:
+            enabled = ", ".join(self.profile.get("platforms", [])) or "none"
+            return (
+                f"ERROR: '{name}' is not enabled for this brand profile "
+                f"(allowed channels: {enabled}). Skip it."
+            )
 
         # Enforce hard limits even in dry-run, so rehearsals catch problems.
         limit_error = self._check_limits(name, tool_input)
@@ -391,7 +409,12 @@ class ToolBox:
 
         markdown = args.get("markdown")
         if not markdown and args.get("draft_path"):
-            markdown = Path(args["draft_path"]).read_text(encoding="utf-8")
+            # draft_path comes from model output — never read outside drafts/.
+            draft_path = Path(args["draft_path"]).expanduser().resolve()
+            drafts_root = DRAFTS_DIR.resolve()
+            if drafts_root != draft_path and drafts_root not in draft_path.parents:
+                return f"ERROR: draft_path must be inside {drafts_root}."
+            markdown = draft_path.read_text(encoding="utf-8")
         if not markdown:
             return "ERROR: provide either draft_path or markdown."
 

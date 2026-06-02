@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.0.4 — Review hardening (security + robustness)
+
+Addresses the automated code review on PR #1.
+
+### Security
+- **Profile allowlist is now enforced at execution** (`ToolBox.dispatch`), not
+  just suggested in the prompt — a misaligned/injected model can no longer post
+  to a channel the brand profile didn't enable.
+- **`publish_blog` draft_path is sandboxed** to `content/drafts/` — model output
+  can no longer make the agent read arbitrary local files.
+- **Wizard hides the API key** (`getpass`) and **validates the profile name**
+  against path traversal.
+- **SearXNG binds to loopback** (`127.0.0.1`) by default instead of all
+  interfaces.
+- **Release builder packages from `git archive HEAD`**, so untracked local
+  secrets can never leak into the Gumroad zip.
+
+### Robustness
+- `base_url` is scoped to the active provider (an `OPENAI_BASE_URL` no longer
+  bleeds into Anthropic/Ollama runs).
+- All channel posters (Slack, Discord, Telegram, Mastodon, webhook) now catch
+  `requests.RequestException` instead of crashing.
+- Telegram no longer defaults to HTML parse mode (plain text by default), so
+  messages with `<`, `>`, `&` don't fail to send.
+- Mastodon char-limit env parsing and the webhook `--extra` JSON parsing are
+  guarded against bad input.
+- Bumped `Pillow>=11.0.0` to avoid known 10.x advisories; removed an unused
+  import; workflow only stages the (non-ignored) topic queue and uses clearer
+  dry-run logic.
+
 ## 2.0.3 — Permanent OpenClaw install
 
 ### Added

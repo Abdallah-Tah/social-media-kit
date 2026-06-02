@@ -97,11 +97,14 @@ class AgentConfig:
         )
 
         api_key = _provider_api_key(prov, prov_settings)
-        base_url = (
-            prov_settings.get("base_url")
-            or os.environ.get("OPENAI_BASE_URL")
-            or (os.environ.get("OLLAMA_BASE_URL") if prov == "ollama" else None)
-        )
+        # Only consult the env base URL for the *active* provider, so an
+        # OPENAI_BASE_URL can't silently redirect an Anthropic/Ollama run.
+        env_base_urls = {
+            "anthropic": os.environ.get("ANTHROPIC_BASE_URL"),
+            "openai": os.environ.get("OPENAI_BASE_URL"),
+            "ollama": os.environ.get("OLLAMA_BASE_URL"),
+        }
+        base_url = prov_settings.get("base_url") or env_base_urls.get(prov)
 
         return cls(
             provider=prov,

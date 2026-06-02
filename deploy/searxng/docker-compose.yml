@@ -10,11 +10,14 @@ services:
     image: searxng/searxng:latest
     container_name: smkit-searxng
     ports:
-      - "8888:8080"
+      # Bound to loopback so the unauthenticated instance isn't exposed on the
+      # network. Change to "8888:8080" only if you intend to share it (then
+      # enable the limiter in searxng/settings.yml).
+      - "127.0.0.1:8888:8080"
     volumes:
       - ./searxng:/etc/searxng:rw
     environment:
-      - SEARXNG_BASE_URL=http://localhost:8888/
+      - SEARXNG_BASE_URL=http://127.0.0.1:8888/
     restart: unless-stopped
     cap_drop:
       - ALL

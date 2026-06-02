@@ -68,14 +68,22 @@ jobs:
           MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: |
-          DRY="${{ github.event.inputs.dry_run }}"
-          PROFILE="${{ github.event.inputs.profile || 'default' }}"
+          EVENT="${{ github.event_name }}"
+          DRY_INPUT="${{ github.event.inputs.dry_run }}"
+          GO_LIVE="${{ vars.GO_LIVE }}"
+          PROFILE="${{ github.event.inputs.profile }}"
+          PROFILE="${PROFILE:-default}"
           FLAGS="--yes --profile $PROFILE"
-          if [ "$DRY" = "true" ] || [ -z "$DRY" -a "${{ github.event_name }}" = "schedule" ] && [ -z "${{ vars.GO_LIVE }}" ]; then
-            FLAGS="$FLAGS --dry-run"
+          # Scheduled runs are dry-run unless the repo var GO_LIVE is set.
+          # Manual runs honour the dry_run toggle (default true).
+          if [ "$EVENT" = "schedule" ]; then
+            if [ -z "$GO_LIVE" ]; then FLAGS="$FLAGS --dry-run"; fi
+          else
+            if [ "$DRY_INPUT" != "false" ]; then FLAGS="$FLAGS --dry-run"; fi
           fi
-          if [ -n "${{ github.event.inputs.topic }}" ]; then
-            python -m agent run --topic "${{ github.event.inputs.topic }}" $FLAGS
+          TOPIC="${{ github.event.inputs.topic }}"
+          if [ -n "$TOPIC" ]; then
+            python -m agent run --topic "$TOPIC" $FLAGS
           else
             python -m agent queue config/topics.txt $FLAGS
           fi
@@ -85,6 +93,7 @@ jobs:
         run: |
           git config user.name "social-media-agent[bot]"
           git config user.email "bot@users.noreply.github.com"
-          git add config/topics.txt config/topics.txt.done 2>/dev/null || true
+          # topics.txt.done is gitignored; only the queue file needs committing.
+          git add config/topics.txt
           git commit -m "chore: consume topic from queue" || echo "nothing to commit"
           git push || echo "nothing to push"

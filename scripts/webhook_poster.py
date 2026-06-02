@@ -36,7 +36,11 @@ def post(text, url=None, extra=None):
     if WEBHOOK_AUTH_HEADER:
         headers["Authorization"] = WEBHOOK_AUTH_HEADER
 
-    resp = requests.post(target, json=payload, headers=headers, timeout=15)
+    try:
+        resp = requests.post(target, json=payload, headers=headers, timeout=15)
+    except requests.RequestException as e:
+        print(f"❌ Webhook request failed: {e}")
+        return None
     if resp.ok:
         print(f"✅ Posted to webhook ({resp.status_code})")
         return {"ok": True, "status": resp.status_code}
@@ -51,7 +55,13 @@ def main():
     parser.add_argument("--extra", "-e", help="Extra JSON to merge into payload")
     args = parser.parse_args()
     if args.text:
-        extra = json.loads(args.extra) if args.extra else None
+        extra = None
+        if args.extra:
+            try:
+                extra = json.loads(args.extra)
+            except json.JSONDecodeError as e:
+                print(f"❌ --extra is not valid JSON: {e}")
+                return
         post(args.text, url=args.url, extra=extra)
     else:
         parser.print_help()

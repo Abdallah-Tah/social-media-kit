@@ -17,8 +17,9 @@ mkdir -p "$STAGE"
 
 echo "📦 Building ${NAME}.zip ..."
 
-# Portable copy (no rsync dependency), then prune what buyers shouldn't get.
-cp -r "$ROOT/." "$STAGE/"
+# Export ONLY git-tracked files, so no untracked local secret (a stray .env,
+# PEM key, scratch export, etc.) can ever land in the release archive.
+git -C "$ROOT" archive --format=tar HEAD | tar -xf - -C "$STAGE"
 rm -rf \
   "$STAGE/.git" \
   "$STAGE/dist" \

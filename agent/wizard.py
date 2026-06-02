@@ -10,6 +10,8 @@ isn't available it prints guidance and exits without clobbering anything.
 """
 from __future__ import annotations
 
+import getpass
+import re
 import sys
 
 import yaml
@@ -72,13 +74,19 @@ def run_wizard() -> int:
     secrets: dict[str, str] = {}
     key_name = PROVIDER_KEYS[provider]
     if key_name:
-        api_key = _ask(f"\n2) Paste your {key_name} (input hidden? no — be careful)")
+        try:
+            api_key = getpass.getpass(f"\n2) Paste your {key_name} (hidden): ").strip()
+        except EOFError:
+            api_key = ""
         if api_key:
             secrets[key_name] = api_key
 
     # ── Brand profile ───────────────────────────────────────────────────
     print("\n3) Brand profile")
     pname = _ask("Profile name", "default")
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", pname):
+        print("❌ Profile names may only contain letters, numbers, '-' and '_'.")
+        return 1
     brand = _ask("Brand / author name", "My Brand")
     tone = _ask("Voice / tone", "clear, practical, and friendly")
     audience = _ask("Target audience", "developers and tech builders")

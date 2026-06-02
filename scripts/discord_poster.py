@@ -23,7 +23,11 @@ def post_message(content, username=None):
     if username:
         payload["username"] = username
 
-    resp = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=15)
+    try:
+        resp = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=15)
+    except requests.RequestException as e:
+        print(f"❌ Discord request failed: {e}")
+        return None
     if resp.status_code in (200, 204):
         print("✅ Posted to Discord")
         return {"ok": True}
