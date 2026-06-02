@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.6 — Re-review fixes (round 2)
+
+- `ToolBox`: register a `finish` handler and allow it through the channel
+  allowlist, so a direct `dispatch("finish")` terminates cleanly (the loop
+  itself still intercepts `finish` upstream).
+- `install_skill`: validate the skills directory before `mkdir` — return a
+  clean error instead of an uncaught traceback when the path is a file.
+
 ## 2.0.5 — Re-review fixes
 
 - **🔴 Workflow script-injection hardening**: `scheduled-run.yml` now passes

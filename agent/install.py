@@ -64,7 +64,14 @@ def install_skill(
             "  smkit install-skill --skills-dir ~/.openclaw/skills"
         )
 
-    target_root.mkdir(parents=True, exist_ok=True)
+    # Fail cleanly if the target (or a parent) exists but isn't a directory,
+    # instead of letting mkdir raise an uncaught OSError.
+    if target_root.exists() and not target_root.is_dir():
+        return False, f"{target_root} exists but is not a directory."
+    try:
+        target_root.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return False, f"Could not create skills directory {target_root}: {exc}"
     dest = target_root / SKILL_NAME
 
     # Handle an existing destination.

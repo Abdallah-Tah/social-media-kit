@@ -297,7 +297,11 @@ class ToolBox:
     """Stateful dispatcher: holds config + profile, runs tool calls."""
 
     # Tools that are always permitted regardless of the brand profile.
-    UTILITY_TOOLS = {"web_search", "fetch_url", "save_article", "generate_card"}
+    # `finish` is included so a direct dispatch("finish") terminates cleanly;
+    # in the normal loop the orchestrator intercepts it before dispatch.
+    UTILITY_TOOLS = {
+        "web_search", "fetch_url", "save_article", "generate_card", "finish",
+    }
 
     def __init__(self, config, profile: dict[str, Any]):
         self.config = config
@@ -323,7 +327,13 @@ class ToolBox:
             "post_mastodon": self._post_mastodon,
             "post_webhook": self._post_webhook,
             "generate_card": self._generate_card,
+            "finish": self._finish,
         }
+
+    @staticmethod
+    def _finish(args: dict) -> str:
+        """Signal task completion (normally handled by the orchestrator)."""
+        return f"FINISHED: {args.get('summary', 'Task complete.')}"
 
     def dispatch(self, name: str, tool_input: dict[str, Any]) -> str:
         """Run a tool call and return a string result for the model."""
