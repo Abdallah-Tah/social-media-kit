@@ -40,10 +40,23 @@ Most "social media tools" are dumb schedulers — *you* still write everything. 
 
 ---
 
+## Requirements
+
+You need **one working LLM** — the agent uses it to research and write. Pick any:
+
+- A **Claude** (`ANTHROPIC_API_KEY`) or **OpenAI** (`OPENAI_API_KEY`) key, **or**
+- **Ollama Cloud** — set `OLLAMA_BASE_URL` + `OLLAMA_API_KEY` and use a `:cloud` model, **or**
+- **Local Ollama** — free/offline, but the model needs enough RAM (an 8B model wants ~8 GB; small boxes/Raspberry Pi should use Ollama Cloud or a tiny model).
+
+> **Note:** `--dry-run` skips *publishing* (no posts go live), **not** *generation* —
+> it still calls your LLM to write the content. So a fake/empty key returns a 401.
+> Use a real key, Ollama Cloud, or a local model that fits in memory.
+
 ## Quick Start
 
 ```bash
-# 1. Install
+# 1. Install (a virtualenv avoids PEP 668 "externally-managed" errors)
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .            # gives you the `smkit` command
 npm install                 # optional: HTML→PNG social cards
@@ -57,6 +70,14 @@ smkit doctor                # shows which providers + channels are ready
 # 4. Run — rehearse, then ship
 smkit run --topic "Your topic" --dry-run
 smkit run --topic "Your topic" --yes
+```
+
+**No API key? Use Ollama Cloud** (cheap, no local RAM needed):
+
+```bash
+export OLLAMA_BASE_URL=https://ollama.com/v1
+export OLLAMA_API_KEY=your_ollama_cloud_key
+smkit run --topic "Your topic" --provider ollama --model deepseek-v4-flash:cloud --dry-run
 ```
 
 No `smkit` command? Use `python -m agent ...` — identical.
@@ -78,8 +99,8 @@ smkit run --goal "Compare Postgres vs SQLite for small apps; post to X and Linke
 # Use a specific brand profile
 smkit run --topic "..." --profile client-acme
 
-# Run locally with no API key
-smkit run --topic "..." --provider ollama --dry-run
+# Run on a local Ollama model (free; needs enough RAM for the model)
+smkit run --topic "..." --provider ollama --model llama3.1 --dry-run
 
 # Pull the next topic from the queue (for scheduled jobs)
 smkit queue config/topics.txt --yes
@@ -110,7 +131,8 @@ Set it in `config/agent.yaml` or per-run with `--provider`.
 |----------|----------|-----|
 | `anthropic` | Highest-quality writing | `ANTHROPIC_API_KEY` |
 | `openai` | OpenAI / OpenRouter / compatible | `OPENAI_API_KEY` (+ `OPENAI_BASE_URL`) |
-| `ollama` | Fully local & free, offline | none — runs at `localhost:11434` |
+| `ollama` (local) | Free & offline; needs RAM for the model | none — runs at `localhost:11434` |
+| `ollama` (cloud) | No local RAM; cheap hosted models | `OLLAMA_API_KEY` + `OLLAMA_BASE_URL=https://ollama.com/v1`, use a `:cloud` model |
 
 The LLM layer talks plain HTTP — **no SDK required** for any provider.
 

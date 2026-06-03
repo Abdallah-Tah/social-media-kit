@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.4.1 — Honest docs + dashboard polish (pre-market QA fixes)
+
+From an external validation pass:
+- **Docs corrected**: `--dry-run` skips *publishing*, not *generation* — it
+  still needs a working LLM, so a fake/empty key returns 401. README and the
+  Gumroad kit now say this plainly and list the LLM requirement up front.
+- **Install**: recommend a **virtualenv** (`python -m venv`) to avoid PEP 668
+  "externally-managed" errors on modern Python.
+- **Ollama Cloud quickstart** documented (no local RAM needed) in README,
+  provider table, and the Gumroad requirements.
+- **Dashboard**: a busy port now prints a friendly "already in use → try
+  --port 8801" message instead of a traceback.
+
 ## 2.4.0 — Web dashboard, Repurpose Studio, Reddit + Pinterest
 
 ### Added

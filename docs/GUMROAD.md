@@ -66,8 +66,11 @@ every channel — on Claude, OpenAI, or your own local model.*
 
 ## 5. Requirements (list these on the page)
 
-- Python 3.10+
-- An LLM: a Claude/OpenAI key **or** local Ollama (free)
+- Python 3.10+ (install in a virtualenv — `python -m venv .venv`)
+- **One working LLM** — a Claude/OpenAI key, **Ollama Cloud** (cheap, no local
+  RAM), or **local Ollama** (free, but the model needs enough RAM). Be honest on
+  the page: `--dry-run` skips *publishing*, not *generation* — it still needs a
+  real model, so a fake/empty key fails with a 401.
 - Optional: Node.js (for HTML→PNG cards), Docker (for self-hosted SearXNG)
 
 ## 6. Screenshots / GIF to capture
@@ -143,7 +146,7 @@ Reports on selling code on Gumroad are consistent — at $39–79 buyers expect:
 ## 9b. Pre-launch checklist
 
 - [ ] `bash scripts/make_release.sh` runs clean; archive has **no** secrets.
-- [ ] Fresh-machine test: unzip → `pip install -r requirements.txt && pip install -e .` → `smkit wizard` → `smkit run --dry-run`.
+- [ ] Fresh-machine test in a venv: unzip → `python -m venv .venv && source .venv/bin/activate` → `pip install -r requirements.txt && pip install -e .` → `smkit wizard` → `smkit run --topic "..." --dry-run` with a **real** key or Ollama Cloud.
 - [ ] README's Quick Start works verbatim.
 - [ ] Dry-run GIF + 3 screenshots uploaded.
 - [ ] EULA attached; price + tiers set.

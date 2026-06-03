@@ -148,7 +148,19 @@ def _make_handler():
 
 
 def serve(host="127.0.0.1", port=8800):
-    server = ThreadingHTTPServer((host, port), _make_handler())
+    try:
+        server = ThreadingHTTPServer((host, port), _make_handler())
+    except OSError as exc:
+        # Most common cause: the port is already taken (dashboard already up).
+        if exc.errno in (48, 98):  # EADDRINUSE (macOS / Linux)
+            print(
+                f"⚠️  Port {port} is already in use — the dashboard may already be "
+                f"running at http://{host}:{port}.\n"
+                f"   Open it, or start another on a free port: smkit dashboard --port 8801"
+            )
+            return
+        print(f"❌ Could not start the dashboard: {exc}")
+        return
     print(f"🌐 Dashboard at http://{host}:{port}  (Ctrl+C to stop)")
     try:
         server.serve_forever()
