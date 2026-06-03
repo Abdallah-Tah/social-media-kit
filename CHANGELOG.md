@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.4.0 — Web dashboard, Repurpose Studio, Reddit + Pinterest
+
+### Added
+- **Web dashboard** (`smkit dashboard`) — a local browser control panel built on
+  Python's stdlib (zero new dependencies): trigger runs, repurpose a URL,
+  preview drafts, and browse history. Binds to localhost.
+- **Repurpose Studio** (`smkit repurpose <url|file>`) — turn one existing
+  article/transcript/note into platform-native posts for every channel in your
+  voice, without fresh research. The "create once, distribute everywhere"
+  workflow schedulers don't offer.
+- **Reddit** (script-app OAuth, self posts) and **Pinterest** (API v5 Pins)
+  publishers, wired into the agent, doctor, wizard, and secrets template.
+
+### Notes
+- Test suite now 40 cases (incl. a live dashboard HTTP test), all green.
+- Dockerfile exposes 8800 for the dashboard.
+
 ## 2.3.0 — Brand DNA, dedupe, native blogs, pro polish
 
 ### Added

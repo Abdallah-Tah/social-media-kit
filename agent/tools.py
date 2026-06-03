@@ -273,6 +273,39 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "post_reddit",
+        "description": (
+            "Submit a Reddit self-post. Provide a concise `title` (<= 300 chars) and a "
+            "markdown `text` body. Targets the configured subreddit unless you pass one."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "text": {"type": "string"},
+                "subreddit": {"type": "string", "description": "Optional subreddit (no r/)."},
+            },
+            "required": ["title", "text"],
+        },
+    },
+    {
+        "name": "post_pinterest",
+        "description": (
+            "Create a Pinterest Pin. Needs a PUBLIC `image_url` (use the cover url). "
+            "Provide a `title` and `description`, and optionally a `link`."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "description": {"type": "string"},
+                "image_url": {"type": "string", "description": "PUBLIC image URL (required)."},
+                "link": {"type": "string", "description": "Optional destination link."},
+            },
+            "required": ["title", "image_url"],
+        },
+    },
+    {
         "name": "post_webhook",
         "description": (
             "Post to ANY platform via a generic HTTP webhook (Zapier, Make, "
@@ -352,6 +385,8 @@ PUBLISHING_TOOLS = {
     "post_mastodon",
     "post_bluesky",
     "post_threads",
+    "post_reddit",
+    "post_pinterest",
     "post_webhook",
 }
 
@@ -397,6 +432,8 @@ class ToolBox:
             "post_mastodon": self._post_mastodon,
             "post_bluesky": self._post_bluesky,
             "post_threads": self._post_threads,
+            "post_reddit": self._post_reddit,
+            "post_pinterest": self._post_pinterest,
             "post_webhook": self._post_webhook,
             "generate_card": self._generate_card,
             "generate_cover": self._generate_cover,
@@ -609,6 +646,28 @@ class ToolBox:
         return self._capture(
             "Threads",
             lambda: threads_poster.post(args["text"], image_url=args.get("image_url")),
+        )
+
+    def _post_reddit(self, args: dict) -> str:
+        import reddit_poster
+
+        return self._capture(
+            "Reddit",
+            lambda: reddit_poster.post(
+                args["title"], text=args.get("text", ""),
+                subreddit=args.get("subreddit"),
+            ),
+        )
+
+    def _post_pinterest(self, args: dict) -> str:
+        import pinterest_poster
+
+        return self._capture(
+            "Pinterest",
+            lambda: pinterest_poster.post(
+                args["title"], description=args.get("description", ""),
+                image_url=args.get("image_url"), link=args.get("link"),
+            ),
         )
 
     def _post_webhook(self, args: dict) -> str:

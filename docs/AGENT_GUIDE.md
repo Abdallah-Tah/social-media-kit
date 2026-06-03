@@ -32,6 +32,8 @@ agent/
 ├── config.py         # secrets loader, agent.yaml, brand profiles
 ├── wizard.py         # interactive setup
 ├── learn.py          # brand-DNA: build a profile from a website
+├── repurpose.py      # turn one source into native posts everywhere
+├── dashboard.py      # stdlib web control panel (smkit dashboard)
 ├── history.py        # published-posts log + dedupe
 ├── install.py        # OpenClaw / Claude Code skill installer
 └── openclaw_skill.py # OpenClaw / framework adapter
@@ -92,6 +94,17 @@ agent will not post anywhere it doesn't list. Run multiple brands by passing
 - Every real (non-dry-run) `run` is logged to `content/published.json`. The
   agent **won't re-publish a topic you've already shipped** unless you pass
   `--force`. View the log with `smkit history`.
+
+## Repurpose & dashboard
+
+- **`smkit repurpose <url|file>`** reads one existing piece (article, blog post,
+  transcript, notes) and rewrites it into platform-native posts for every
+  channel in the profile — no fresh research. "Create once, distribute
+  everywhere." Honors dry-run and the channel allowlist like `run`.
+- **`smkit dashboard`** starts a local browser control panel (stdlib only) at
+  http://127.0.0.1:8800 — trigger runs, repurpose, preview drafts, and browse
+  history without the CLI. It binds to localhost; it *can* publish live, so
+  don't expose it to the network unintentionally.
 
 ## Blog platforms
 

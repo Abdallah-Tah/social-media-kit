@@ -21,6 +21,8 @@ PLATFORM_TOOLS = {
     "mastodon": "post_mastodon",
     "bluesky": "post_bluesky",
     "threads": "post_threads",
+    "reddit": "post_reddit",
+    "pinterest": "post_pinterest",
     "webhook": "post_webhook",
 }
 
@@ -115,3 +117,18 @@ def build_goal(topic: str | None, goal: str | None, profile: dict) -> str:
             f"posts to these channels: {platforms}. Follow the full routine."
         )
     raise ValueError("Provide either a --topic or an explicit --goal.")
+
+
+def build_repurpose_goal(source_text: str, source_ref: str, profile: dict) -> str:
+    """Goal for turning ONE existing piece into native posts for every channel."""
+    platforms = ", ".join(profile.get("platforms", ["x", "linkedin"]))
+    # Cap the source so it fits comfortably in the opening message.
+    snippet = source_text[:6000]
+    return (
+        "REPURPOSE MODE. You are given an existing piece of content below. Do NOT "
+        "do fresh web research — work only from this source. Extract its key ideas "
+        "and rewrite them as platform-native posts (correct length, tone, and "
+        "hashtags per channel) in the brand voice, then publish to these channels: "
+        f"{platforms}. Adapt, don't copy verbatim. Skip the blog unless it is in "
+        f"that channel list.\n\nSOURCE ({source_ref}):\n\"\"\"\n{snippet}\n\"\"\""
+    )

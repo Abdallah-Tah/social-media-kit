@@ -26,10 +26,12 @@ Most "social media tools" are dumb schedulers — *you* still write everything. 
 ```
 
 - 🧠 **Provider-agnostic brain** — Claude (`claude-opus-4-8` / `claude-sonnet-4-6`), any OpenAI-compatible API (OpenAI, OpenRouter, …), or **local Ollama** with no API key.
-- 🌐 **Publishes anywhere** — Blog (Laravel/WordPress/Ghost), X, LinkedIn, Facebook, Slack, Discord, Telegram, Mastodon, **Bluesky, Threads**, and a **generic webhook** for *any* other platform (Zapier, Make, n8n, Buffer…). Images attach on X, LinkedIn, Facebook, Mastodon & Bluesky.
+- 🌐 **Publishes anywhere** — Blog (Laravel/WordPress/Ghost), X, LinkedIn, Facebook, Slack, Discord, Telegram, Mastodon, Bluesky, Threads, **Reddit, Pinterest**, and a **generic webhook** for *any* other platform (Zapier, Make, n8n, Buffer…). Images attach on X, LinkedIn, Facebook, Mastodon & Bluesky.
 - 🖼️ **Auto cover images** — generates a hero image per article via **FAL.ai** (flux-pro) or **OpenAI Images**, with a free branded-card fallback, and attaches it on publish.
 - 🎭 **Brand profiles** — run it for multiple brands/clients, each with its own voice, audience, hashtags, and allowed channels.
 - 🧬 **Brand DNA** — `smkit learn <your-site>` reads your site and auto-writes a profile in your voice. No manual setup.
+- ♻️ **Repurpose Studio** — `smkit repurpose <url|file>` turns one existing article, transcript, or note into native posts for every channel in your voice. *Create once, distribute everywhere* — the thing schedulers can't do.
+- 🖥️ **Web dashboard** — `smkit dashboard` opens a browser control panel (trigger runs, repurpose, preview drafts, browse history). Zero extra dependencies.
 - 📜 **Track record + dedupe** — every run is logged; the agent won't re-publish a topic you've already shipped.
 - 🧪 **Dry-run first** — rehearse a complete run with zero side effects, see exactly what *would* post, then go live.
 - ⏰ **Scheduled & autonomous** — a topic queue + GitHub Action publishes on a cron without you lifting a finger.
@@ -86,6 +88,8 @@ smkit queue config/topics.txt --yes
 | Command | What it does |
 |---------|--------------|
 | `smkit run` | Run the full routine on a `--topic` or `--goal` |
+| `smkit repurpose <url\|file>` | Turn one existing piece into native posts for every channel |
+| `smkit dashboard` | Launch the local web control panel (no CLI needed) |
 | `smkit learn <url>` | Build a brand profile by reading your website |
 | `smkit queue <file>` | Run the next topic from a queue file (scheduling) |
 | `smkit history` | List previously published runs (with dedupe) |
