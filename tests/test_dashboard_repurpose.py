@@ -92,6 +92,22 @@ def test_dashboard_state_endpoint(server):
     assert "profiles" in data and "history" in data and "drafts" in data
 
 
+def test_dashboard_port_in_use_is_friendly(capsys):
+    import socket
+
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    s.listen()
+    port = s.getsockname()[1]
+    try:
+        # Must return cleanly (not raise, not block) when the port is taken.
+        dashboard.serve(host="127.0.0.1", port=port)
+        out = capsys.readouterr().out
+        assert "in use" in out
+    finally:
+        s.close()
+
+
 def test_dashboard_run_dry(server):
     payload = json.dumps({"mode": "run", "input": "", "dry_run": True}).encode()
     req = urllib.request.Request(server + "/api/run", data=payload,
