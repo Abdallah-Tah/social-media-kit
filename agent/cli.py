@@ -156,6 +156,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         "Mastodon": ["MASTODON_BASE_URL", "MASTODON_ACCESS_TOKEN"],
         "Bluesky": ["BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"],
         "Threads": ["THREADS_USER_ID", "THREADS_ACCESS_TOKEN"],
+        "Reddit": ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USERNAME", "REDDIT_PASSWORD"],
+        "Pinterest": ["PINTEREST_ACCESS_TOKEN", "PINTEREST_BOARD_ID"],
         "Webhook": ["WEBHOOK_URL"],
         "Web search": ["BRAVE_API_KEY"],
         "Cover images": ["FAL_KEY"],
@@ -232,6 +234,47 @@ def cmd_learn(args: argparse.Namespace) -> int:
         return 0
     print(f"❌ {msg}")
     return 1
+
+
+def cmd_repurpose(args: argparse.Namespace) -> int:
+    """Turn one existing piece (URL or file) into native posts for every channel."""
+    from .repurpose import repurpose
+
+    config = AgentConfig.load(
+        provider=args.provider, model=args.model,
+        dry_run=args.dry_run, max_steps=args.max_steps, auto_confirm=args.yes,
+    )
+    try:
+        profile = load_profile(args.profile)
+    except FileNotFoundError as exc:
+        print(f"❌ {exc}")
+        return 1
+
+    print(f"♻️  Repurposing {args.source} → {', '.join(profile.get('platforms', []))}")
+    if not config.dry_run and not config.auto_confirm and not _confirm_live(profile):
+        print("Aborted. Re-run with --dry-run to preview safely.")
+        return 1
+
+    try:
+        result = repurpose(args.source, config, profile,
+                           on_event=_make_printer(args.verbose))
+    except ValueError as exc:
+        print(f"❌ {exc}")
+        return 1
+
+    print("=" * 60)
+    if result.ok:
+        print(f"🎉 Repurposed in {result.steps} steps.\n{result.summary}")
+        return 0
+    print(f"Ended with an error after {result.steps} steps:\n{result.error}")
+    return 1
+
+
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    from .dashboard import serve
+
+    serve(host=args.host, port=args.port)
+    return 0
 
 
 def cmd_history(args: argparse.Namespace) -> int:
@@ -357,6 +400,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_learn.add_argument("--provider", choices=["anthropic", "openai", "ollama"])
     p_learn.add_argument("--model", help="Override the model id")
     p_learn.set_defaults(func=cmd_learn)
+
+    p_rep = sub.add_parser(
+        "repurpose", help="Turn one existing URL/file into native posts everywhere"
+    )
+    p_rep.add_argument("source", help="A URL or a local file (article, transcript, notes)")
+    p_rep.add_argument("--profile", "-p", default="default")
+    p_rep.add_argument("--provider", choices=["anthropic", "openai", "ollama"])
+    p_rep.add_argument("--model")
+    p_rep.add_argument("--max-steps", type=int, default=40)
+    p_rep.add_argument("--dry-run", action="store_true", help="Preview, publish nothing")
+    p_rep.add_argument("--yes", "-y", action="store_true", help="Skip live confirmation")
+    p_rep.add_argument("--verbose", "-v", action="store_true")
+    p_rep.set_defaults(func=cmd_repurpose)
+
+    p_dash = sub.add_parser("dashboard", help="Launch the local web dashboard")
+    p_dash.add_argument("--host", default="127.0.0.1", help="Bind host (default localhost)")
+    p_dash.add_argument("--port", type=int, default=8800, help="Port (default 8800)")
+    p_dash.set_defaults(func=cmd_dashboard)
 
     p_history = sub.add_parser("history", help="List previously published runs")
     p_history.add_argument("--limit", "-n", type=int, default=20, help="How many to show")

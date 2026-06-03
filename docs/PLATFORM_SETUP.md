@@ -207,6 +207,36 @@ Two options — pick one:
 
 ---
 
+## Reddit
+
+1. Create a **script** app at https://www.reddit.com/prefs/apps (type: *script*).
+2. Set:
+   ```
+   REDDIT_CLIENT_ID=
+   REDDIT_CLIENT_SECRET=
+   REDDIT_USERNAME=
+   REDDIT_PASSWORD=
+   REDDIT_SUBREDDIT=test
+   REDDIT_USER_AGENT=social-media-agent by u/yourname
+   ```
+   Posts a self (text) post to the target subreddit. Respect each subreddit's
+   self-promotion rules.
+
+---
+
+## Pinterest
+
+1. Create an app and access token at https://developers.pinterest.com/ and grab
+   a board id.
+2. Set:
+   ```
+   PINTEREST_ACCESS_TOKEN=
+   PINTEREST_BOARD_ID=
+   ```
+   A Pin needs a **public image URL** — the agent uses the generated cover URL.
+
+---
+
 ## Any other platform (Generic Webhook)
 
 For Zapier, Make, n8n, Buffer, a custom CMS, or an internal service:

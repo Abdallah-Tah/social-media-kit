@@ -20,6 +20,9 @@ COPY README.md ./
 RUN pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir .
 
+# The web dashboard listens here (run: docker run -p 8800:8800 ... dashboard --host 0.0.0.0).
+EXPOSE 8800
+
 # `smkit` is the entrypoint; pass subcommands as args.
 ENTRYPOINT ["smkit"]
 CMD ["--help"]

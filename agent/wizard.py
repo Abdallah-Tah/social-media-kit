@@ -29,8 +29,8 @@ DEFAULT_MODELS = {
     "ollama": "llama3.1",
 }
 ALL_CHANNELS = [
-    "blog", "facebook", "x", "linkedin",
-    "slack", "discord", "telegram", "mastodon", "bluesky", "threads", "webhook",
+    "blog", "facebook", "x", "linkedin", "slack", "discord", "telegram",
+    "mastodon", "bluesky", "threads", "reddit", "pinterest", "webhook",
 ]
 
 

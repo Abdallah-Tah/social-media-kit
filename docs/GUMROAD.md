@@ -118,6 +118,14 @@ the wedge they don't have:
 Target buyers: indie devs, AI-agent builders, and small agencies who want a
 self-hosted, scriptable, multi-brand pipeline — not marketers who want a GUI.
 
+**Your wedge vs free schedulers (lead with these):**
+- **Repurpose Studio** — drop in a blog post / YouTube transcript / PDF and get
+  native posts for every channel in your voice. Schedulers make you write first;
+  this *writes for you*. This is the headline demo.
+- **Runs on your own LLM** — Claude, OpenAI, or **free local Ollama ($0/run)**.
+- **Web dashboard *and* CLI/skill** — a GUI for the casual path, automation for
+  the power user. You're not CLI-only anymore.
+
 ## 9. Trust builders (buyers of code expect these)
 
 Reports on selling code on Gumroad are consistent — at $39–79 buyers expect:
