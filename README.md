@@ -29,6 +29,8 @@ Most "social media tools" are dumb schedulers — *you* still write everything. 
 - 🌐 **Publishes anywhere** — Blog (Laravel/WordPress/Ghost), X, LinkedIn, Facebook, Slack, Discord, Telegram, Mastodon, **Bluesky, Threads**, and a **generic webhook** for *any* other platform (Zapier, Make, n8n, Buffer…). Images attach on X, LinkedIn, Facebook, Mastodon & Bluesky.
 - 🖼️ **Auto cover images** — generates a hero image per article via **FAL.ai** (flux-pro) or **OpenAI Images**, with a free branded-card fallback, and attaches it on publish.
 - 🎭 **Brand profiles** — run it for multiple brands/clients, each with its own voice, audience, hashtags, and allowed channels.
+- 🧬 **Brand DNA** — `smkit learn <your-site>` reads your site and auto-writes a profile in your voice. No manual setup.
+- 📜 **Track record + dedupe** — every run is logged; the agent won't re-publish a topic you've already shipped.
 - 🧪 **Dry-run first** — rehearse a complete run with zero side effects, see exactly what *would* post, then go live.
 - ⏰ **Scheduled & autonomous** — a topic queue + GitHub Action publishes on a cron without you lifting a finger.
 - 🔌 **OpenClaw / Claude Code skill** — ships as a `SKILL.md` so your existing agent can call it, plus a Python adapter for custom runtimes.
@@ -62,6 +64,9 @@ No `smkit` command? Use `python -m agent ...` — identical.
 ## Usage
 
 ```bash
+# Learn your brand voice from your site (writes config/profiles/default.yaml)
+smkit learn https://yoursite.com
+
 # Research + write + publish to the channels in your profile
 smkit run --topic "Python asyncio in production"
 
@@ -81,10 +86,13 @@ smkit queue config/topics.txt --yes
 | Command | What it does |
 |---------|--------------|
 | `smkit run` | Run the full routine on a `--topic` or `--goal` |
+| `smkit learn <url>` | Build a brand profile by reading your website |
 | `smkit queue <file>` | Run the next topic from a queue file (scheduling) |
+| `smkit history` | List previously published runs (with dedupe) |
 | `smkit wizard` | Interactive setup (provider, keys, brand profile) |
 | `smkit doctor` | Report configured providers and channel credentials |
 | `smkit profiles` | List your brand profiles |
+| `smkit install-skill` | Register as a permanent OpenClaw / Claude Code skill |
 
 Key flags: `--dry-run` (simulate), `--yes` (skip live confirmation), `--provider`, `--model`, `--profile`, `--max-steps`, `--verbose`.
 

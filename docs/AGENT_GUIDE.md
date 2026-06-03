@@ -31,6 +31,9 @@ agent/
 ├── prompts.py        # routine + brand profile → system prompt
 ├── config.py         # secrets loader, agent.yaml, brand profiles
 ├── wizard.py         # interactive setup
+├── learn.py          # brand-DNA: build a profile from a website
+├── history.py        # published-posts log + dedupe
+├── install.py        # OpenClaw / Claude Code skill installer
 └── openclaw_skill.py # OpenClaw / framework adapter
 scripts/              # the actual platform integrations (importable + standalone)
 skills/social-media-agent/SKILL.md  # OpenClaw + Claude Code skill manifest
@@ -80,6 +83,24 @@ Override per-run: `--provider ollama --model qwen2.5`.
 A profile is the agent's voice + guardrails. `platforms` is an allowlist — the
 agent will not post anywhere it doesn't list. Run multiple brands by passing
 `--profile <name>`.
+
+## Brand DNA & history
+
+- `smkit learn https://yoursite.com` fetches your site, asks the LLM to infer
+  your voice/audience/topics, and writes `config/profiles/<name>.yaml`. Review
+  and tweak it — it's a starting point, not gospel.
+- Every real (non-dry-run) `run` is logged to `content/published.json`. The
+  agent **won't re-publish a topic you've already shipped** unless you pass
+  `--force`. View the log with `smkit history`.
+
+## Blog platforms
+
+Set `BLOG_PLATFORM` to `generic` (default), `wordpress`, or `ghost`:
+- **generic** — POSTs JSON to `{BLOG_API_URL}/posts` (Laravel/custom).
+- **wordpress** — `BLOG_API_URL` = site root, `BLOG_API_USER` + an Application
+  Password as `BLOG_API_TOKEN`; posts via the WP REST API.
+- **ghost** — `BLOG_API_URL` = site root, `BLOG_API_TOKEN` = Admin API key
+  (`id:secret`); JWT is generated for you, posts via the Ghost Admin API.
 
 ## Dry-run vs live
 
