@@ -3,11 +3,12 @@
 
 Generates a cover/hero image for an article or post. Tries, in order:
 
-  1. FAL.ai      — flux-pro/v1.1-ultra (set FAL_KEY) — photoreal, high quality
-  2. OpenAI      — gpt-image-1 (set OPENAI_API_KEY)
-  3. Local card  — a branded Pillow card with the title (no key, always works)
+  1. Gemini      — gemini-2.5-flash-image (set GEMINI_API_KEY) — free daily quota
+  2. FAL.ai      — flux-pro/v1.1-ultra (set FAL_KEY) — photoreal, high quality
+  3. OpenAI      — gpt-image-1 (set OPENAI_API_KEY)
+  4. Local card  — a branded Pillow card with the title (no key, always works)
 
-Force one with IMAGE_PROVIDER=fal|openai|card. Returns the local file path
+Force one with IMAGE_PROVIDER=gemini|fal|openai|card. Returns the local file path
 (remote images are downloaded into content/assets/) plus the source URL when
 the provider hosts one.
 
@@ -27,13 +28,21 @@ _UA = "social-media-agent/1.0"
 
 FAL_MODEL = os.environ.get("FAL_MODEL", "fal-ai/flux-pro/v1.1-ultra")
 OPENAI_IMAGE_MODEL = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1")
+GEMINI_IMAGE_MODEL = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
 
 
 def _fal_key():
     return os.environ.get("FAL_KEY") or os.environ.get("FAL_API_KEY", "")
 
 
+def _gemini_key():
+    return os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY", "")
+
+
 def _auto_provider():
+    # Free Gemini quota first, then paid FAL/OpenAI, then offline card.
+    if _gemini_key():
+        return "gemini"
     if _fal_key():
         return "fal"
     if os.environ.get("OPENAI_API_KEY"):
@@ -63,6 +72,46 @@ def _download(url, out_path):
 
 
 # ── Providers ────────────────────────────────────────────────────────────
+def _generate_gemini(prompt, out_path):
+    """Google Gemini image generation (free daily quota). Returns inline PNG."""
+    key = _gemini_key()
+    if not key:
+        return None
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{GEMINI_IMAGE_MODEL}:generateContent"
+    )
+    try:
+        resp = requests.post(
+            url,
+            headers={"x-goog-api-key": key, "Content-Type": "application/json"},
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"responseModalities": ["IMAGE"]},
+            },
+            timeout=120,
+        )
+        if not resp.ok:
+            print(f"❌ Gemini image error ({resp.status_code}): {resp.text[:200]}")
+            return None
+        parts = (
+            (resp.json().get("candidates") or [{}])[0]
+            .get("content", {})
+            .get("parts", [])
+        )
+        for part in parts:
+            inline = part.get("inlineData") or part.get("inline_data")
+            if inline and inline.get("data"):
+                path = _save_bytes(base64.b64decode(inline["data"]), out_path)
+                print(f"✅ Cover generated via Gemini: {path}")
+                return {"path": path, "url": None, "provider": "gemini"}
+        print("❌ Gemini returned no image (likely quota or modality); falling back.")
+        return None
+    except requests.RequestException as e:
+        print(f"❌ Gemini request failed: {e}")
+        return None
+
+
 def _generate_fal(prompt, out_path, aspect_ratio="16:9"):
     key = _fal_key()
     if not key:
@@ -154,10 +203,11 @@ def generate_cover(title, prompt=None, out_path=None, provider=None,
         out_path = os.path.join(ASSETS_DIR, f"{date.today().isoformat()}_{slug or 'cover'}.png")
 
     order = {
-        "fal": [_g_fal, _g_openai, _g_card],
-        "openai": [_g_openai, _g_fal, _g_card],
+        "gemini": [_g_gemini, _g_fal, _g_openai, _g_card],
+        "fal": [_g_fal, _g_gemini, _g_openai, _g_card],
+        "openai": [_g_openai, _g_gemini, _g_fal, _g_card],
         "card": [_g_card],
-    }.get(provider, [_g_fal, _g_openai, _g_card])
+    }.get(provider, [_g_gemini, _g_fal, _g_openai, _g_card])
 
     for fn in order:
         result = fn(title, prompt, out_path, branding)
@@ -167,6 +217,10 @@ def generate_cover(title, prompt=None, out_path=None, provider=None,
 
 
 # Thin adapters so the fallback chain can call all providers uniformly.
+def _g_gemini(title, prompt, out_path, branding):
+    return _generate_gemini(prompt, out_path)
+
+
 def _g_fal(title, prompt, out_path, branding):
     return _generate_fal(prompt, out_path)
 
@@ -184,7 +238,7 @@ def main():
     parser.add_argument("title", help="Article/post title")
     parser.add_argument("--prompt", "-p", help="Override the image prompt")
     parser.add_argument("--out", "-o", help="Output PNG path")
-    parser.add_argument("--provider", choices=["fal", "openai", "card"])
+    parser.add_argument("--provider", choices=["gemini", "fal", "openai", "card"])
     args = parser.parse_args()
 
     result = generate_cover(
