@@ -51,7 +51,8 @@ def write_script(title, excerpt, body):
         "(Build With Abdallah). Given the article, return STRICT JSON:\n"
         '{"narration":"<55-80 words, spoken, punchy hook first, ends with '
         '\'Follow Build With Abdallah for the full guide\'>",'
-        '"captions":["<4 short on-screen lines, <=6 words each>"]}\n\n'
+        '"captions":["<4 short on-screen lines, <=6 words each>"],'
+        '"hashtags":["<6-9 relevant hashtags incl #BuildWithAbdallah, each starting with #>"]}\n\n'
         f"TITLE: {title}\nEXCERPT: {excerpt}\nARTICLE (start): {(body or '')[:1200]}"
     )
 
@@ -59,8 +60,11 @@ def write_script(title, excerpt, body):
         s = txt[txt.find("{"): txt.rfind("}") + 1]
         obj = json.loads(s)
         caps = [c.strip() for c in obj.get("captions", []) if c.strip()][:4]
+        tags = [("#" + h.lstrip("#").strip()) for h in obj.get("hashtags", []) if h.strip()][:9]
+        if not any(t.lower() == "#buildwithabdallah" for t in tags):
+            tags.append("#BuildWithAbdallah")
         if obj.get("narration") and caps:
-            return obj["narration"].strip(), caps
+            return obj["narration"].strip(), caps, tags
         return None
 
     # 1) Fast path: OpenAI gpt-4o-mini (tiny call, a fraction of a cent)
@@ -93,7 +97,8 @@ def write_script(title, excerpt, body):
     # Fallback
     return (f"{title}. {excerpt} Follow Build With Abdallah for the full guide.",
             [title[:40], "Practical, production-ready", "Real code, real sources",
-             "Full guide → buildwithabdallah.com"])
+             "Full guide → buildwithabdallah.com"],
+            ["#AI", "#Laravel", "#PHP", "#WebDevelopment", "#BuildWithAbdallah"])
 
 
 def get_cover(post, work):
@@ -129,8 +134,8 @@ def main():
     if not cover:
         print("❌ no cover image available for this article"); sys.exit(1)
 
-    narration, captions = write_script(title, post.get("excerpt") or "", post.get("body") or "")
-    print(f"  narration: {narration[:90]}…\n  captions: {captions}")
+    narration, captions, hashtags = write_script(title, post.get("excerpt") or "", post.get("body") or "")
+    print(f"  narration: {narration[:90]}…\n  captions: {captions}\n  hashtags: {hashtags}")
 
     out = args.out or os.path.join(os.path.expanduser("~/social-media-kit"),
                                    "content/assets", f"reel_{slug[:40]}.mp4")
@@ -138,8 +143,8 @@ def main():
     if not reel:
         print("❌ reel build failed"); sys.exit(1)
 
-    caption = (f"{title}\n\n{post.get('excerpt','')}\n\nFull guide 👉 {url}\n"
-               "#AI #Laravel #BuildWithAbdallah")
+    caption = (f"{title}\n\n{post.get('excerpt','')}\n\nFull guide 👉 {url}\n\n"
+               + " ".join(hashtags))
     state = "PUBLISHED" if args.publish else "DRAFT"
     res = FB.publish_reel(reel["path"], description=caption, state=state, poll=False)
     if not res:
