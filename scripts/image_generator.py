@@ -52,9 +52,11 @@ def _auto_provider():
 
 def _default_prompt(title):
     return (
-        f"Professional, modern blog cover illustration for an article titled "
-        f"\"{title}\". Clean, high-contrast, editorial tech aesthetic, no text, "
-        f"no watermark, 16:9 composition."
+        f"Professional, modern editorial blog cover illustration representing the theme of: "
+        f"\"{title}\". Clean flat-vector tech aesthetic, dark navy background with blue and "
+        f"orange accents, high contrast, generous empty negative space in the lower third for "
+        f"a title overlay. ABSOLUTELY NO TEXT, no words, no letters, no numbers, no labels, no "
+        f"logos, no UI mockups, no watermark — imagery only. 16:9 composition."
     )
 
 
@@ -193,6 +195,110 @@ def _generate_card(title, out_path, branding=None):
     return {"path": path, "url": None, "provider": "card"}
 
 
+def _add_title_overlay(image_path, title, branding=None):
+    """Composite a clean, readable title + gradient scrim onto an AI image.
+
+    AI image models can't render real text, so we never trust them for the
+    title — we lay it on afterward with Pillow for a professional result.
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except Exception:
+        return
+    branding = branding or {}
+    accent = branding.get("accent_color", "#2563eb")
+
+    def _font(sz, bold=True):
+        base = "/usr/share/fonts/truetype/dejavu/"
+        p = base + ("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf")
+        return ImageFont.truetype(p, sz) if os.path.exists(p) else ImageFont.load_default()
+
+    try:
+        img = Image.open(image_path).convert("RGBA")
+    except Exception:
+        return
+    W, H = img.size
+
+    # Bottom-up dark gradient scrim for text contrast (transparent up top).
+    scrim = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(scrim)
+    for y in range(H):
+        t = max(0.0, (y - H * 0.40) / (H * 0.60))
+        sd.line([(0, y), (W, y)], fill=(8, 16, 32, int(235 * min(1.0, t))))
+    img = Image.alpha_composite(img, scrim)
+    d = ImageDraw.Draw(img)
+
+    pad = int(W * 0.06)
+    max_w = W - 2 * pad
+    size = int(H * 0.090)
+
+    def wrap(text, fnt):
+        words, lines, cur = text.split(), [], ""
+        for w in words:
+            t = (cur + " " + w).strip()
+            if d.textlength(t, font=fnt) <= max_w:
+                cur = t
+            else:
+                lines.append(cur); cur = w
+        if cur:
+            lines.append(cur)
+        return lines
+
+    f = _font(size)
+    lines = wrap(title, f)
+    while len(lines) > 3 and size > int(H * 0.05):
+        size = int(size * 0.9); f = _font(size); lines = wrap(title, f)
+    lh = int(size * 1.16)
+    y = H - pad - lh * len(lines)
+
+    # brand accent bar above the title
+    d.rounded_rectangle([pad, y - int(H * 0.045), pad + int(W * 0.07), y - int(H * 0.022)],
+                        radius=4, fill=accent)
+    for ln in lines:
+        d.text((pad + 2, y + 2), ln, font=f, fill=(0, 0, 0, 190))   # shadow
+        d.text((pad, y), ln, font=f, fill=(255, 255, 255, 255))
+        y += lh
+
+    # brand tag, top-right (away from the title), with a shadow for contrast
+    bf = _font(int(H * 0.032), bold=True)
+    tag = "buildwithabdallah.com"
+    tw = d.textlength(tag, font=bf)
+    tx, ty = W - pad - tw, int(pad * 0.7)
+    d.text((tx + 1, ty + 1), tag, font=bf, fill=(0, 0, 0, 170))
+    d.text((tx, ty), tag, font=bf, fill=(255, 255, 255, 225))
+
+    img.convert("RGB").save(image_path)
+
+
+def _upload_to_blog(local_path):
+    """Upload a local image to the blog media endpoint; return the hosted URL.
+
+    The site references cover_image by URL, so the title-overlaid LOCAL image
+    must be hosted (the raw AI-provider URL has no overlay). Graceful no-op if
+    the blog API isn't configured.
+    """
+    base = os.environ.get("BLOG_API_URL", "").rstrip("/")
+    tok = os.environ.get("SOCIAL_API_TOKEN") or os.environ.get("BLOG_API_TOKEN", "")
+    if not base or not tok or not os.path.exists(local_path):
+        return None
+    try:
+        with open(local_path, "rb") as f:
+            r = requests.post(
+                f"{base}/media/upload",
+                headers={"Authorization": f"Bearer {tok}", "Accept": "application/json"},
+                files={"file": (os.path.basename(local_path), f, "image/png")},
+                timeout=60,
+            )
+        if r.status_code in (200, 201):
+            url = (r.json().get("data", {}) or {}).get("url")
+            if url:
+                print(f"✅ Cover uploaded to site: {url}")
+                return url
+    except requests.RequestException as e:
+        print(f"⚠️ cover upload failed ({e}); falling back to provider URL.")
+    return None
+
+
 def generate_cover(title, prompt=None, out_path=None, provider=None,
                    branding=None):
     """Generate a cover image, falling back to a local card on failure."""
@@ -212,6 +318,13 @@ def generate_cover(title, prompt=None, out_path=None, provider=None,
     for fn in order:
         result = fn(title, prompt, out_path, branding)
         if result:
+            # AI providers can't render real text → overlay a clean, readable title,
+            # then host the overlaid image so the site cover uses it (not the raw URL).
+            if result.get("provider") in ("fal", "gemini", "openai"):
+                _add_title_overlay(result["path"], title, branding)
+                hosted = _upload_to_blog(result["path"])
+                if hosted:
+                    result["url"] = hosted
             return result
     return None
 
