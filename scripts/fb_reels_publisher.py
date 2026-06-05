@@ -17,6 +17,20 @@ import requests
 GRAPH = "https://graph.facebook.com/v21.0"
 RUPLOAD = "https://rupload.facebook.com/video-upload/v21.0"
 
+import re as _re
+
+
+def _strip_md(t):
+    if not t:
+        return t
+    t = _re.sub(r"\*\*([^*]+)\*\*", r"\1", t)
+    t = _re.sub(r"__([^_]+)__", r"\1", t)
+    t = _re.sub(r"\*([^*\n]+)\*", r"\1", t)
+    t = _re.sub(r"`([^`]+)`", r"\1", t)
+    t = _re.sub(r"^\s{0,3}#{1,6}\s+", "", t, flags=_re.M)
+    t = _re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1 \2", t)
+    return t
+
 
 def _cfg():
     return os.environ.get("FB_PAGE_ID", ""), os.environ.get("FB_PAGE_TOKEN", "")
@@ -58,7 +72,7 @@ def publish_reel(video_path, description="", state="PUBLISHED",
     params = {"upload_phase": "finish", "video_id": video_id,
               "video_state": state, "access_token": token}
     if description:
-        params["description"] = description
+        params["description"] = _strip_md(description)
     fin = requests.post(f"{GRAPH}/{page_id}/video_reels", data=params, timeout=60)
     if not fin.ok or not fin.json().get("success"):
         print(f"❌ finish phase failed ({fin.status_code}): {fin.text[:300]}")

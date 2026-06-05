@@ -54,7 +54,8 @@ def person_urn(token):
 
 def write_post(title, excerpt, body, url):
     prompt = (
-        "Write a concise professional LinkedIn post (90-150 words, first-person, strong hook "
+        "Write a concise professional LinkedIn post in PLAIN TEXT (no markdown, no ** or * or # "
+        "or backticks — LinkedIn shows them literally) (90-150 words, first-person, strong hook "
         f"first line, real value, ends with 'Read it \U0001f449 {url}'), then 5-7 relevant "
         "hashtags including #BuildWithAbdallah. Return STRICT JSON "
         '{"post":"...","hashtags":["#.."]}.\n'

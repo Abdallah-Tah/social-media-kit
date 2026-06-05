@@ -22,7 +22,7 @@ anthropic:
 openai:
   model: gpt-4o
   base_url: https://api.openai.com/v1   # or an OpenRouter / compatible URL
-  max_tokens: 4096
+  max_tokens: 8192   # room for a full, code-rich tutorial in one response
   temperature: 0.4
 
 ollama:

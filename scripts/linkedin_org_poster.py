@@ -24,6 +24,21 @@ import requests
 ORG_URN_DEFAULT = "urn:li:organization:119694084"
 LI_API = "https://api.linkedin.com/v2"
 
+import re as _re
+
+
+def strip_markdown(t):
+    """Social platforms don't render markdown — strip it to plain text."""
+    if not t:
+        return t
+    t = _re.sub(r"\*\*([^*]+)\*\*", r"\1", t)          # **bold**
+    t = _re.sub(r"__([^_]+)__", r"\1", t)              # __bold__
+    t = _re.sub(r"\*([^*\n]+)\*", r"\1", t)            # *italic*
+    t = _re.sub(r"`([^`]+)`", r"\1", t)                # `code`
+    t = _re.sub(r"^\s{0,3}#{1,6}\s+", "", t, flags=_re.M)   # # headings
+    t = _re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1 \2", t)    # [text](url)
+    return t
+
 
 def _secret(key, default=""):
     return os.environ.get(key, default)
@@ -70,6 +85,7 @@ def post_org(text, image_path=None, title="", description="", token=None, author
         if not token:
             return None
     author = author or ORG_URN_DEFAULT
+    text = strip_markdown(text)
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",

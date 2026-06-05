@@ -17,6 +17,21 @@ FB_PAGE_ID = os.environ.get("FB_PAGE_ID", "")
 FB_PAGE_TOKEN = os.environ.get("FB_PAGE_TOKEN", "")
 FB_GRAPH_VERSION = os.environ.get("FB_GRAPH_VERSION", "v21.0")
 
+import re as _re
+
+
+def _strip_md(t):
+    """Facebook doesn't render markdown — strip it to plain text."""
+    if not t:
+        return t
+    t = _re.sub(r"\*\*([^*]+)\*\*", r"\1", t)
+    t = _re.sub(r"__([^_]+)__", r"\1", t)
+    t = _re.sub(r"\*([^*\n]+)\*", r"\1", t)
+    t = _re.sub(r"`([^`]+)`", r"\1", t)
+    t = _re.sub(r"^\s{0,3}#{1,6}\s+", "", t, flags=_re.M)
+    t = _re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1 \2", t)
+    return t
+
 
 def post_text(message, link=None):
     """Post a text message (with optional link) to the Facebook Page."""
@@ -24,6 +39,7 @@ def post_text(message, link=None):
         print("❌ FB_PAGE_TOKEN not set. See docs/PLATFORM_SETUP.md")
         return None
 
+    message = _strip_md(message)
     url = f"https://graph.facebook.com/{FB_GRAPH_VERSION}/{FB_PAGE_ID}/feed"
     data = {"message": message, "access_token": FB_PAGE_TOKEN}
     if link:
@@ -46,6 +62,7 @@ def post_photo(image_path, caption="", link=None):
         print("❌ FB_PAGE_TOKEN not set. See docs/PLATFORM_SETUP.md")
         return None
 
+    caption = _strip_md(caption)
     url = f"https://graph.facebook.com/{FB_GRAPH_VERSION}/{FB_PAGE_ID}/photos"
 
     with open(image_path, "rb") as img_file:
