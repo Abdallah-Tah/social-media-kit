@@ -51,12 +51,16 @@ def _auto_provider():
 
 
 def _default_prompt(title):
+    # Purely abstract background: anything resembling screens/code/UI makes the
+    # model render garbled gibberish "text". Force atmosphere-only imagery.
     return (
-        f"Professional, modern editorial blog cover illustration representing the theme of: "
-        f"\"{title}\". Clean flat-vector tech aesthetic, dark navy background with blue and "
-        f"orange accents, high contrast, generous empty negative space in the lower third for "
-        f"a title overlay. ABSOLUTELY NO TEXT, no words, no letters, no numbers, no labels, no "
-        f"logos, no UI mockups, no watermark — imagery only. 16:9 composition."
+        f"Minimal abstract editorial tech background, dark navy gradient with soft glowing "
+        f"geometric shapes, faint flowing circuit-line patterns, gentle bokeh light, blue and "
+        f"orange accents, lots of clean negative space, cinematic and premium. "
+        f"PURELY ABSTRACT AND ATMOSPHERIC — absolutely NO screens, NO code, NO user interface, "
+        f"NO panels, NO windows, NO browsers, NO dashboards, NO devices, NO phones, NO laptops, "
+        f"NO keyboards, NO icons, NO logos, NO charts, NO diagrams, NO text, NO letters, NO "
+        f"numbers, NO symbols, NO words, NO writing, no watermark. 16:9 composition."
     )
 
 
