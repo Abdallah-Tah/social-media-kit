@@ -43,9 +43,13 @@ def _auto_provider():
 
 def _default_prompt(title):
     return (
-        f"Professional, modern blog cover illustration for an article titled "
-        f"\"{title}\". Clean, high-contrast, editorial tech aesthetic, no text, "
-        f"no watermark, 16:9 composition."
+        f"Clean, modern flat-vector tech illustration for a developer article "
+        f"titled \"{title}\". Depict the ACTUAL subject of the title — the real "
+        f"tools, code editor, terminal, or concept it describes — as concrete, "
+        f"recognizable objects. Cohesive limited color palette, plenty of "
+        f"negative space, professional editorial style. Avoid generic abstract "
+        f"backgrounds, no random glowing particles or dots. No text, no "
+        f"watermark, no trademarked logos. 16:9 composition."
     )
 
 
