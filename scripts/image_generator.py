@@ -51,16 +51,17 @@ def _auto_provider():
 
 
 def _default_prompt(title):
-    # Purely abstract background: anything resembling screens/code/UI makes the
-    # model render garbled gibberish "text". Force atmosphere-only imagery.
+    # Keep the cover relevant to the article, but avoid asking image models to
+    # render readable UI/code/text. The title is overlaid afterward with Pillow.
     return (
-        f"Minimal abstract editorial tech background, dark navy gradient with soft glowing "
-        f"geometric shapes, faint flowing circuit-line patterns, gentle bokeh light, blue and "
-        f"orange accents, lots of clean negative space, cinematic and premium. "
-        f"PURELY ABSTRACT AND ATMOSPHERIC — absolutely NO screens, NO code, NO user interface, "
-        f"NO panels, NO windows, NO browsers, NO dashboards, NO devices, NO phones, NO laptops, "
-        f"NO keyboards, NO icons, NO logos, NO charts, NO diagrams, NO text, NO letters, NO "
-        f"numbers, NO symbols, NO words, NO writing, no watermark. 16:9 composition."
+        f"Clean, modern flat-vector tech illustration for a developer article "
+        f"titled \"{title}\". Depict the actual subject of the title as concrete, "
+        f"recognizable objects, architecture shapes, product-neutral tools, and "
+        f"workflow scenes. Make it content-specific, not a generic abstract "
+        f"background. Cohesive limited color palette, plenty of negative space, "
+        f"professional editorial style. No readable UI, no source code, no "
+        f"screenshots, no random glowing particles or dots, no text, no letters, "
+        f"no numbers, no watermark, no trademarked logos. 16:9 composition."
     )
 
 
