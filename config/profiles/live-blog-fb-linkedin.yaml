@@ -1,0 +1,23 @@
+name: BuildWithAbdallah
+tone: clear, practical, and friendly — confident but never hypey
+audience: developers, founders, and tech builders
+language: English
+cta: Follow for more hands-on engineering content.
+link: "https://buildwithabdallah.com"
+hashtags:
+  - "#AI"
+  - "#dev"
+  - "#BuildWithAbdallah"
+
+platforms:
+  - blog
+  - facebook
+  - linkedin
+
+branding:
+  bg_color: "#0f172a"
+  accent_color: "#2563eb"
+
+blog:
+  category_id: null
+  tags: []

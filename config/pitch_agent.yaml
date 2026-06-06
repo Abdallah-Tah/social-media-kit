@@ -1,0 +1,36 @@
+# The Pitch Agent — Configuration
+# Independent analytics project, not affiliated with FIFA.
+
+model_version: "1.0.0-lite"
+db_path: "pitch_agent.db"
+data_dir: "pitch_agent/data"
+
+content:
+  headline_index_mode: "daily"
+  cumulative_index_enabled_after_group_stage: true
+
+# football-data.org provider settings (set FOOTBALL_DATA_API_KEY in secrets.env)
+football_data_base_url: "https://api.football-data.org/v4"
+
+# Branding for charts and review metadata. logo_path is optional — if the file
+# is missing, charts fall back to a "BuildWithAbdallah" text header (no crash).
+# All Pitch Agent visuals are template-driven (pitch_agent/brand_template.py),
+# not AI-designed: AI may write narrative text, but layout/design is code.
+brand:
+  name: "The Pitch Agent"
+  parent_brand: "BuildWithAbdallah"
+  logo_path: "assets/brand/buildwithabdallah-logo.png"
+  footer: "The Pitch Agent by BuildWithAbdallah | Independent analytics | Not affiliated with FIFA"
+  # "buildwithabdallah_light" (default) or "dark" (legacy palette).
+  chart_theme: "buildwithabdallah_light"
+
+# Theme palette consumed by the chart template engine. Overrides the named
+# theme's built-in defaults (see pitch_agent/chart_themes.py).
+theme:
+  background_color: "#F7F9FC"
+  primary_text: "#0B1F44"
+  secondary_text: "#6B7280"
+  accent_blue: "#1D6CF2"
+  divider_color: "#D9E1EC"
+  watermark_text: "A"
+  watermark_alpha: 0.08

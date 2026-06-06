@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from agent.config import AgentConfig, load_profile          # noqa: E402
 from agent.tools import ToolBox, TOOL_SCHEMAS               # noqa: E402
 from agent.prompts import build_repurpose_goal, PLATFORM_TOOLS  # noqa: E402
-from agent import repurpose, dashboard                      # noqa: E402
+from agent import cli, history, repurpose, dashboard        # noqa: E402
 
 
 def _cfg(**kw):
@@ -64,6 +64,28 @@ def test_repurpose_loads_local_file(tmp_path):
 def test_repurpose_rejects_missing_source():
     with pytest.raises(ValueError):
         repurpose.load_source("/no/such/file.txt")
+
+
+def test_repurpose_live_records_history(tmp_path, monkeypatch):
+    source = tmp_path / "src.md"
+    source.write_text("# Source\nBody")
+    monkeypatch.setattr(history, "HISTORY_PATH", tmp_path / "published.json")
+
+    class Result:
+        ok = True
+        steps = 3
+        summary = "published"
+
+    monkeypatch.setattr(repurpose, "repurpose", lambda *a, **kw: Result())
+    args = cli.build_parser().parse_args([
+        "repurpose", str(source), "--profile", "default", "--yes"
+    ])
+
+    assert cli.cmd_repurpose(args) == 0
+    entries = history.load()
+    assert len(entries) == 1
+    assert entries[0]["topic"] == "Repurpose: src.md"
+    assert entries[0]["channels"] == load_profile("default")["platforms"]
 
 
 # ── Dashboard HTTP API (real server, localhost) ──────────────────────────

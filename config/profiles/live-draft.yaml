@@ -1,0 +1,27 @@
+name: BuildWithAbdallah
+tone: clear, practical, and friendly - confident but never hypey
+audience: developers, founders, and tech builders
+language: English
+cta: Follow for more hands-on engineering content.
+link: "https://buildwithabdallah.com"
+hashtags:
+  - "#Python"
+  - "#AIAgents"
+  - "#BuildWithAbdallah"
+
+# Review-first automation. The cron should use this profile until quality is
+# stable: write, validate, save a draft, and notify Telegram. No public social.
+publication_mode: draft
+approval_required: true
+image_provider: card
+platforms:
+  - blog
+  - telegram
+
+branding:
+  bg_color: "#0f172a"
+  accent_color: "#2563eb"
+
+blog:
+  category_id: null
+  tags: []

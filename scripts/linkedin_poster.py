@@ -11,6 +11,8 @@ import argparse
 import requests
 
 ACCESS_TOKEN = os.environ.get("LINKEDIN_ACCESS_TOKEN", "")
+PERSON_ID = os.environ.get("LINKEDIN_PERSON_ID", "")
+AUTHOR_URN = os.environ.get("LINKEDIN_AUTHOR_URN", "")
 SECRETS_PATH = os.environ.get(
     "SECRETS_PATH",
     os.path.expanduser("~/.config/social-media-kit/secrets.env"),
@@ -37,6 +39,9 @@ def load_token():
 
 def get_profile(token):
     """Get the authenticated user's LinkedIn URN."""
+    if PERSON_ID:
+        return PERSON_ID
+
     resp = requests.get(
         "https://api.linkedin.com/v2/me",
         headers={"Authorization": f"Bearer {token}"},
@@ -97,7 +102,12 @@ def post_text(text, visibility="PUBLIC", image_path=None):
     if not profile_id:
         return None
 
-    author = f"urn:li:person:{profile_id}"
+    if AUTHOR_URN:
+        author = AUTHOR_URN
+    elif str(profile_id).lstrip("-").isdigit():
+        author = f"urn:li:member:{profile_id}"
+    else:
+        author = f"urn:li:person:{profile_id}"
 
     content = {"shareCommentary": {"text": text}, "shareMediaCategory": "NONE"}
     if image_path:
@@ -109,7 +119,7 @@ def post_text(text, visibility="PUBLIC", image_path=None):
     payload = {
         "author": author,
         "lifecycleState": "PUBLISHED",
-        "specificContent": {"com.linkedin.ugc.PostContent": content},
+        "specificContent": {"com.linkedin.ugc.ShareContent": content},
         "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": visibility},
     }
 

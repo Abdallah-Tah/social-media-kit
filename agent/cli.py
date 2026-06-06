@@ -181,7 +181,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     # ── Secret health: catch truncated copy-pastes (e.g. a UI '…' elision) ──
     all_keys = {k for keys in checks.values() for k in keys}
     all_keys |= {
-        "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "FAL_KEY",
+        "BWA_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "FAL_KEY",
         "SLACK_BOT_TOKEN", "MASTODON_ACCESS_TOKEN", "LINKEDIN_ACCESS_TOKEN",
     }
     warnings = []
@@ -264,6 +264,16 @@ def cmd_repurpose(args: argparse.Namespace) -> int:
 
     print("=" * 60)
     if result.ok:
+        if not config.dry_run:
+            source_label = Path(args.source).name if Path(args.source).exists() else args.source
+            history.record({
+                "topic": f"Repurpose: {source_label}",
+                "profile": profile.get("name"),
+                "provider": config.provider,
+                "channels": profile.get("platforms", []),
+                "steps": result.steps,
+                "summary": result.summary,
+            })
         print(f"🎉 Repurposed in {result.steps} steps.\n{result.summary}")
         return 0
     print(f"Ended with an error after {result.steps} steps:\n{result.error}")

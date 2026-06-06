@@ -17,12 +17,14 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = ROOT / "config"
 PROFILES_DIR = CONFIG_DIR / "profiles"
+OPENCLAW_SECRETS_PATH = Path(os.path.expanduser("~/.config/openclaw/secrets.env"))
 
 # Where secrets live, in priority order. The first existing file wins for
 # loading, but all are loaded (later files do not override earlier keys).
 SECRETS_CANDIDATES = [
     CONFIG_DIR / "secrets.env",
     Path(os.path.expanduser("~/.config/social-media-kit/secrets.env")),
+    OPENCLAW_SECRETS_PATH,
 ]
 
 
@@ -31,6 +33,8 @@ def load_env() -> None:
     for path in SECRETS_CANDIDATES:
         if path.exists():
             _load_env_file(path)
+    _prefer_openclaw_telegram_secrets()
+    _normalise_env_aliases()
 
 
 def _load_env_file(path: Path) -> None:
@@ -44,6 +48,43 @@ def _load_env_file(path: Path) -> None:
         # Real environment variables take precedence over file values.
         if key and key not in os.environ:
             os.environ[key] = value
+
+
+def _normalise_env_aliases() -> None:
+    """Support OpenClaw secret names without duplicating values."""
+    aliases = {
+        "TELEGRAM_BOT_TOKEN": "TELEGRAM_TOKEN",
+        "TELEGRAM_CHAT_ID": "CHAT_ID",
+        "BWA_ANTHROPIC_API_KEY": "ANTHROPIC_API_KEY",
+    }
+    for canonical, alias in aliases.items():
+        if not os.environ.get(canonical) and os.environ.get(alias):
+            os.environ[canonical] = os.environ[alias]
+
+
+def _prefer_openclaw_telegram_secrets() -> None:
+    """Let OpenClaw's Telegram target override workspace Telegram defaults."""
+    if not OPENCLAW_SECRETS_PATH.exists():
+        return
+    values = _read_env_values(OPENCLAW_SECRETS_PATH)
+    for key in ("TELEGRAM_TOKEN", "CHAT_ID", "TELEGRAM_MESSAGE_THREAD_ID"):
+        if values.get(key):
+            os.environ[key] = values[key]
+    if values.get("TELEGRAM_TOKEN"):
+        os.environ["TELEGRAM_BOT_TOKEN"] = values["TELEGRAM_TOKEN"]
+    if values.get("CHAT_ID"):
+        os.environ["TELEGRAM_CHAT_ID"] = values["CHAT_ID"]
+
+
+def _read_env_values(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
 
 
 @dataclass
@@ -122,7 +163,7 @@ class AgentConfig:
 def _provider_api_key(provider: str, prov_settings: dict) -> str:
     """Resolve the API key for a provider from env (preferred) or yaml."""
     env_names = {
-        "anthropic": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
+        "anthropic": ["BWA_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
         "openai": ["OPENAI_API_KEY", "OPENROUTER_API_KEY"],
         "ollama": ["OLLAMA_API_KEY"],  # optional; Ollama needs none
     }.get(provider, [])

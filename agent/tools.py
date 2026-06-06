@@ -327,10 +327,12 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "generate_cover",
         "description": (
-            "Generate a cover/hero image for the article using AI (FAL.ai or "
-            "OpenAI) with a free branded-card fallback. Returns the local image "
-            "path and, when available, a hosted URL. Use the path with "
-            "post_facebook (image=) and the URL with publish_blog (cover_image_url=)."
+            "Generate an original Build With Abdallah cover/hero image for the "
+            "article using readable programmatic text. Source images should be "
+            "used only as inspiration unless reuse rights are clearly safe. "
+            "Returns the local image path and, when available, a hosted URL. "
+            "Use the path with post_facebook (image=) and the URL with "
+            "publish_blog (cover_image_url=)."
         ),
         "input_schema": {
             "type": "object",
@@ -339,6 +341,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "prompt": {
                     "type": "string",
                     "description": "Optional custom image prompt (else derived from title).",
+                },
+                "source_url": {
+                    "type": "string",
+                    "description": "Optional source article URL. Ignored unless safe image reuse is explicitly enabled.",
                 },
             },
             "required": ["title"],
@@ -688,13 +694,15 @@ class ToolBox:
             prompt=args.get("prompt"),
             provider=self.profile.get("image_provider"),
             branding=branding,
+            source_url=args.get("source_url"),
         )
         if not result:
             return "Cover generation failed on all providers."
         url_part = f" url={result['url']}" if result.get("url") else ""
+        source_part = f" source={result['source']}" if result.get("source") else ""
         return (
             f"Cover image ready (provider={result['provider']}): "
-            f"path={result['path']}{url_part}"
+            f"path={result['path']}{url_part}{source_part}"
         )
 
     def _generate_card(self, args: dict) -> str:

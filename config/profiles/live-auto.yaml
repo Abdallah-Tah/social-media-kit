@@ -1,0 +1,29 @@
+name: BuildWithAbdallah
+tone: clear, practical, and friendly — confident but never hypey
+audience: developers, founders, and tech builders
+language: English
+cta: Follow for more hands-on engineering content.
+link: "https://buildwithabdallah.com"
+hashtags:
+  - "#AI"
+  - "#dev"
+  - "#BuildWithAbdallah"
+
+# Full auto-publish: website + Facebook (post + reel handled by the cron).
+# LinkedIn is intentionally excluded until its org token is reconnected;
+# X is deprecated. Add them here once their auth is restored.
+publication_mode: publish
+approval_required: false
+image_provider: card
+platforms:
+  - blog
+  - facebook
+  - telegram
+
+branding:
+  bg_color: "#0f172a"
+  accent_color: "#2563eb"
+
+blog:
+  category_id: null
+  tags: []

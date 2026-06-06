@@ -58,7 +58,7 @@ ollama:    { model: llama3.1, base_url: http://localhost:11434/v1 }
 
 Override per-run: `--provider ollama --model qwen2.5`.
 
-- **anthropic** needs `ANTHROPIC_API_KEY`. Use `claude-opus-4-8` for the best
+- **anthropic** needs `BWA_ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEY`. Use `claude-opus-4-8` for the best
   writing, `claude-sonnet-4-6` for speed/cost.
 - **openai** needs `OPENAI_API_KEY`; point `base_url` at OpenRouter or any
   compatible endpoint to use other models.
@@ -124,16 +124,21 @@ Set `BLOG_PLATFORM` to `generic` (default), `wordpress`, or `ghost`:
 
 ## Scheduling
 
+For technical brands, run the cron as a quality-gated publisher: it publishes
+when validation passes and sends Telegram a summary of what happened.
+
 1. Add topics (one per line) to `config/topics.txt`.
-2. `smkit queue config/topics.txt --yes` runs the next topic and, on success,
-   moves it to `config/topics.txt.done`.
-3. Automate with cron:
+2. Run the scheduled job with the live profile:
    ```cron
-   0 9 * * 1-5  cd /path/to/social-media-kit && smkit queue config/topics.txt --yes >> run.log 2>&1
+   0 */3 * * *  /home/abdaltm86/.local/bin/bwa-cron-publish.sh >> /home/abdaltm86/logs/smkit-cron.log 2>&1
    ```
-4. Or use the included GitHub Action (`.github/workflows/scheduled-run.yml`) —
-   put your keys in repo Secrets. It dry-runs by default; set the repo variable
-   `GO_LIVE=1` (or trigger manually with dry-run off) to publish for real.
+   The runner validates the article, uses source images first for covers, falls
+   back to a readable Build With Abdallah banner, publishes without approval when
+   gates pass, and posts a Telegram summary.
+3. If validation fails, the runner saves a draft, skips public posting, and
+   sends Telegram the failure reasons.
+4. The included GitHub Action (`.github/workflows/scheduled-run.yml`) dry-runs by
+   default. Keep it in dry-run or draft mode until the quality gate is stable.
 
 ## Costs & safety
 

@@ -2,7 +2,7 @@
 
 Records every completed run to `content/published.json` so you have a track
 record and can avoid re-publishing the same topic. Used by `smkit run`
-(dedupe + record) and `smkit history` (view).
+(dedupe + record), `smkit repurpose` (record), and `smkit history` (view).
 """
 from __future__ import annotations
 

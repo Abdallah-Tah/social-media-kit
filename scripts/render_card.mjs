@@ -35,7 +35,10 @@ const width = parseInt(wArg || "1080", 10);
 const height = parseInt(hArg || "1080", 10);
 
 const { chromium } = loadPlaywright();
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({
+  headless: true,
+  args: ["--no-sandbox", "--disable-setuid-sandbox"],
+});
 try {
   const page = await browser.newPage({
     viewport: { width, height },

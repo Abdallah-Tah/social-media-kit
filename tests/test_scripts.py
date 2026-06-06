@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import content_research as cr   # noqa: E402
+import telegram_poster          # noqa: E402
 
 
 def test_ddg_decode_unwraps_redirects():
@@ -66,3 +67,73 @@ def test_search_provider_forced(monkeypatch):
     monkeypatch.setattr(cr, "_search_brave", lambda q, c: [])
     out = cr.web_search("q", count=3)
     assert called["wiki"] and out[0]["source"] == "wikipedia"
+
+
+def test_telegram_poster_accepts_openclaw_aliases(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "stale")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "stale-chat")
+    monkeypatch.setenv("TELEGRAM_TOKEN", "token")
+    monkeypatch.setenv("CHAT_ID", "chat")
+    captured = {}
+
+    class Response:
+        @staticmethod
+        def json():
+            return {"ok": True}
+
+    def fake_post(url, json=None, **kwargs):
+        captured["url"] = url
+        captured["json"] = json
+        return Response()
+
+    monkeypatch.setattr(telegram_poster.requests, "post", fake_post)
+
+    result = telegram_poster.post_message("hello")
+
+    assert result == {"ok": True}
+    assert captured["url"].endswith("/bottoken/sendMessage")
+    assert captured["json"]["chat_id"] == "chat"
+
+
+def test_telegram_poster_normalizes_tme_c_chat_url(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_TOKEN", "token")
+    monkeypatch.setenv("CHAT_ID", "https://t.me/c/3948211258/14119")
+    monkeypatch.delenv("TELEGRAM_MESSAGE_THREAD_ID", raising=False)
+    captured = {}
+
+    class Response:
+        @staticmethod
+        def json():
+            return {"ok": True}
+
+    def fake_post(url, json=None, **kwargs):
+        captured["json"] = json
+        return Response()
+
+    monkeypatch.setattr(telegram_poster.requests, "post", fake_post)
+
+    telegram_poster.post_message("hello")
+
+    assert captured["json"]["chat_id"] == "-1003948211258"
+    assert captured["json"]["message_thread_id"] == "14119"
+
+
+def test_telegram_poster_normalizes_bare_private_chat_id(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_TOKEN", "token")
+    monkeypatch.setenv("CHAT_ID", "3948211258")
+    captured = {}
+
+    class Response:
+        @staticmethod
+        def json():
+            return {"ok": True}
+
+    def fake_post(url, json=None, **kwargs):
+        captured["json"] = json
+        return Response()
+
+    monkeypatch.setattr(telegram_poster.requests, "post", fake_post)
+
+    telegram_poster.post_message("hello")
+
+    assert captured["json"]["chat_id"] == "-1003948211258"

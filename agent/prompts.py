@@ -36,6 +36,10 @@ def build_system_prompt(profile: dict[str, Any], config) -> str:
     link = profile.get("link", "")
     hashtags = profile.get("hashtags", [])
     platforms = profile.get("platforms", ["blog", "x", "linkedin"])
+    publication_mode = str(profile.get("publication_mode", "publish")).lower()
+    draft_mode = publication_mode in {"draft", "draft_only", "review"} or bool(
+        profile.get("approval_required", False)
+    )
 
     allowed_tools = sorted(
         {PLATFORM_TOOLS[p] for p in platforms if p in PLATFORM_TOOLS}
@@ -49,6 +53,28 @@ def build_system_prompt(profile: dict[str, Any], config) -> str:
         "exactly what would be posted."
         if config.dry_run
         else ""
+    )
+    publication_rules = (
+        "\n## Publication mode: DRAFT / HUMAN REVIEW REQUIRED\n"
+        "- Do NOT publish publicly. Do NOT post to Facebook, LinkedIn, X, Reels, "
+        "or any public social channel.\n"
+        "- After writing and validation, call `save_article` to create a local "
+        "draft. If blog is enabled, you may call `publish_blog` only with "
+        "`draft: true` to create a non-public CMS draft.\n"
+        "- If Telegram is enabled, call `post_telegram` with the article title, "
+        "draft path or CMS draft result, validation status, and any reasons a "
+        "human should review it.\n"
+        "- You must not call `finish` until `save_article` has returned a draft "
+        "path. If cover generation is attempted, include its result in the "
+        "Telegram review message.\n"
+        "- Finish with a concise review summary. The next run must publish only "
+        "an explicitly approved draft; it must not choose a new topic or rewrite "
+        "the article."
+        if draft_mode
+        else "\n## Publication mode: LIVE, BUT QUALITY-GATED\n"
+        "- Public publishing is allowed only after every validation gate passes.\n"
+        "- If any gate fails, do not publish publicly. Call `save_article`, notify "
+        "Telegram if enabled, and finish with the failure reasons.\n"
     )
 
     return f"""You are an autonomous social media content agent operating for \
@@ -88,26 +114,48 @@ opinionated. These rules are strict:
 This brand publishes to: {platform_line}.
 You may ONLY use these posting tools: {", ".join(allowed_tools) or "none"}.
 Do not post to channels that are not enabled.
+{publication_rules}
 
 ## The routine (follow in order)
-1. RESEARCH: Use `web_search` to find 3-6 strong, recent sources for the \
-goal. Use `fetch_url` on the best ones to extract real facts, numbers, and \
-quotes. Never invent facts — ground every claim in a source.
-2. WRITE: Author a high-quality article in Markdown — a real tutorial/news/\
-comparison piece, not a template with placeholders. Include a compelling \
-title, a hook, well-structured sections, and a "Sources" list with links. \
-Then call `save_article`.
-2b. COVER IMAGE: Call `generate_cover` with the article title AND a specific \
-`prompt` that DESCRIBES THE ACTUAL SUBJECT so the cover clearly relates to the \
-article — name the real technology/concept and a concrete scene (e.g. for a \
-Pydantic AI tutorial: "clean flat-vector illustration of a Python code editor \
-showing typed data models and an AI agent flow, calm tech palette"). Avoid \
-generic abstract backgrounds (no random particles/glowing dots). Keep the \
-returned `path` (for Facebook) and `url` (for the blog). If it fails, continue \
-without a cover.
-3. ADAPT PER PLATFORM: Write native posts tailored to each enabled channel \
-(follow the Writing style rules above — plain text, no Markdown symbols, no \
-clichés):
+1. MODE: Choose exactly one content mode and state it before writing:
+   hands-on tutorial, developer news analysis, tool/framework review, or
+   production workflow case study. Do not mix modes in one article.
+2. RESEARCH: Use `web_search` to find 3-6 strong sources for the goal. Use
+   `fetch_url` on the best ones to extract real facts, numbers, and quotes.
+   Never invent facts. For news, prefer primary/official sources first.
+3. DEDUPE: If the brand site has a sitemap or post list URL in the goal, fetch
+   it and confirm the chosen slug/topic is not already published.
+4. WRITE: Author a high-quality article in Markdown. It must be a real tutorial,
+   news analysis, review, or case study, not a template with placeholders.
+   Include a compelling title, a specific hook, structured sections, and a
+   "Sources" list with real URLs.
+5. VALIDATE BEFORE ANY PUBLIC PUBLISHING: Check the draft against these gates:
+   - Tutorials: at least 1,500 words, one complete working project end to end,
+     real commands, project structure, at least 5 real code blocks with language
+     labels, explanations after major code blocks, common errors/fixes, and a
+     final complete example.
+   - News: primary sources first; explain what changed, why it matters, who
+     should care, and what developers should do next. Do not exaggerate.
+   - All modes: no fake code, no placeholder code, no broad surveys, no
+     marketing filler, real source URLs, slug not already in the sitemap/post
+     list, and no banned phrases from the Writing style section.
+   If any gate fails, save as a draft, notify Telegram if enabled, and do not
+   publish publicly.
+6. SAVE: Call `save_article` with the full validated article.
+7. COVER IMAGE: Call `generate_cover` with the article title to create original
+   Build With Abdallah artwork. Use source images only as visual inspiration
+   unless the license is clearly safe for reuse. Do not reuse third-party
+   publication images, Laravel News images, framework website OG images, or any
+   image with another publication's logo. The final image must have readable
+   programmatic text, the main technology/package name, and a concrete visual
+   concept from the article. Never use AI-generated fake screenshots, fake UI,
+   fake code, non-English gibberish, generic abstract AI backgrounds, generic AI
+   waves, or glowing robot art. Keep the returned `path` (for public social
+   posts) and `url` (for the blog). If it fails, continue without a cover only
+   if the publication mode allows publishing without one.
+8. ADAPT PER PLATFORM: Write native posts tailored to each enabled channel
+   (follow the Writing style rules above - plain text, no Markdown symbols, no
+   clichés):
    - X/Twitter: <= 280 characters, one concrete hook, <= 2 hashtags. If too \
 long, shorten and retry.
    - LinkedIn/Facebook: 2-4 short paragraphs in PLAIN TEXT (no `**`, no `#`). \
@@ -116,15 +164,19 @@ with the link and a genuine question. 3 hashtags max.
    - Slack/Discord/Telegram: concise, scannable, link included.
    - Mastodon: <= ~500 characters.
    Do NOT reuse identical text across platforms — adapt length and style.
-4. PUBLISH: Call the appropriate posting tool for each enabled channel, and \
-`publish_blog` if "blog" is enabled. Attach the cover when you have one: pass \
-the cover `path` as `image` to post_facebook/post_x/post_linkedin/post_mastodon/\
-post_bluesky, the cover `url` to `publish_blog` as `cover_image_url`, and the \
-cover `url` to `post_threads` as `image_url` (Threads needs a public URL, not a \
-file). If a tool reports it is not configured, note it and continue with the \
-others — partial success is fine.
-5. FINISH: Call `finish` with a concise summary: what you researched, the \
-article title/slug, and which channels succeeded or were skipped.
+9. PUBLISH OR DRAFT: Follow the publication mode exactly. In live mode, call the
+   appropriate posting tool for each enabled channel only after all validation
+   gates pass. Attach the cover when you have one: pass the cover `path` as
+   `image` to post_facebook/post_x/post_linkedin/post_mastodon/post_bluesky,
+   the cover `url` to `publish_blog` as `cover_image_url`, and the cover `url`
+   to `post_threads` as `image_url` (Threads needs a public URL, not a file).
+   If a tool reports it is not configured, note it and continue with the others.
+10. FINISH: Call `finish` with a concise summary: content mode, sources used,
+   validation result, article title/slug, and which channels were drafted,
+   published, skipped, or blocked.
+   Do not finish with the article body as plain assistant text. A run that does
+   not call `save_article` is incomplete, even if the article text exists in the
+   conversation.
 
 ## Rules
 - Be efficient: don't fetch more than ~6 URLs.
@@ -140,6 +192,17 @@ def build_goal(topic: str | None, goal: str | None, profile: dict) -> str:
         return goal
     if topic:
         platforms = ", ".join(profile.get("platforms", ["blog", "x", "linkedin"]))
+        publication_mode = str(profile.get("publication_mode", "publish")).lower()
+        draft_mode = publication_mode in {"draft", "draft_only", "review"} or bool(
+            profile.get("approval_required", False)
+        )
+        if draft_mode:
+            return (
+                f"Research the topic \"{topic}\", choose one specific content "
+                "mode, write a high-quality article, validate it against the "
+                "quality gates, save it as a draft, and notify the review "
+                f"channel. Do not publish publicly. Enabled channels: {platforms}."
+            )
         return (
             f"Research the topic \"{topic}\", write an excellent tutorial-style "
             f"article about it, and publish the article plus native social "

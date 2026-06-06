@@ -81,6 +81,16 @@ def test_base_url_not_shared_across_providers(monkeypatch):
     assert "openai.example" not in (a.base_url or "")
 
 
+def test_bwa_anthropic_key_alias_is_preferred(monkeypatch):
+    monkeypatch.setenv("BWA_ANTHROPIC_API_KEY", "bwa-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "generic-key")
+    monkeypatch.delenv("CLAUDE_API_KEY", raising=False)
+
+    config = AgentConfig.load(provider="anthropic")
+
+    assert config.api_key == "bwa-key"
+
+
 # ── ToolBox: security + limits ───────────────────────────────────────────
 def test_profile_allowlist_blocks_disabled_channels():
     prof = load_profile("default")

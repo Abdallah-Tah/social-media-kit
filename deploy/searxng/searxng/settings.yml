@@ -4,8 +4,8 @@ use_default_settings: true
 
 server:
   # Replace before exposing publicly:
-  #   sed -i "s/change-me-please/$(openssl rand -hex 16)/" settings.yml
-  secret_key: "change-me-please"
+  #   sed -i "s/652b8f806fd377ff3bc846cf74776f14/$(openssl rand -hex 16)/" settings.yml
+  secret_key: "652b8f806fd377ff3bc846cf74776f14"
   limiter: false          # set true if you expose this instance publicly
   image_proxy: false
 

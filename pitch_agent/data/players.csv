@@ -1,0 +1,14 @@
+player_id,player_name,team_id,team_name,position,shirt_number
+P01,Lionel Messi,T01,Argentina,FWD,10
+P02,Julian Alvarez,T01,Argentina,FWD,9
+P03,Rodrigo De Paul,T01,Argentina,MID,7
+P04,Nicolas Otamendi,T01,Argentina,DEF,2
+P05,Emiliano Martinez,T01,Argentina,GK,1
+P06,Salem Al-Dawsari,T02,Saudi Arabia,FWD,10
+P07,Salman Al-Faraj,T02,Saudi Arabia,MID,7
+P08,Yasir Al-Shahrani,T02,Saudi Arabia,DEF,3
+P09,Mohammed Al-Owais,T02,Saudi Arabia,GK,1
+P10,Hirving Lozano,T03,Mexico,FWD,11
+P11,Edson Alvarez,T03,Mexico,MID,4
+P12,Cesar Montes,T03,Mexico,DEF,5
+P13,Guillermo Ochoa,T03,Mexico,GK,13

@@ -9,6 +9,10 @@ build/
 dist/
 *.egg-info/
 
+# Runtime artifacts
+artifacts/
+pitch_agent.db*
+
 # Content
 content/raw/
 content/drafts/

@@ -123,22 +123,66 @@ def generate_card(title, subtitle="", width=1080, height=1080,
     # Accent bar at top
     draw.rectangle([0, 0, width, 8], fill=hex_to_rgb(accent_color) + (255,))
 
-    # Title
-    title_font = get_font(64, bold=True)
-    bbox = draw.textbbox((0, 0), title, font=title_font)
-    tw = bbox[2] - bbox[0]
-    tx = (width - tw) // 2
-    ty = height // 2 - 80
-    draw.text((tx, ty), title, fill=(255, 255, 255, 255), font=title_font)
+    def wrap_text(text, font, max_width):
+        words = text.split()
+        lines = []
+        current = ""
+        for word in words:
+            test = f"{current} {word}".strip()
+            box = draw.textbbox((0, 0), test, font=font)
+            if box[2] - box[0] <= max_width:
+                current = test
+            else:
+                if current:
+                    lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+        return lines
+
+    # Title. Long technical titles are common, so wrap and shrink until the
+    # text fits inside the card instead of cropping off-canvas.
+    max_text_width = int(width * 0.82)
+    title_size = 64
+    title_font = get_font(title_size, bold=True)
+    title_lines = wrap_text(title, title_font, max_text_width)
+    while (len(title_lines) > 4 or title_size * 1.18 * len(title_lines) > height * 0.34) and title_size > 38:
+        title_size -= 4
+        title_font = get_font(title_size, bold=True)
+        title_lines = wrap_text(title, title_font, max_text_width)
+
+    line_height = int(title_size * 1.18)
 
     # Subtitle
+    sub_lines = []
+    sub_font = None
     if subtitle:
-        sub_font = get_font(32)
-        bbox2 = draw.textbbox((0, 0), subtitle, font=sub_font)
-        sw = bbox2[2] - bbox2[0]
-        sx = (width - sw) // 2
-        sy = ty + (bbox[3] - bbox[1]) + 30
-        draw.text((sx, sy), subtitle, fill=hex_to_rgb(DEFAULT_SUBTEXT) + (255,), font=sub_font)
+        sub_size = 32
+        sub_font = get_font(sub_size)
+        sub_lines = wrap_text(subtitle, sub_font, max_text_width)
+        while len(sub_lines) > 2 and sub_size > 24:
+            sub_size -= 2
+            sub_font = get_font(sub_size)
+            sub_lines = wrap_text(subtitle, sub_font, max_text_width)
+
+    sub_height = (len(sub_lines) * int((sub_font.size if hasattr(sub_font, "size") else 32) * 1.25)) if sub_lines else 0
+    total_height = line_height * len(title_lines) + (30 + sub_height if sub_lines else 0)
+    y = (height - total_height) // 2
+
+    for line in title_lines:
+        bbox = draw.textbbox((0, 0), line, font=title_font)
+        tx = (width - (bbox[2] - bbox[0])) // 2
+        draw.text((tx, y), line, fill=(255, 255, 255, 255), font=title_font)
+        y += line_height
+
+    if sub_lines and sub_font:
+        y += 30
+        sub_line_height = int(sub_font.size * 1.25) if hasattr(sub_font, "size") else 40
+        for line in sub_lines:
+            bbox = draw.textbbox((0, 0), line, font=sub_font)
+            sx = (width - (bbox[2] - bbox[0])) // 2
+            draw.text((sx, y), line, fill=hex_to_rgb(DEFAULT_SUBTEXT) + (255,), font=sub_font)
+            y += sub_line_height
 
     os.makedirs(output_dir, exist_ok=True)
     path = os.path.join(output_dir, "card.png")

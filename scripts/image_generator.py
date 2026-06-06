@@ -6,7 +6,7 @@ Generates a cover/hero image for an article or post. Tries, in order:
   1. Gemini      — gemini-2.5-flash-image (set GEMINI_API_KEY) — free daily quota
   2. FAL.ai      — flux-pro/v1.1-ultra (set FAL_KEY) — photoreal, high quality
   3. OpenAI      — gpt-image-1 (set OPENAI_API_KEY)
-  4. Local card  — a branded Pillow card with the title (no key, always works)
+  4. Local card  — a branded HTML/Playwright card with readable text
 
 Force one with IMAGE_PROVIDER=gemini|fal|openai|card. Returns the local file path
 (remote images are downloaded into content/assets/) plus the source URL when
@@ -20,6 +20,9 @@ import sys
 import base64
 import argparse
 from datetime import date
+from html.parser import HTMLParser
+from io import BytesIO
+from urllib.parse import urljoin
 
 import requests
 
@@ -76,6 +79,72 @@ def _download(url, out_path):
     resp = requests.get(url, headers={"User-Agent": _UA}, timeout=60)
     resp.raise_for_status()
     return _save_bytes(resp.content, out_path)
+
+
+class _ImageMetaParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.images = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag != "meta":
+            return
+        data = dict(attrs)
+        key = data.get("property") or data.get("name")
+        if key in ("og:image", "twitter:image") and data.get("content"):
+            self.images.append(data["content"])
+
+
+def _source_image_url(source_url):
+    if not source_url:
+        return None
+    try:
+        resp = requests.get(source_url, headers={"User-Agent": _UA}, timeout=30)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        print(f"⚠️ source page image lookup failed: {e}")
+        return None
+
+    parser = _ImageMetaParser()
+    parser.feed(resp.text)
+    if not parser.images:
+        return None
+    return urljoin(source_url, parser.images[0])
+
+
+def _source_reuse_allowed(branding=None):
+    branding = branding or {}
+    value = branding.get("source_license_safe")
+    if value is None:
+        value = os.environ.get("SOURCE_IMAGE_LICENSE_SAFE", "")
+    return str(value).strip().lower() in {"1", "true", "yes", "safe"}
+
+
+def _generate_source_image(source_url, out_path):
+    image_url = _source_image_url(source_url)
+    if not image_url:
+        return None
+    try:
+        resp = requests.get(image_url, headers={"User-Agent": _UA}, timeout=60)
+        resp.raise_for_status()
+        try:
+            from PIL import Image
+
+            img = Image.open(BytesIO(resp.content)).convert("RGB")
+            os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+            img.save(out_path, "PNG")
+        except Exception:
+            _save_bytes(resp.content, out_path)
+        print(f"✅ Cover reused from source image: {out_path}")
+        return {
+            "path": out_path,
+            "url": image_url,
+            "provider": "source",
+            "source": f"Third-party source image reused from {image_url}",
+        }
+    except requests.RequestException as e:
+        print(f"⚠️ source image download failed: {e}")
+        return None
 
 
 # ── Providers ────────────────────────────────────────────────────────────
@@ -176,28 +245,30 @@ def _generate_openai(prompt, out_path, size="1536x1024"):
 
 
 def _generate_card(title, out_path, branding=None):
-    """Free, no-key fallback: render a branded title card with Pillow."""
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import make_assets
-
+    """Free, no-key fallback: render a readable 16:9 branded article banner."""
     branding = branding or {}
-    out_dir = os.path.dirname(out_path) or ASSETS_DIR
-    path = make_assets.generate_card(
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import make_tutorial_cover
+
+    subtitle = branding.get("subtitle", "Build With Abdallah tutorial")
+    workflow = branding.get("workflow")
+    if isinstance(workflow, str):
+        workflow = [part.strip() for part in workflow.split("|")]
+    make_tutorial_cover.make_cover(
         title,
-        subtitle=branding.get("subtitle", ""),
-        bg_color=branding.get("bg_color", "#0f172a"),
-        accent_color=branding.get("accent_color", "#2563eb"),
-        output_dir=out_dir,
+        subtitle,
+        out_path,
+        workflow=workflow,
+        code_title=branding.get("code_title", "Example.php"),
+        footer=branding.get("footer", "Build With Abdallah | practical developer tutorial"),
     )
-    # make_assets writes card.png; align with requested out_path if different.
-    if os.path.abspath(path) != os.path.abspath(out_path):
-        try:
-            os.replace(path, out_path)
-            path = out_path
-        except OSError:
-            pass
-    print(f"✅ Cover card generated locally: {path}")
-    return {"path": path, "url": None, "provider": "card"}
+    print(f"✅ Cover banner generated locally: {out_path}")
+    return {
+        "path": out_path,
+        "url": None,
+        "provider": "card",
+        "source": "Original Build With Abdallah HTML/Playwright cover",
+    }
 
 
 def _add_title_overlay(image_path, title, branding=None):
@@ -283,7 +354,7 @@ def _upload_to_blog(local_path):
     the blog API isn't configured.
     """
     base = os.environ.get("BLOG_API_URL", "").rstrip("/")
-    tok = os.environ.get("SOCIAL_API_TOKEN") or os.environ.get("BLOG_API_TOKEN", "")
+    tok = os.environ.get("BLOG_API_TOKEN") or os.environ.get("SOCIAL_API_TOKEN", "")
     if not base or not tok or not os.path.exists(local_path):
         return None
     try:
@@ -305,7 +376,7 @@ def _upload_to_blog(local_path):
 
 
 def generate_cover(title, prompt=None, out_path=None, provider=None,
-                   branding=None):
+                   branding=None, source_url=None):
     """Generate a cover image, falling back to a local card on failure."""
     provider = (provider or os.environ.get("IMAGE_PROVIDER") or _auto_provider()).lower()
     prompt = prompt or _default_prompt(title)
@@ -313,7 +384,15 @@ def generate_cover(title, prompt=None, out_path=None, provider=None,
         slug = "".join(c if c.isalnum() else "-" for c in title.lower())[:60].strip("-")
         out_path = os.path.join(ASSETS_DIR, f"{date.today().isoformat()}_{slug or 'cover'}.png")
 
+    if source_url and _source_reuse_allowed(branding):
+        result = _generate_source_image(source_url, out_path)
+        if result:
+            return result
+    elif source_url:
+        print("⚠️ source_url ignored: third-party image reuse requires SOURCE_IMAGE_LICENSE_SAFE=1.")
+
     order = {
+        "source": [_g_card],
         "gemini": [_g_gemini, _g_fal, _g_openai, _g_card],
         "fal": [_g_fal, _g_gemini, _g_openai, _g_card],
         "openai": [_g_openai, _g_gemini, _g_fal, _g_card],
@@ -356,11 +435,19 @@ def main():
     parser.add_argument("title", help="Article/post title")
     parser.add_argument("--prompt", "-p", help="Override the image prompt")
     parser.add_argument("--out", "-o", help="Output PNG path")
-    parser.add_argument("--provider", choices=["gemini", "fal", "openai", "card"])
+    parser.add_argument("--provider", choices=["source", "gemini", "fal", "openai", "card"])
+    parser.add_argument("--source-url", help="Article/source URL to reuse og:image first")
+    parser.add_argument(
+        "--source-license-safe",
+        action="store_true",
+        help="Allow reuse of --source-url image after manually confirming safe license.",
+    )
     args = parser.parse_args()
 
     result = generate_cover(
-        args.title, prompt=args.prompt, out_path=args.out, provider=args.provider
+        args.title, prompt=args.prompt, out_path=args.out, provider=args.provider,
+        source_url=args.source_url,
+        branding={"source_license_safe": args.source_license_safe},
     )
     if not result:
         print("❌ Cover generation failed on all providers.")
