@@ -14,9 +14,23 @@ permanent on-site cover, regardless of the writing agent's variance:
   python3 scripts/enforce_published_quality.py --id 57
 """
 import os
+import re
 import sys
 import argparse
 import requests
+
+
+def unwrap_markdown_fence(s):
+    """Models often wrap their whole markdown answer in a ```markdown ... ``` fence,
+    which makes the article render as one big code block. Strip that outer wrapper
+    (only when it's a markdown/empty fence around real markdown, never a real code block)."""
+    s = (s or "").strip()
+    m = re.match(r"^```(markdown|md)?[ \t]*\n", s)
+    if m and s.rstrip().endswith("```"):
+        inner = s[m.end():].rstrip()[:-3].strip()
+        if re.search(r"^#{1,4}\s", inner, re.M):  # looks like an article, not a code block
+            return inner
+    return s
 
 sys.path.insert(0, os.path.expanduser("~/social-media-kit"))
 from agent.config import load_env
@@ -95,7 +109,7 @@ def write_article(title):
             "Output ONLY markdown, with no article title line."
         )},
     ])
-    return part_a.rstrip() + "\n\n" + part_b.lstrip()
+    return unwrap_markdown_fence(part_a).rstrip() + "\n\n" + unwrap_markdown_fence(part_b).lstrip()
 
 
 def main():
