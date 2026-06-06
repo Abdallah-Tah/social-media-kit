@@ -109,7 +109,8 @@ def main():
         except Exception:
             cover = None
 
-    text = write_post(p["title"], p.get("excerpt") or "", p.get("body") or "", url)
+    import social_copy
+    text = social_copy.make_social_copy(p["title"], p.get("body") or "", url)
     print(f"→ {p['title']}\n  author: {author}")
     r = L.post_org(text, image_path=cover, title=p["title"][:90], description="",
                    token=token, author=author)

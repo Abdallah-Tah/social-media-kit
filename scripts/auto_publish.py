@@ -162,7 +162,8 @@ def main():
     try:
         import fb_poster
         url = f"https://buildwithabdallah.com/tutorials/{post.get('slug', slug)}"
-        cap = f"{title}\n\n{excerpt}\n\nRead it: {url}\n\n#coding #webdev #BuildWithAbdallah"
+        import social_copy
+        cap = social_copy.make_social_copy(title, body, url)
         local = (cover or {}).get("path")
         if local and os.path.exists(local):
             fb_poster.post_photo(local, caption=cap)

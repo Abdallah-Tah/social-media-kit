@@ -143,8 +143,8 @@ def main():
     if not reel:
         print("❌ reel build failed"); sys.exit(1)
 
-    caption = (f"{title}\n\n{post.get('excerpt','')}\n\nFull guide 👉 {url}\n\n"
-               + " ".join(hashtags))
+    import social_copy
+    caption = social_copy.make_social_copy(title, post.get("body") or "", url)
     state = "PUBLISHED" if args.publish else "DRAFT"
     res = FB.publish_reel(reel["path"], description=caption, state=state, poll=False)
     if not res:
