@@ -123,7 +123,9 @@ def main():
         try:
             nb = write_article(title)
             nw, nc = len(nb.split()), nb.count("```") // 2
-            if nw >= max(words, 1000) and nc >= MIN_CODE:
+            # Accept the regen if it is a clear improvement: at least ~850 words,
+            # enough code blocks, and not shorter than the original.
+            if nw >= 850 and nc >= MIN_CODE and nw >= words:
                 patch["body"] = nb
                 print(f"   → regenerated: {nw}w {nc}cb")
             else:
