@@ -74,6 +74,43 @@ def publish_article(title, slug, content, excerpt="", category_id=None,
         return None
 
 
+def _ensure_hosted_cover(cover):
+    """Rehost any cover (local path or external/temporary URL like FAL's CDN)
+    onto the site's media library, so a published cover is never a link that
+    expires or a local path the site can't read."""
+    if not cover:
+        return cover
+    base = os.environ.get("BLOG_API_URL", "").rstrip("/")
+    origin = base.split("/api/")[0] if "/api/" in base else base
+    if origin and cover.startswith(origin):
+        return cover  # already hosted on the site
+    tok = os.environ.get("SOCIAL_API_TOKEN") or os.environ.get("BLOG_API_TOKEN", "")
+    if not base or not tok:
+        return cover
+    try:
+        if cover.startswith("http://") or cover.startswith("https://"):
+            data = requests.get(cover, timeout=60).content
+        elif os.path.exists(cover):
+            with open(cover, "rb") as fh:
+                data = fh.read()
+        else:
+            return cover
+        r = requests.post(
+            f"{base}/media/upload",
+            headers={"Authorization": f"Bearer {tok}", "Accept": "application/json"},
+            files={"file": ("cover.png", data, "image/png")},
+            timeout=90,
+        )
+        if r.status_code in (200, 201):
+            url = (r.json().get("data", {}) or {}).get("url")
+            if url:
+                print(f"✅ cover rehosted on site: {url}")
+                return url
+    except Exception as e:
+        print(f"⚠️ cover rehost failed ({e}); using original.")
+    return cover
+
+
 def _publish_generic(api_url, api_token, f):
     payload = {
         "title": f["title"], "slug": f["slug"], "body": f["body"],
@@ -85,8 +122,9 @@ def _publish_generic(api_url, api_token, f):
         if f.get(k_src):
             payload[k_dst] = f[k_src]
     if f.get("cover_image_url"):
-        payload["cover_image"] = f["cover_image_url"]
-        payload["featured_image"] = f["cover_image_url"]
+        hosted = _ensure_hosted_cover(f["cover_image_url"])
+        payload["cover_image"] = hosted
+        payload["featured_image"] = hosted
     resp = requests.post(
         f"{api_url}/posts", json=payload,
         headers={"Authorization": f"Bearer {api_token}",
