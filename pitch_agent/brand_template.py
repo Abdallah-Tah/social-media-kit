@@ -345,6 +345,53 @@ def generate_list_card(
     return save_chart(fig, output_path, theme)
 
 
+def generate_list_card_html(
+    title: str,
+    subtitle: str,
+    rows: list[dict[str, Any]],
+    output_path: str,
+    *,
+    footer_text: str | None = None,
+    config_path: str | None = None,
+    save_html_to: str | None = None,
+) -> str:
+    """Render a branded list card via HTML/CSS + Playwright; return the PNG path.
+
+    This is the high-fidelity renderer: the full BuildWithAbdallah brand system
+    (logo lockup, geometric corner shapes, dotted-grid accents and "A" watermark)
+    is drawn in CSS/SVG, matching the polished brand template. Chromium must be
+    installed (``python -m playwright install chromium``).
+
+    ``rows`` accepts the same dicts as :func:`generate_list_card`
+    (``label`` / ``col_a`` / ``col_b``). Pass ``save_html_to`` to also write the
+    intermediate HTML (useful for previewing without a browser binary).
+
+    Example::
+
+        generate_list_card_html(
+            title="Upcoming World Cup Fixtures",
+            subtitle="World Cup 2026 • Fixture data • football-data.org",
+            rows=[{"label": "Mexico vs South Africa", "col_a": "Group A", "col_b": "2026-06-11"}],
+            output_path="artifacts/fixtures.png",
+        )
+    """
+    from pitch_agent.html_render import html_to_png
+    from pitch_agent.html_template import render_list_card_html
+
+    brand = load_brand_config(config_path)
+    footer = footer_text if footer_text is not None else brand.get("footer", "")
+
+    html_str = render_list_card_html(
+        title=title, subtitle=subtitle, rows=rows, footer_text=footer or "",
+    )
+    if save_html_to:
+        out = Path(save_html_to)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(html_str, encoding="utf-8")
+
+    return html_to_png(html_str, output_path)
+
+
 def save_chart(fig: Any, output_path: str, theme: dict[str, Any]) -> str:
     """Save the figure with the theme background and close it."""
     output = Path(output_path)
