@@ -191,14 +191,29 @@ def draw_header(ax: Any, brand: dict[str, Any], theme: dict[str, Any] | None = N
             pass
 
     # Text-only brand header fallback.
-    ax.text(
-        MARGIN_LEFT, _y_from_top(ax, HEADER_TEXT_IN),
+    y = _y_from_top(ax, HEADER_TEXT_IN)
+    parent = ax.text(
+        MARGIN_LEFT, y,
         brand.get("parent_brand", "BuildWithAbdallah"),
         transform=ax.transAxes, ha="left", va="top",
         fontsize=FS_HEADER, fontweight="bold", color=accent, zorder=5,
     )
+
+    # Place the brand name immediately after the parent text, measuring its
+    # actual rendered width so the two never overlap regardless of name length.
+    fig = ax.figure
+    gap = 0.012  # axes-fraction gap between the two header words
+    name_x = MARGIN_LEFT + 0.16  # fallback if no renderer is available yet
+    try:
+        fig.canvas.draw()
+        bbox = parent.get_window_extent(renderer=fig.canvas.get_renderer())
+        bbox_axes = bbox.transformed(ax.transAxes.inverted())
+        name_x = bbox_axes.x1 + gap
+    except Exception:  # noqa: BLE001 — fall back to a fixed offset if measuring fails
+        pass
+
     ax.text(
-        MARGIN_LEFT + 0.16, _y_from_top(ax, HEADER_TEXT_IN),
+        name_x, y,
         brand.get("name", "The Pitch Agent"),
         transform=ax.transAxes, ha="left", va="top",
         fontsize=FS_HEADER - 2, color=secondary, zorder=5,
