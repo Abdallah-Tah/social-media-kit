@@ -34,7 +34,8 @@ BASE = os.environ.get("BLOG_API_URL", "https://buildwithabdallah.com/api/v1").rs
 DRAFTS = os.path.join(KIT, "content", "drafts")
 
 CLUSTERS = {
-    "Laravel/PHP": ["laravel", "php", "pennant", "eloquent", "artisan", "symfony", "composer"],
+    "Laravel/PHP": ["laravel", "php", "pennant", "eloquent", "artisan", "symfony",
+                    "composer", "nativephp", "native php"],
     "Python": ["python", "fastapi", "django", "flask", "pydantic", "pandas", "pip"],
     "React/Next.js": ["react", "next.js", "nextjs", "remix", "jsx"],
     "Vue/Nuxt": ["vue", "nuxt", "pinia", "vite"],
@@ -42,6 +43,15 @@ CLUSTERS = {
     "C++": ["c++", "cpp", "cmake"],
     "AI agents": ["ai agent", "agents", "llm", "mcp", "rag", "claude", "openai", "pydantic ai"],
     "Automation / DevOps": ["automation", "docker", "ci/cd", "github actions", "cron", "devops"],
+}
+
+# Subjects to prefer within a cluster when they are fresh and not already
+# covered. The topic picker is steered toward these before falling back to a
+# generic pick, so high-value tools get tutorials on rotation.
+CLUSTER_FOCUS = {
+    "Laravel/PHP": [
+        "NativePHP — build native desktop and mobile apps with Laravel/PHP",
+    ],
 }
 
 
@@ -82,9 +92,16 @@ def _chat(messages, max_tokens=400, temperature=0.6):
 
 def find_topic(cluster, titles):
     # Pull current signal from the web so the topic isn't anchored to old model knowledge.
+    focus = CLUSTER_FOCUS.get(cluster, [])
+    queries = [f"{cluster} new release features {datetime.date.today().year}",
+               f"{cluster} popular library tutorial {datetime.date.today().year}"]
+    # Add a focus-driven query so preferred subjects (e.g. NativePHP) surface
+    # with current signal too.
+    for f in focus:
+        queries.append(f"{f.split(' — ')[0].split(' (')[0]} tutorial {datetime.date.today().year}")
+
     search_lines = []
-    for q in (f"{cluster} new release features {datetime.date.today().year}",
-              f"{cluster} popular library tutorial {datetime.date.today().year}"):
+    for q in queries:
         try:
             for res in CR.web_search(q, count=5):
                 t = res.get("title", "")
@@ -92,13 +109,23 @@ def find_topic(cluster, titles):
                     search_lines.append("- " + t)
         except Exception:
             pass
-    search_block = "\n".join(search_lines[:12]) or "(no search results)"
+    search_block = "\n".join(search_lines[:16]) or "(no search results)"
     avoid = "\n".join("- " + t for t in titles if t)
+
+    focus_block = ""
+    if focus:
+        focus_block = (
+            "PREFERRED SUBJECTS (favour one of these when it is fresh and NOT already "
+            "covered below; otherwise pick another specific subject in the area):\n"
+            + "\n".join("- " + f for f in focus)
+            + "\n\n"
+        )
 
     prompt = (
         f"You are choosing ONE hands-on developer tutorial topic in the '{cluster}' area for the "
         "Build With Abdallah blog. Use the current web signals to stay relevant.\n\n"
         f"CURRENT WEB SIGNALS:\n{search_block}\n\n"
+        f"{focus_block}"
         f"ALREADY PUBLISHED (do NOT duplicate the subject of any of these, even reworded):\n{avoid}\n\n"
         "Pick ONE specific, practical tutorial subject (one library/feature/use case) that is NOT a "
         "duplicate and is genuinely useful to build. Return STRICT JSON: "
