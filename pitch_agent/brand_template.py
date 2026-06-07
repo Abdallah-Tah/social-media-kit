@@ -278,6 +278,58 @@ def create_canvas(
     return fig, ax, Layout(height_in=height, n_rows=n_rows)
 
 
+def generate_list_card(
+    title: str,
+    subtitle: str,
+    rows: list[dict[str, Any]],
+    output_path: str,
+    *,
+    footer_text: str | None = None,
+    config_path: str | None = None,
+    theme_name: str | None = None,
+) -> str:
+    """Render a branded list-card image and save it to *output_path*.
+
+    This is the single public entry point for any post that follows the standard
+    template layout: logo → title → subtitle → divider → N bullet rows → footer.
+
+    Each dict in *rows* may contain:
+        label  – main left text            (required)
+        col_a  – middle-right accent text  (optional, rendered in blue)
+        col_b  – far-right secondary text  (optional, rendered in grey)
+
+    Returns the resolved absolute path of the saved file.
+
+    Example::
+
+        generate_list_card(
+            title="Upcoming World Cup Fixtures",
+            subtitle="World Cup 2026 • Fixture data • football-data.org",
+            rows=[
+                {"label": "Mexico vs South Africa", "col_a": "Group A", "col_b": "2026-06-11"},
+                {"label": "Korea Republic vs Czechia", "col_a": "Group A", "col_b": "2026-06-12"},
+            ],
+            output_path="artifacts/fixtures.png",
+        )
+    """
+    from pitch_agent.chart_blocks import draw_list_rows
+    from pitch_agent.chart_themes import load_theme
+
+    brand = load_brand_config(config_path)
+    theme = load_theme(theme_name, config_path)
+
+    fig, ax, layout = create_canvas(
+        n_rows=max(len(rows), 1),
+        brand=brand,
+        theme=theme,
+        title=title,
+        subtitle=subtitle,
+        footer_text=footer_text,
+    )
+    draw_list_rows(ax, rows, theme, layout)
+    return save_chart(fig, output_path, theme)
+
+
 def save_chart(fig: Any, output_path: str, theme: dict[str, Any]) -> str:
     """Save the figure with the theme background and close it."""
     output = Path(output_path)
