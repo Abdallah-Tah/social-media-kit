@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
+"""DEBUG ONLY — DO NOT USE IN PRODUCTION — DO NOT STORE REAL TOKENS HERE.
+
+Archived troubleshooting script kept for historical reference. Use the supported
+LinkedIn poster scripts with environment variables instead of editing tokens into
+source files.
+"""
 import requests
 import json
 
 # Full access token from the JSON response
-ACCESS_TOKEN = '***'
+ACCESS_TOKEN = '<PASTE_TOKEN_IN_ENV_NOT_SOURCE>'
 
 headers = {
-    'Authorization': f'***',
+    'Authorization': 'Bearer <TOKEN_FROM_ENV>',
     'Content-Type': 'application/json',
     'X-Restli-Protocol-Version': '2.0.0'
 }

@@ -17,6 +17,7 @@ import subprocess
 import tempfile
 import argparse
 import requests
+from pathlib import Path
 
 W, H = 1080, 1920
 FPS = 30
@@ -211,7 +212,8 @@ def main():
     ap.add_argument("--music", default=None)
     args = ap.parse_args()
     try:
-        sys.path.insert(0, os.path.expanduser("~/social-media-kit"))
+        root = Path(os.environ.get("SMKIT_ROOT", Path(__file__).resolve().parents[1]))
+        sys.path.insert(0, str(root))
         from agent.config import load_env; load_env()
     except Exception:
         pass

@@ -403,6 +403,24 @@ def _slugify(text: str) -> str:
     return slug[:80] or "untitled"
 
 
+PLACEHOLDER_MARKERS = (
+    "[add setup steps here]",
+    "[first step]",
+    "[add content here",
+    "[add your analysis here]",
+    "[feature]",
+    "[value]",
+)
+
+
+def _placeholder_error(markdown: str) -> str | None:
+    lowered = str(markdown or "").lower()
+    for marker in PLACEHOLDER_MARKERS:
+        if marker in lowered:
+            return f"ERROR: placeholder text found ({marker}). Save as draft only; do not publish."
+    return None
+
+
 class ToolBox:
     """Stateful dispatcher: holds config + profile, runs tool calls."""
 
@@ -547,6 +565,9 @@ class ToolBox:
             markdown = draft_path.read_text(encoding="utf-8")
         if not markdown:
             return "ERROR: provide either draft_path or markdown."
+        placeholder = _placeholder_error(markdown)
+        if placeholder and not args.get("draft", False):
+            return placeholder
 
         blog = self.profile.get("blog", {})
         title = args["title"]

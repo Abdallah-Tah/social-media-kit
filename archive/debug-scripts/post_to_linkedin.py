@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
+"""DEBUG ONLY — DO NOT USE IN PRODUCTION — DO NOT STORE REAL TOKENS HERE.
+
+Archived troubleshooting script kept for historical reference. Use the supported
+LinkedIn poster scripts with environment variables instead of editing tokens into
+source files.
+"""
 import requests
 import json
 
-# Access token from the conversation
-ACCESS_TOKEN = '***'
+# Access token from the database
+ACCESS_TOKEN = '<PASTE_TOKEN_IN_ENV_NOT_SOURCE>'
 
 headers = {
-    'Authorization': f'***',
+    'Authorization': 'Bearer <TOKEN_FROM_ENV>',
     'Content-Type': 'application/json',
     'X-Restli-Protocol-Version': '2.0.0'
 }
+
+# Image path
+image_path = '<LOCAL_IMAGE_PATH>'
 
 # Register upload for image
 register_url = 'https://api.linkedin.com/v2/assets?action=registerUpload'
@@ -35,10 +44,9 @@ if resp.status_code == 200:
     asset_urn = result['value']['asset']
     
     # Upload the image
-    image_path = '/home/abdaltm86/.openclaw/workspace/social/content/raw/2026-06-03_mcp-server-tutorial-card.png'
     with open(image_path, 'rb') as img:
         upload_resp = requests.post(upload_url, data=img, headers={
-            'Authorization': f'***',
+            'Authorization': 'Bearer <TOKEN_FROM_ENV>',
             'Content-Type': 'image/png'
         })
     print(f'Image upload status: {upload_resp.status_code}')

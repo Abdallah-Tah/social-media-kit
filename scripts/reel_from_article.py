@@ -15,11 +15,13 @@ import argparse
 import tempfile
 import urllib.request
 import requests
+from pathlib import Path
 
-sys.path.insert(0, os.path.expanduser("~/social-media-kit"))
+ROOT = Path(os.environ.get("SMKIT_ROOT", Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(ROOT))
 from agent.config import load_env
 load_env()
-sys.path.insert(0, os.path.join(os.path.expanduser("~/social-media-kit"), "scripts"))
+sys.path.insert(0, str(ROOT / "scripts"))
 import reel_generator as RG
 import fb_reels_publisher as FB
 
@@ -137,7 +139,7 @@ def main():
     narration, captions, hashtags = write_script(title, post.get("excerpt") or "", post.get("body") or "")
     print(f"  narration: {narration[:90]}…\n  captions: {captions}\n  hashtags: {hashtags}")
 
-    out = args.out or os.path.join(os.path.expanduser("~/social-media-kit"),
+    out = args.out or os.path.join(str(ROOT),
                                    "content/assets", f"reel_{slug[:40]}.mp4")
     reel = RG.make_reel(title, narration, captions, cover, out)
     if not reel:

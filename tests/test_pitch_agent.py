@@ -379,7 +379,7 @@ def test_fan_mode_content_is_narrative_not_raw_list(tmp_path):
     assert "Player One (TeamA) leads" in content
     assert "Player One (TeamA) — TeamA: 80.0" not in content
     # Frames the project as analytics, not tipping.
-    assert "tracks performance, not predictions" in content
+    assert "tracks performance and explains match outlooks with public data" in content
     # Stays short enough for the major social platforms.
     assert len(content) < 900
     assert TRADEMARK_DISCLAIMER in content
@@ -1055,7 +1055,7 @@ def test_chart_default_output_folder_and_branding(tmp_path, monkeypatch):
     assert path == Path("artifacts/pitch_agent/charts/leaderboard_def.png")
     assert path.exists()
     assert path.stat().st_size > 0
-    assert "The Pitch Agent" in get_chart_footer()
+    assert "Data-based estimates" in get_chart_footer()
     assert "Not affiliated with FIFA" in get_chart_footer()
 
 
@@ -1345,7 +1345,7 @@ def test_fixtures_chart_uses_branded_footer(tmp_path, monkeypatch):
     import pitch_agent.charts as charts
 
     branded = (
-        "The Pitch Agent by BuildWithAbdallah | Independent analytics | "
+        "BuildWithAbdallah.com | Data-based estimates | Not betting advice | "
         "Not affiliated with FIFA"
     )
     captured: dict[str, str] = {}
@@ -1601,8 +1601,8 @@ def test_chart_footer_uses_brand_with_parent():
     from pitch_agent.transparency import get_chart_footer
 
     footer = get_chart_footer()
-    assert "The Pitch Agent by BuildWithAbdallah" in footer
-    assert "Independent analytics" in footer
+    assert "BuildWithAbdallah.com | Data-based estimates" in footer
+    assert "Not betting advice" in footer
     assert "Not affiliated with FIFA" in footer
 
 
@@ -1651,7 +1651,7 @@ def test_chart_uses_logo_when_present(tmp_path, monkeypatch):
         "pitch_agent.config.load_brand",
         lambda *a, **k: {
             "name": "The Pitch Agent", "parent_brand": "BuildWithAbdallah",
-            "footer": "The Pitch Agent by BuildWithAbdallah | Independent analytics | Not affiliated with FIFA",
+            "footer": "BuildWithAbdallah.com | Data-based estimates | Not betting advice | Not affiliated with FIFA",
             "logo_path": str(logo),
         },
     )
@@ -1760,7 +1760,7 @@ def test_branded_chart_missing_logo_does_not_crash(tmp_path, monkeypatch):
         "pitch_agent.config.load_brand",
         lambda *a, **k: {
             "name": "The Pitch Agent", "parent_brand": "BuildWithAbdallah",
-            "footer": "The Pitch Agent by BuildWithAbdallah | Independent analytics | Not affiliated with FIFA",
+            "footer": "BuildWithAbdallah.com | Data-based estimates | Not betting advice | Not affiliated with FIFA",
             "logo_path": "",  # missing logo
             "background_color": "#F8FAFF", "primary_text": "#071A3D",
             "secondary_text": "#64748B", "accent_blue": "#0B63F6",

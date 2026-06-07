@@ -130,7 +130,7 @@ when validation passes and sends Telegram a summary of what happened.
 1. Add topics (one per line) to `config/topics.txt`.
 2. Run the scheduled job with the live profile:
    ```cron
-   0 */3 * * *  /home/abdaltm86/.local/bin/bwa-cron-publish.sh >> /home/abdaltm86/logs/smkit-cron.log 2>&1
+   0 */3 * * *  $HOME/.local/bin/bwa-cron-publish.sh >> $HOME/logs/smkit-cron.log 2>&1
    ```
    The runner validates the article, uses source images first for covers, falls
    back to a readable Build With Abdallah banner, publishes without approval when

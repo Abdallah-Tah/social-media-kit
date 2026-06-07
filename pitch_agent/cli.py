@@ -101,21 +101,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ── predict ──────────────────────────────────────────────────────────
     p_pred = sub.add_parser("predict",
-                            help="Predict upcoming match outcomes (data-based estimate)")
+                            help="Estimate upcoming match outcomes (data-based model outlook)")
     p_pred.add_argument("--competition", default=None, help="Competition ID filter")
     p_pred.add_argument("--limit", type=int, default=10, help="Number of fixtures")
     p_pred.add_argument("--neutral", action="store_true",
                         help="Treat all venues as neutral (no home advantage)")
-    p_pred.add_argument("--render", action="store_true", help="Render a prediction card PNG")
+    p_pred.add_argument("--render", action="store_true", help="Render a match estimate card PNG")
     p_pred.add_argument("--output", "-o", default=None, help="Output PNG path (with --render)")
     p_pred.add_argument("--save", action="store_true",
-                        help="Save predictions to the DB for later accuracy scoring")
+                        help="Save model estimates to the DB for later accuracy scoring")
     p_pred.add_argument("--db", default="pitch_agent.db", help="Database path")
     p_pred.set_defaults(func=cmd_predict)
 
     # ── predict-accuracy ─────────────────────────────────────────────────
     p_acc = sub.add_parser("predict-accuracy",
-                           help="Score saved predictions against real results")
+                           help="Score saved model estimates against real results")
     p_acc.add_argument("--render", action="store_true", help="Render a scorecard PNG")
     p_acc.add_argument("--output", "-o", default=None, help="Output PNG path (with --render)")
     p_acc.add_argument("--db", default="pitch_agent.db", help="Database path")
@@ -422,10 +422,10 @@ def cmd_predict(args: argparse.Namespace) -> int:
         neutral=args.neutral,
     )
     if not predictions:
-        print("No upcoming fixtures to predict. Run `sync-data` first.")
+        print("No upcoming fixtures to estimate. Run `sync-data` first.")
         return 1
 
-    print(f"\n🔮 Match Predictions ({len(predictions)})\n")
+    print(f"\n🔮 Match Estimates ({len(predictions)})\n")
     print(f"{'Match':<34} {'Home%':>6} {'Draw%':>6} {'Away%':>6}  {'Score':>6}")
     print("-" * 64)
     for p in predictions:
@@ -435,12 +435,12 @@ def cmd_predict(args: argparse.Namespace) -> int:
 
     if args.save:
         n = save_predictions(predictions, db_path=args.db)
-        print(f"\n💾 Saved {n} prediction(s) for later accuracy scoring.")
+        print(f"\n💾 Saved {n} estimate(s) for later accuracy scoring.")
 
     if args.render:
         from pitch_agent.charts import render_prediction_chart
         out = render_prediction_chart(predictions, output_path=args.output, limit=args.limit)
-        print(f"🖼️  Prediction card: {out}")
+        print(f"🖼️  Match estimate card: {out}")
 
     print(f"\n{PREDICTION_DISCLAIMER}")
     return 0
@@ -453,12 +453,12 @@ def cmd_predict_accuracy(args: argparse.Namespace) -> int:
 
     summary = accuracy_summary(db_path=args.db)
     if summary["n"] == 0:
-        print("No scored predictions yet. Save predictions with "
+        print("No scored estimates yet. Save estimates with "
               "`predict --save`, then sync results.")
         return 1
 
-    print(f"\n📊 Prediction Accuracy\n")
-    print(f"Predictions scored : {summary['n']}")
+    print(f"\n📊 Estimate Accuracy\n")
+    print(f"Estimates scored   : {summary['n']}")
     print(f"Correct outcomes   : {summary['correct']} ({summary['accuracy']*100:.0f}%)")
     print(f"Brier score        : {summary['brier']:.3f}  (lower is better)")
 
@@ -479,12 +479,12 @@ def cmd_predict_accuracy(args: argparse.Namespace) -> int:
             "col_b": "Correct" if s["correct"] else "Miss",
         } for s in scored]
         out = generate_list_card_html(
-            "Prediction Accuracy",
+            "Estimate Accuracy",
             f"{summary['correct']}/{summary['n']} correct "
             f"({summary['accuracy']*100:.0f}%) • Poisson model",
             rows,
-            args.output or "artifacts/pitch_agent/charts/prediction_accuracy.png",
-            footer_text=f"BuildWithAbdallah.com | {PREDICTION_DISCLAIMER}",
+            args.output or "artifacts/pitch_agent/charts/estimate_accuracy.png",
+            footer_text="BuildWithAbdallah.com | Data-based estimates | Not betting advice | Not affiliated with FIFA",
         )
         print(f"🖼️  Scorecard card: {out}")
 

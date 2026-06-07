@@ -20,7 +20,8 @@ from pathlib import Path
 
 import requests
 
-sys.path.insert(0, os.path.expanduser("~/social-media-kit"))
+ROOT = Path(os.environ.get("SMKIT_ROOT", Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(ROOT))
 from agent.config import load_env
 load_env()
 

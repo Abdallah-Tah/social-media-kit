@@ -20,7 +20,7 @@ brand:
   name: "The Pitch Agent"
   parent_brand: "BuildWithAbdallah"
   logo_path: "assets/brand/buildwithabdallah-logo.png"
-  footer: "The Pitch Agent by BuildWithAbdallah | Independent analytics | Not affiliated with FIFA"
+  footer: "BuildWithAbdallah.com | Data-based estimates | Not betting advice | Not affiliated with FIFA"
   # "buildwithabdallah_light" (default) or "dark" (legacy palette).
   chart_theme: "buildwithabdallah_light"
 
