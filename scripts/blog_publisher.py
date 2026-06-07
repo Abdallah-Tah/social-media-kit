@@ -84,8 +84,12 @@ def _ensure_hosted_cover(cover):
     origin = base.split("/api/")[0] if "/api/" in base else base
     if origin and cover.startswith(origin):
         return cover  # already hosted on the site
-    tok = os.environ.get("SOCIAL_API_TOKEN") or os.environ.get("BLOG_API_TOKEN", "")
-    if not base or not tok:
+    # BLOG_API_TOKEN carries the media-upload ability; SOCIAL_API_TOKEN often
+    # returns 403 "Invalid ability provided" on /media/upload. Try the publish
+    # token first, then fall back to the social token.
+    tokens = [t for t in (os.environ.get("BLOG_API_TOKEN"),
+                          os.environ.get("SOCIAL_API_TOKEN")) if t]
+    if not base or not tokens:
         return cover
     try:
         if cover.startswith("http://") or cover.startswith("https://"):
@@ -95,17 +99,22 @@ def _ensure_hosted_cover(cover):
                 data = fh.read()
         else:
             return cover
-        r = requests.post(
-            f"{base}/media/upload",
-            headers={"Authorization": f"Bearer {tok}", "Accept": "application/json"},
-            files={"file": ("cover.png", data, "image/png")},
-            timeout=90,
-        )
-        if r.status_code in (200, 201):
-            url = (r.json().get("data", {}) or {}).get("url")
-            if url:
-                print(f"✅ cover rehosted on site: {url}")
-                return url
+        for tok in tokens:
+            r = requests.post(
+                f"{base}/media/upload",
+                headers={"Authorization": f"Bearer {tok}", "Accept": "application/json"},
+                files={"file": ("cover.png", data, "image/png")},
+                timeout=90,
+            )
+            if r.status_code in (200, 201):
+                url = (r.json().get("data", {}) or {}).get("url")
+                if url:
+                    print(f"✅ cover rehosted on site: {url}")
+                    return url
+            else:
+                print(f"⚠️ media upload returned {r.status_code} ({r.text[:80]}); "
+                      "trying next token." if len(tokens) > 1 else
+                      f"⚠️ media upload returned {r.status_code} ({r.text[:80]}).")
     except Exception as e:
         print(f"⚠️ cover rehost failed ({e}); using original.")
     return cover

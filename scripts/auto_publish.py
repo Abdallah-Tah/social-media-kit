@@ -149,11 +149,24 @@ def slug_in_sitemap(slug):
         return False
 
 
-def main():
+def main(argv=None):
+    import argparse
+    ap = argparse.ArgumentParser(description="Deterministic Build With Abdallah publisher")
+    ap.add_argument("--cluster", default=None,
+                    help="Force a content cluster (e.g. 'Laravel/PHP') instead of auto-rotation")
+    ap.add_argument("--topic", default=None,
+                    help="Force an exact tutorial title (skips topic selection)")
+    args = ap.parse_args(argv)
+
     titles = recent_titles()
-    cluster = pick_cluster(titles)
-    print(f"cluster: {cluster}")
-    title, slug = find_topic(cluster, titles)
+    if args.topic:
+        title = args.topic
+        slug = None
+        print(f"forced topic: {title}")
+    else:
+        cluster = args.cluster or pick_cluster(titles)
+        print(f"cluster: {cluster}")
+        title, slug = find_topic(cluster, titles)
     if not slug:
         slug = re.sub(r"[^a-z0-9-]", "", title.lower().replace(" ", "-"))[:70].strip("-")
     if slug_in_sitemap(slug):
