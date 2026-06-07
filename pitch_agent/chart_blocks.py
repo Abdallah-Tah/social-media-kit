@@ -162,6 +162,58 @@ def draw_fixture_rows(
                     transform=ax.transAxes, color=divider, lw=0.8, zorder=1)
 
 
+def draw_list_rows(
+    ax: Any, rows: list[dict[str, Any]], theme: dict[str, Any], layout: Layout,
+) -> None:
+    """Generic reusable list rows: blue bullet · label · col_a (blue) · col_b (right).
+
+    Each row dict:
+        label   – main left text (required)
+        col_a   – middle-right text, rendered in accent blue (optional)
+        col_b   – far-right text, rendered in secondary grey (optional)
+    """
+    primary = theme.get("primary_text", "#0B1F44")
+    secondary = theme.get("secondary_text", "#6B7280")
+    accent = theme.get("accent_blue", "#1D6CF2")
+    divider = theme.get("divider_color", "#D9E1EC")
+
+    _LABEL_MAX = 44
+    _COL_A_MAX = 18
+    _COL_A_X = 0.62
+    n = len(rows)
+
+    for i, row in enumerate(rows):
+        y = layout.row_y(i)
+
+        # Blue bullet dot.
+        ax.text(layout.left, y, "•", transform=ax.transAxes, ha="left",
+                va="center", fontsize=15, color=accent)
+
+        # Primary label.
+        label = truncate(str(row.get("label", "")), _LABEL_MAX)
+        ax.text(layout.left + 0.03, y, label, transform=ax.transAxes, ha="left",
+                va="center", fontsize=FS_ROW, color=primary)
+
+        # Column A — accent blue, left-aligned at 62 %.
+        col_a = str(row.get("col_a", "")).strip()
+        if col_a:
+            ax.text(_COL_A_X, y, truncate(col_a, _COL_A_MAX), transform=ax.transAxes,
+                    ha="left", va="center", fontsize=FS_ROW_SECONDARY,
+                    color=accent, fontweight="bold")
+
+        # Column B — secondary grey, right-aligned.
+        col_b = str(row.get("col_b", "")).strip()
+        if col_b:
+            ax.text(layout.right, y, col_b, transform=ax.transAxes, ha="right",
+                    va="center", fontsize=FS_ROW_SECONDARY, color=secondary)
+
+        # Divider line between rows (not after the last row).
+        if i < n - 1:
+            line_y = y - layout.row_step / 2
+            ax.plot([layout.left, layout.right], [line_y, line_y],
+                    transform=ax.transAxes, color=divider, lw=0.8, zorder=1)
+
+
 def draw_player_spotlight(
     ax: Any, player: dict[str, Any], theme: dict[str, Any], layout: Layout,
 ) -> None:
