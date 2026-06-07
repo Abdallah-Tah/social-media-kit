@@ -155,19 +155,53 @@ def render_leaderboard_chart(
     return brand_template.save_chart(fig, output_path, theme)
 
 
+def _fixtures_to_card_rows(fixtures: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Map fixture dicts to the list-card ``{label, col_a, col_b}`` schema.
+
+    Mirrors :func:`pitch_agent.chart_blocks.draw_fixture_rows`: match label left,
+    group/stage as the blue accent value, date as the muted value.
+    """
+    from pitch_agent.fixtures import normalize_stage_label
+
+    rows: list[dict[str, Any]] = []
+    for fx in fixtures:
+        context = (normalize_stage_label(fx.get("group_name"))
+                   or normalize_stage_label(fx.get("stage")))
+        rows.append({
+            "label": str(fx.get("match_label") or "TBD"),
+            "col_a": context,
+            "col_b": str(fx.get("date") or "")[:10],
+        })
+    return rows
+
+
 def render_fixtures_chart(
     fixtures: list[dict[str, Any]],
     output_path: str | None = None,
     limit: int = 10,
-    title: str = "Upcoming World Cup Fixtures",
+    title: str = "Upcoming World Cup Matches",
     subtitle: str = "World Cup 2026 • Fixture data • football-data.org",
 ) -> str:
-    """Render a branded list of upcoming fixtures as a PNG."""
+    """Render a branded list of upcoming fixtures as a PNG.
+
+    Uses the HTML/CSS + headless-Chromium renderer (real logo, sharper type). If
+    Playwright/Chromium is unavailable the matplotlib template is used as a
+    fallback, so chart generation never crashes the posting pipeline.
+    """
     if output_path is None:
         output_path = str(DEFAULT_CHART_DIR / "fixtures.png")
 
-    brand, theme = _load_brand_and_theme()
     rows = list(fixtures[:limit])
+    if rows:
+        try:
+            return brand_template.generate_list_card_html(
+                title, subtitle, _fixtures_to_card_rows(rows), output_path,
+                footer_text=get_chart_footer(),
+            )
+        except Exception as exc:  # noqa: BLE001 - fall back, never crash the pipeline
+            print(f"HTML card render failed ({exc}); falling back to matplotlib.")
+
+    brand, theme = _load_brand_and_theme()
     fig, ax, layout = brand_template.create_canvas(
         len(rows), brand, theme, title=title, subtitle=subtitle,
     )
@@ -175,6 +209,71 @@ def render_fixtures_chart(
         _draw_empty(ax, theme, "No upcoming fixtures available")
     else:
         chart_blocks.draw_fixture_rows(ax, rows, theme, layout)
+    return brand_template.save_chart(fig, output_path, theme)
+
+
+def _favorite_label(pred: dict[str, Any]) -> str:
+    """Human label for the favored side, e.g. ``Brazil 58%`` or ``Draw 30%``."""
+    outcome = pred.get("predicted_outcome", "")
+    if outcome == "HOME":
+        return f"{pred.get('home_team_name', 'Home')} {round(pred.get('p_home', 0) * 100)}%"
+    if outcome == "AWAY":
+        return f"{pred.get('away_team_name', 'Away')} {round(pred.get('p_away', 0) * 100)}%"
+    return f"Draw {round(pred.get('p_draw', 0) * 100)}%"
+
+
+def _predictions_to_card_rows(predictions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Map predictions to ``{label, col_a, col_b}``: fixture, favorite %, most
+    likely scoreline."""
+    rows: list[dict[str, Any]] = []
+    for p in predictions:
+        label = f"{p.get('home_team_name', '')} vs {p.get('away_team_name', '')}".strip(" vs")
+        rows.append({
+            "label": label or "TBD",
+            "col_a": _favorite_label(p),
+            "col_b": str(p.get("most_likely_score", "")),
+        })
+    return rows
+
+
+def render_prediction_chart(
+    predictions: list[dict[str, Any]],
+    output_path: str | None = None,
+    limit: int = 10,
+    title: str = "World Cup Match Predictions",
+    subtitle: str = "Data-based estimates • Poisson model • football-data.org",
+) -> str:
+    """Render a branded card of match predictions (favorite % + likely score).
+
+    Uses the shared HTML card template; falls back to matplotlib if Playwright is
+    unavailable, so it never crashes the pipeline. The footer carries the
+    data-based-estimate / not-affiliated disclaimer.
+    """
+    from pitch_agent.predict import PREDICTION_DISCLAIMER
+
+    if output_path is None:
+        output_path = str(DEFAULT_CHART_DIR / "predictions.png")
+
+    footer = f"BuildWithAbdallah.com | {PREDICTION_DISCLAIMER}"
+    rows = list(predictions[:limit])
+    if rows:
+        try:
+            return brand_template.generate_list_card_html(
+                title, subtitle, _predictions_to_card_rows(rows), output_path,
+                footer_text=footer,
+            )
+        except Exception as exc:  # noqa: BLE001 - fall back, never crash the pipeline
+            print(f"HTML card render failed ({exc}); falling back to matplotlib.")
+
+    if rows:
+        return brand_template.generate_list_card(
+            title, subtitle, _predictions_to_card_rows(rows), output_path,
+            footer_text=footer,
+        )
+    brand, theme = _load_brand_and_theme()
+    brand["footer"] = footer
+    fig, ax, layout = brand_template.create_canvas(4, brand, theme, title=title, subtitle=subtitle)
+    _draw_empty(ax, theme, "No upcoming fixtures to predict")
     return brand_template.save_chart(fig, output_path, theme)
 
 
@@ -218,6 +317,50 @@ def render_stat_card_chart(
     return brand_template.save_chart(fig, output_path, theme)
 
 
+def _projection_to_card_rows(projection: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Map a group projection to ``{label, col_a, col_b}``: team, advance %, win-group %."""
+    rows: list[dict[str, Any]] = []
+    for r in projection:
+        rows.append({
+            "label": str(r.get("team", "")),
+            "col_a": f"{round(r.get('p_advance', 0) * 100)}% advance",
+            "col_b": f"{round(r.get('p_win_group', 0) * 100)}% win",
+        })
+    return rows
+
+
+def render_group_projection_chart(
+    projection: list[dict[str, Any]],
+    group_label: str,
+    output_path: str | None = None,
+    title: str | None = None,
+    subtitle: str = "Data-based estimates • 10k simulations • football-data.org",
+) -> str:
+    """Render a branded card of a group's advance/win probabilities."""
+    from pitch_agent.predict import PREDICTION_DISCLAIMER
+
+    if output_path is None:
+        output_path = str(DEFAULT_CHART_DIR / "group_projection.png")
+    title = title or f"{group_label}: Who Advances?"
+    footer = f"BuildWithAbdallah.com | {PREDICTION_DISCLAIMER}"
+    rows = _projection_to_card_rows(projection)
+    if rows:
+        try:
+            return brand_template.generate_list_card_html(
+                title, subtitle, rows, output_path, footer_text=footer,
+            )
+        except Exception as exc:  # noqa: BLE001 - fall back, never crash the pipeline
+            print(f"HTML card render failed ({exc}); falling back to matplotlib.")
+        return brand_template.generate_list_card(
+            title, subtitle, rows, output_path, footer_text=footer,
+        )
+    brand, theme = _load_brand_and_theme()
+    brand["footer"] = footer
+    fig, ax, layout = brand_template.create_canvas(4, brand, theme, title=title, subtitle=subtitle)
+    _draw_empty(ax, theme, "No group data to project")
+    return brand_template.save_chart(fig, output_path, theme)
+
+
 def _draw_empty(ax: Any, theme: dict[str, Any], message: str) -> None:
     ax.text(0.5, 0.45, message, transform=ax.transAxes, ha="center", va="center",
             fontsize=15, color=theme.get("secondary_text", "#6B7280"))
@@ -240,6 +383,8 @@ def render_for_pillar(
     """
     if pillar == "matchday_preview":
         return render_fixtures_chart(data, output_path=output_path)
+    if pillar == "match_prediction":
+        return render_prediction_chart(data, output_path=output_path)
     if pillar == "player_spotlight" and data:
         return render_player_spotlight_chart(data[0], output_path=output_path)
     if pillar == "stat_of_the_day" and data:

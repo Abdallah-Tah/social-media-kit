@@ -17,6 +17,7 @@ dependencies = [
     "PyYAML>=6.0",
     "Pillow>=11.0.0",
     "matplotlib>=3.7.0",
+    "playwright>=1.40.0",
 ]
 
 [project.optional-dependencies]
@@ -37,4 +38,4 @@ pitch-agent = "pitch_agent.cli:main"
 packages = ["agent", "pitch_agent", "pitch_agent.providers"]
 
 [tool.setuptools.package-data]
-pitch_agent = ["data/*.csv"]
+pitch_agent = ["data/*.csv", "templates/*.html"]

@@ -43,13 +43,8 @@ def _gemini_key():
 
 
 def _auto_provider():
-    # Free Gemini quota first, then paid FAL/OpenAI, then offline card.
-    if _gemini_key():
-        return "gemini"
-    if _fal_key():
-        return "fal"
-    if os.environ.get("OPENAI_API_KEY"):
-        return "openai"
+    # Default to the free, on-brand, deterministic local card (no AI tokens).
+    # Opt into AI image models explicitly with IMAGE_PROVIDER=gemini|fal|openai.
     return "card"
 
 
@@ -245,7 +240,49 @@ def _generate_openai(prompt, out_path, size="1536x1024"):
 
 
 def _generate_card(title, out_path, branding=None):
-    """Free, no-key fallback: render a readable 16:9 branded article banner."""
+    """Free, no-key local cover. Renders the shared branded ``list_card`` template
+    (4K, no title cutoff, dynamic footer) — the single source of truth for BWA
+    cards. List-shaped posts (news digests, step-by-step tutorials) map cleanly to
+    card rows. Prose articles with no list items fall back to the 16:9 banner.
+    """
+    branding = branding or {}
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+
+    # Map workflow / list items into list-card rows ({label} per item).
+    items = branding.get("workflow")
+    if isinstance(items, str):
+        items = [part.strip() for part in items.split("|")]
+    rows = [{"label": str(it).strip()} for it in (items or []) if str(it).strip()]
+
+    # No list content → prose article: use the banner cover instead.
+    if not rows:
+        return _generate_banner(title, out_path, branding)
+
+    subtitle = branding.get("subtitle", "Build With Abdallah")
+    footer = branding.get("footer", "BuildWithAbdallah.com")
+
+    from pitch_agent.brand_template import generate_list_card_html
+    generate_list_card_html(
+        title,
+        subtitle,
+        rows,
+        out_path,
+        footer_text=footer,
+        fourk=True,
+    )
+    print(f"✅ Cover card generated locally (list_card template): {out_path}")
+    return {
+        "path": out_path,
+        "url": None,
+        "provider": "card",
+        "source": "Original Build With Abdallah branded card (list_card template)",
+    }
+
+
+def _generate_banner(title, out_path, branding=None):
+    """16:9 branded article banner — used for prose articles without list items."""
     branding = branding or {}
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import make_tutorial_cover

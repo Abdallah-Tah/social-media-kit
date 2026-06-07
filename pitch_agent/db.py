@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS player_match_stats (
 
 CREATE TABLE IF NOT EXISTS matches (
     match_id              TEXT    PRIMARY KEY,
+    external_id           TEXT    NOT NULL DEFAULT '',
     competition_id        TEXT    NOT NULL DEFAULT '',
     matchday              INTEGER NOT NULL DEFAULT 0,
     stage                 TEXT    NOT NULL DEFAULT '',
@@ -109,6 +110,24 @@ CREATE TABLE IF NOT EXISTS tournament_form_index (
     UNIQUE(tournament_id, player_id, model_version)
 );
 
+CREATE TABLE IF NOT EXISTS predictions (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    match_id              TEXT    NOT NULL,
+    model_version         TEXT    NOT NULL DEFAULT 'poisson-1.0',
+    home_team_name        TEXT    NOT NULL DEFAULT '',
+    away_team_name        TEXT    NOT NULL DEFAULT '',
+    date                  TEXT    NOT NULL DEFAULT '',
+    p_home                REAL    NOT NULL DEFAULT 0.0,
+    p_draw                REAL    NOT NULL DEFAULT 0.0,
+    p_away                REAL    NOT NULL DEFAULT 0.0,
+    exp_home              REAL    NOT NULL DEFAULT 0.0,
+    exp_away              REAL    NOT NULL DEFAULT 0.0,
+    predicted_outcome     TEXT    NOT NULL DEFAULT '',
+    created_at            TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at            TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(match_id, model_version)
+);
+
 CREATE TABLE IF NOT EXISTS runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     run_type    TEXT    NOT NULL,
@@ -128,6 +147,7 @@ CREATE INDEX IF NOT EXISTS idx_stats_position ON player_match_stats(position);
 CREATE INDEX IF NOT EXISTS idx_scores_match ON form_index_scores(match_id);
 CREATE INDEX IF NOT EXISTS idx_scores_player ON form_index_scores(player_id);
 CREATE INDEX IF NOT EXISTS idx_tournament_player ON tournament_form_index(player_id);
+CREATE INDEX IF NOT EXISTS idx_predictions_match ON predictions(match_id);
 """
 
 
@@ -136,6 +156,7 @@ CREATE INDEX IF NOT EXISTS idx_tournament_player ON tournament_form_index(player
 _MATCHES_MIGRATIONS = [
     ("status", "TEXT NOT NULL DEFAULT ''"),
     ("provider_name", "TEXT NOT NULL DEFAULT ''"),
+    ("external_id", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 
@@ -212,7 +233,7 @@ _STATS_COLUMNS = [
 _STATS_UPDATE_COLUMNS = [c for c in _STATS_COLUMNS if c not in ("match_id", "player_id")]
 
 _MATCHES_COLUMNS = [
-    "match_id", "competition_id", "matchday", "stage",
+    "match_id", "external_id", "competition_id", "matchday", "stage",
     "home_team_id", "home_team_name", "away_team_id", "away_team_name",
     "home_score", "away_score", "date", "group_name", "status", "provider_name",
 ]
@@ -294,6 +315,11 @@ def upsert_match(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
     source = dict(record)
     if "group_name" not in source and "group" in source:
         source["group_name"] = source["group"]
+    # external_id powers fixture deduplication. Providers that carry a stable
+    # upstream id set it explicitly; otherwise fall back to the match_id so a
+    # row always has a non-empty dedup key.
+    if not str(source.get("external_id") or "").strip():
+        source["external_id"] = source.get("match_id", "")
 
     int_cols = {"matchday", "home_score", "away_score"}
     cols, vals = [], []

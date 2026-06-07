@@ -303,7 +303,7 @@ def generate_list_card(
     Example::
 
         generate_list_card(
-            title="Upcoming World Cup Fixtures",
+            title="Upcoming World Cup Matches",
             subtitle="World Cup 2026 • Fixture data • football-data.org",
             rows=[
                 {"label": "Mexico vs South Africa", "col_a": "Group A", "col_b": "2026-06-11"},
@@ -328,6 +328,80 @@ def generate_list_card(
     )
     draw_list_rows(ax, rows, theme, layout)
     return save_chart(fig, output_path, theme)
+
+
+def _rows_to_card_values(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Map the list-card ``{label, col_a, col_b}`` schema to the HTML template's
+    ``{label, value1, value2}`` shape.
+
+    ``col_a`` renders as the blue accent value, ``col_b`` as the muted value —
+    matching the matplotlib :func:`generate_list_card` so both renderers read the
+    same input identically. Empty columns are dropped so the row grid collapses.
+    """
+    out: list[dict[str, Any]] = []
+    for row in rows or []:
+        r: dict[str, Any] = {
+            "label": str(row.get("label", "") or ""),
+            "marker": row.get("marker", "dot"),
+        }
+        col_a = str(row.get("col_a", "") or "")
+        col_b = str(row.get("col_b", "") or "")
+        if col_a:
+            r["value1"] = col_a
+        if col_b:
+            r["value2"] = col_b
+        out.append(r)
+    return out
+
+
+def generate_list_card_html(
+    title: str,
+    subtitle: str,
+    rows: list[dict[str, Any]],
+    output_path: str,
+    *,
+    footer_text: str | None = None,
+    config_path: str | None = None,
+    theme_name: str | None = None,
+    fourk: bool = False,
+) -> str:
+    """Render a branded list-card PNG via the HTML/CSS + headless-Chromium engine.
+
+    Drop-in alternative to :func:`generate_list_card` with the same inputs, but
+    rendered from ``pitch_agent/templates/list_card.html`` (sharper typography,
+    real BuildWithAbdallah logo, Inter font). Returns the saved path.
+    Pass ``fourk=True`` for a 3840-wide 4K export (default is 3200×2000).
+    Requires Playwright + Chromium; raises
+    :class:`pitch_agent.html_render.RendererError` with install hints otherwise.
+    """
+    from pitch_agent.html_render import html_to_png, logo_data_uri
+
+    brand = load_brand_config(config_path)
+    theme = load_theme(theme_name, config_path)
+
+    # Build BWA_POST-format data
+    data: dict[str, Any] = {
+        "title": title,
+        "footerText": footer_text if footer_text is not None else brand.get("footer", ""),
+        "rows": _rows_to_card_values(rows),
+    }
+
+    # Split subtitle into components: "Sub • Source • Date"
+    if subtitle:
+        parts = [p.strip() for p in subtitle.split("•")]
+        if len(parts) >= 1:
+            data["subtitle"] = parts[0]
+        if len(parts) >= 2:
+            data["source"] = parts[1]
+        if len(parts) >= 3:
+            data["date"] = parts[2]
+
+    # Logo
+    logo_uri = logo_data_uri(brand.get("logo_path", ""))
+    if logo_uri:
+        data["logoUrl"] = logo_uri
+
+    return html_to_png(data, output_path, fourk=fourk)
 
 
 def save_chart(fig: Any, output_path: str, theme: dict[str, Any]) -> str:

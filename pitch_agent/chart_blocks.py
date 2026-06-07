@@ -145,9 +145,9 @@ def draw_fixture_rows(
         ax.text(layout.left + 0.03, y, label, transform=ax.transAxes, ha="left",
                 va="center", fontsize=FS_ROW, color=primary)
 
-        group = str(fx.get("group_name") or "").replace("_", " ").title().strip()
-        stage = str(fx.get("stage") or "").replace("_", " ").title().strip()
-        context = group or stage
+        from pitch_agent.fixtures import normalize_stage_label
+        context = (normalize_stage_label(fx.get("group_name"))
+                   or normalize_stage_label(fx.get("stage")))
         if context:
             ax.text(0.62, y, truncate(context, 16), transform=ax.transAxes,
                     ha="left", va="center", fontsize=FS_ROW_SECONDARY,

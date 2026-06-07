@@ -18,6 +18,7 @@ from typing import Any
 import requests
 
 from pitch_agent.config import ALL_FIELDS, BASIC_FIELDS
+from pitch_agent.fixtures import normalize_stage_label
 from pitch_agent.providers import DataProvider
 
 
@@ -62,8 +63,12 @@ class FootballDataProvider(DataProvider):
             away = m.get("awayTeam", {})
             score = m.get("score", {})
             ft = score.get("fullTime", {})
+            match_id = str(m.get("id", ""))
             matches.append({
-                "match_id": str(m.get("id", "")),
+                "match_id": match_id,
+                # football-data's numeric match id is the stable upstream key
+                # used for fixture deduplication.
+                "external_id": match_id,
                 "competition_id": str(m.get("competition", {}).get("id", "")),
                 "matchday": m.get("matchday", 0),
                 "stage": m.get("stage", ""),
@@ -74,8 +79,9 @@ class FootballDataProvider(DataProvider):
                 "home_score": ft.get("homeTeam"),
                 "away_score": ft.get("awayTeam"),
                 "date": m.get("utcDate", ""),
-                "group": m.get("group", ""),
+                "group": normalize_stage_label(m.get("group", "")),
                 "status": m.get("status", ""),
+                "provider_name": "football-data",
             })
         return matches
 

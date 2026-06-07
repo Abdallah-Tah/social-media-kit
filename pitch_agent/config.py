@@ -143,7 +143,7 @@ DEFAULT_BRAND = {
     "name": "The Pitch Agent",
     "parent_brand": "BuildWithAbdallah",
     "footer": (
-        "The Pitch Agent by BuildWithAbdallah | Independent analytics | "
+        "BuildWithAbdallah.com | Independent analytics | "
         "Not affiliated with FIFA"
     ),
     "logo_path": "",

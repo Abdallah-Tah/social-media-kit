@@ -4,6 +4,7 @@ requests-oauthlib>=1.3.1  # X (Twitter) OAuth 1.0a
 PyYAML>=6.0               # config + brand profiles
 Pillow>=11.0.0            # social card / logo / banner generation (avoids 10.x CVEs)
 matplotlib>=3.7.0         # chart rendering for The Pitch Agent
+playwright>=1.40.0        # HTML/CSS card renderer (run `playwright install chromium`)
 
 # No SDK is required for the LLM layer — Claude, OpenAI, and Ollama are all
 # called over plain HTTP. python-dotenv is NOT required; we ship a tiny .env

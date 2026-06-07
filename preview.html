@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1200, height=900, initial-scale=1">
+<title>The Pitch Agent Card Template</title>
+<style>
+  :root {
+    --bg: #F7F9FC;
+    --primary: #0B1F44;
+    --secondary: #6B7280;
+    --accent: #1D6CF2;
+    --accent-dark: #0B2A6B;
+    --divider: #DCE5F2;
+    --soft: #EAF1FC;
+    --font: "Segoe UI", "Helvetica Neue", Arial, "Liberation Sans", sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1200px; height: 900px; }
+
+  body {
+    position: relative;
+    overflow: hidden;
+    background: var(--bg);
+    font-family: var(--font);
+    color: var(--primary);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+  }
+
+  /* Background system */
+  .corner { position: absolute; z-index: 0; pointer-events: none; }
+  .corner.tr { top: 0; right: 0; }
+  .corner.bl { bottom: 0; left: 0; }
+
+  .dotgrid {
+    position: absolute;
+    width: 96px;
+    height: 64px;
+    z-index: 0;
+    fill: #BFD2F4;
+    opacity: .85;
+    pointer-events: none;
+  }
+  .dotgrid.tl { top: 34px; left: 34px; }
+  .dotgrid.br { bottom: 74px; right: 48px; }
+
+  .watermark {
+    position: absolute;
+    top: 52%;
+    left: 57%;
+    transform: translate(-50%, -50%);
+    font-size: 620px;
+    font-weight: 900;
+    color: var(--accent);
+    opacity: .055;
+    z-index: 0;
+    line-height: 1;
+    user-select: none;
+    pointer-events: none;
+  }
+
+  /* Main canvas */
+  .page {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    height: 100%;
+    padding: 44px 72px 74px 72px;
+  }
+
+  /* Header: deterministic, no overlap */
+  .header {
+    height: 96px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    max-width: 760px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .logo-mark {
+    width: 88px;
+    height: 88px;
+    flex: 0 0 88px;
+    display: block;
+  }
+
+  .logo-img {
+    max-width: 420px;
+    max-height: 86px;
+    object-fit: contain;
+    object-position: left center;
+    display: none;
+  }
+
+  .brand-text {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .brand-name {
+    font-size: 39px;
+    font-weight: 850;
+    letter-spacing: -.7px;
+    line-height: 1;
+    color: var(--primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .brand-name .accent { color: var(--accent); }
+
+  .tagline {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: var(--primary);
+    opacity: .85;
+    margin-top: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .title {
+    font-size: 64px;
+    font-weight: 850;
+    letter-spacing: -1.7px;
+    color: var(--primary);
+    margin-top: 18px;
+    line-height: 1.04;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 1030px;
+  }
+
+  .subtitle {
+    font-size: 24px;
+    color: var(--secondary);
+    margin-top: 12px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 1030px;
+  }
+
+  .rule {
+    width: 100%;
+    height: 2px;
+    background: var(--divider);
+    margin-top: 20px;
+    opacity: .9;
+  }
+
+  /* Flexible reusable rows */
+  .list {
+    margin-top: 42px;
+    width: 100%;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) minmax(0, 430px);
+    align-items: center;
+    min-height: var(--row-h, 61px);
+    border-bottom: 1px solid var(--divider);
+    column-gap: 18px;
+  }
+
+  .row:last-child { border-bottom: none; }
+
+  .marker {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--accent);
+    justify-self: center;
+  }
+
+  .marker.square {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    background: #D9E4F3;
+  }
+
+  .label {
+    min-width: 0;
+    font-size: 27px;
+    font-weight: 680;
+    color: var(--primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .values {
+    min-width: 0;
+    display: grid;
+    align-items: center;
+    justify-content: end;
+    gap: 22px;
+  }
+
+  .values.count-0 { display: none; }
+  .values.count-1 { grid-template-columns: minmax(0, 170px); }
+  .values.count-2 { grid-template-columns: minmax(0, 145px) minmax(0, 150px); }
+  .values.count-3 { grid-template-columns: minmax(0, 90px) minmax(0, 130px) minmax(0, 120px); }
+
+  .value {
+    font-size: 21px;
+    color: var(--secondary);
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .value.accent {
+    color: var(--accent);
+    font-weight: 800;
+  }
+
+  .value.strong {
+    color: var(--primary);
+    font-weight: 800;
+  }
+
+  .footer {
+    position: absolute;
+    bottom: 26px;
+    left: 0;
+    right: 0;
+    z-index: 3;
+    text-align: center;
+    font-size: 16px;
+    font-style: italic;
+    color: var(--secondary);
+  }
+
+  /* Compact mode for dense cards */
+  .compact .row { min-height: 55px; }
+  .compact .label { font-size: 24px; }
+  .compact .value { font-size: 19px; }
+  .compact .list { margin-top: 34px; }
+</style>
+</head>
+<body>
+  <!-- Deterministic background decorations -->
+  <svg class="corner tr" width="220" height="170" viewBox="0 0 220 170" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M220 0 H74 L220 164 Z" fill="#0B2A6B"/>
+    <path d="M220 0 H145 L220 96 Z" fill="#1D6CF2"/>
+  </svg>
+
+  <svg class="corner bl" width="150" height="190" viewBox="0 0 150 190" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <path d="M0 190 V70 L132 190 Z" fill="#0B2A6B"/>
+    <path d="M0 190 V118 L92 190 Z" fill="#1D6CF2"/>
+  </svg>
+
+  <svg class="dotgrid tl" viewBox="0 0 96 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <g>
+      <circle cx="6" cy="6" r="3.2"/><circle cx="22" cy="6" r="3.2"/><circle cx="38" cy="6" r="3.2"/><circle cx="54" cy="6" r="3.2"/><circle cx="70" cy="6" r="3.2"/><circle cx="86" cy="6" r="3.2"/>
+      <circle cx="6" cy="22" r="3.2"/><circle cx="22" cy="22" r="3.2"/><circle cx="38" cy="22" r="3.2"/><circle cx="54" cy="22" r="3.2"/><circle cx="70" cy="22" r="3.2"/><circle cx="86" cy="22" r="3.2"/>
+      <circle cx="6" cy="38" r="3.2"/><circle cx="22" cy="38" r="3.2"/><circle cx="38" cy="38" r="3.2"/><circle cx="54" cy="38" r="3.2"/><circle cx="70" cy="38" r="3.2"/><circle cx="86" cy="38" r="3.2"/>
+      <circle cx="6" cy="54" r="3.2"/><circle cx="22" cy="54" r="3.2"/><circle cx="38" cy="54" r="3.2"/><circle cx="54" cy="54" r="3.2"/><circle cx="70" cy="54" r="3.2"/><circle cx="86" cy="54" r="3.2"/>
+    </g>
+  </svg>
+
+  <svg class="dotgrid br" viewBox="0 0 96 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <g>
+      <circle cx="6" cy="6" r="3.2"/><circle cx="22" cy="6" r="3.2"/><circle cx="38" cy="6" r="3.2"/><circle cx="54" cy="6" r="3.2"/><circle cx="70" cy="6" r="3.2"/><circle cx="86" cy="6" r="3.2"/>
+      <circle cx="6" cy="22" r="3.2"/><circle cx="22" cy="22" r="3.2"/><circle cx="38" cy="22" r="3.2"/><circle cx="54" cy="22" r="3.2"/><circle cx="70" cy="22" r="3.2"/><circle cx="86" cy="22" r="3.2"/>
+      <circle cx="6" cy="38" r="3.2"/><circle cx="22" cy="38" r="3.2"/><circle cx="38" cy="38" r="3.2"/><circle cx="54" cy="38" r="3.2"/><circle cx="70" cy="38" r="3.2"/><circle cx="86" cy="38" r="3.2"/>
+      <circle cx="6" cy="54" r="3.2"/><circle cx="22" cy="54" r="3.2"/><circle cx="38" cy="54" r="3.2"/><circle cx="54" cy="54" r="3.2"/><circle cx="70" cy="54" r="3.2"/><circle cx="86" cy="54" r="3.2"/>
+    </g>
+  </svg>
+
+  <div class="watermark" id="watermark">A</div>
+
+  <main class="page" id="page">
+    <header class="header">
+      <img id="logoImg" class="logo-img" alt="BuildWithAbdallah logo">
+      <svg id="logoMark" class="logo-mark" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="amark" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#2D7BFF"/>
+            <stop offset="100%" stop-color="#0B2A6B"/>
+          </linearGradient>
+        </defs>
+        <path d="M60 10 L110 106 H88 L76 82 H44 L32 106 H10 Z" fill="url(#amark)"/>
+        <path d="M52 67 L42 76 L52 85" fill="none" stroke="#0B1F44" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M68 67 L78 76 L68 85" fill="none" stroke="#0B1F44" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+
+      <div class="brand-text" id="brandText">
+        <div class="brand-name" id="brandName">Build With <span class="accent">Abdallah</span></div>
+        <div class="tagline" id="tagline">SOFTWARE • AUTOMATION • APIS • SOLUTIONS</div>
+      </div>
+    </header>
+
+    <section>
+      <h1 class="title" id="title">TITLE GOES HERE</h1>
+      <div class="subtitle" id="subtitle">Subtitle • Source • Date</div>
+      <div class="rule"></div>
+      <div class="list" id="rows"></div>
+    </section>
+  </main>
+
+  <footer class="footer" id="footer">The Pitch Agent by BuildWithAbdallah | Independent analytics | Not affiliated with FIFA</footer>
+
+<script>
+/*
+  Playwright usage:
+  await page.addInitScript({ content: `window.PITCH_AGENT_CARD_DATA = ${JSON.stringify(data)}` });
+  await page.goto(`file://${templatePath}`);
+  await page.screenshot({ path: "card.png", clip: { x: 0, y: 0, width: 1200, height: 900 } });
+
+  Row schema:
+  {
+    "label": "Mexico vs South Africa",
+    "marker": "dot", // dot | square | none
+    "values": [
+      { "text": "Group A", "tone": "accent" },
+      { "text": "2026-06-11", "tone": "muted" }
+    ]
+  }
+
+  right side supports 0–3 values per row.
+*/
+
+const DEFAULT_DATA = {
+  brand: {
+    logoUrl: "",
+    nameHtml: 'Build With <span class="accent">Abdallah</span>',
+    tagline: "SOFTWARE • AUTOMATION • APIS • SOLUTIONS",
+    watermark: "A",
+    footer: "The Pitch Agent by BuildWithAbdallah | Independent analytics | Not affiliated with FIFA"
+  },
+  title: "Upcoming World Cup Matches",
+  subtitle: "World Cup 2026 • Fixture data • football-data.org",
+  rows: [
+    { label: "Mexico vs South Africa", values: [{text:"Group A", tone:"accent"}, {text:"2026-06-11"}] },
+    { label: "Korea Republic vs Czechia", values: [{text:"Group A", tone:"accent"}, {text:"2026-06-12"}] },
+    { label: "Canada vs Bosnia-H.", values: [{text:"Group B", tone:"accent"}, {text:"2026-06-12"}] },
+    { label: "USA vs Paraguay", values: [{text:"Group D", tone:"accent"}, {text:"2026-06-13"}] },
+    { label: "Qatar vs Switzerland", values: [{text:"Group B", tone:"accent"}, {text:"2026-06-13"}] },
+    { label: "Brazil vs Morocco", values: [{text:"Group C", tone:"accent"}, {text:"2026-06-13"}] },
+    { label: "Haiti vs Scotland", values: [{text:"Group C", tone:"accent"}, {text:"2026-06-14"}] },
+    { label: "Australia vs Turkey", values: [{text:"Group D", tone:"accent"}, {text:"2026-06-14"}] },
+    { label: "Germany vs Curaçao", values: [{text:"Group E", tone:"accent"}, {text:"2026-06-14"}] },
+    { label: "Netherlands vs Japan", values: [{text:"Group F", tone:"accent"}, {text:"2026-06-14"}] }
+  ]
+};
+
+function normalizeValue(value, index) {
+  if (value == null) return { text: "", tone: "" };
+  if (typeof value === "string" || typeof value === "number") {
+    return { text: String(value), tone: index === 0 ? "accent" : "" };
+  }
+  return {
+    text: String(value.text ?? ""),
+    tone: String(value.tone ?? (index === 0 ? "accent" : ""))
+  };
+}
+
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value ?? "";
+}
+
+function renderCard(input) {
+  const data = Object.assign({}, DEFAULT_DATA, input || {});
+  const brand = Object.assign({}, DEFAULT_DATA.brand, data.brand || {});
+
+  document.getElementById("brandName").innerHTML = brand.nameHtml || DEFAULT_DATA.brand.nameHtml;
+  setText("tagline", brand.tagline);
+  setText("title", data.title);
+  setText("subtitle", data.subtitle);
+  setText("footer", brand.footer);
+  setText("watermark", brand.watermark || "A");
+
+  const logoImg = document.getElementById("logoImg");
+  const logoMark = document.getElementById("logoMark");
+  const brandText = document.getElementById("brandText");
+
+  if (brand.logoUrl) {
+    logoImg.src = brand.logoUrl;
+    logoImg.style.display = "block";
+    logoMark.style.display = "none";
+    /* If a full wordmark logo is provided, avoid duplicate text overlap. */
+    if (brand.logoIsWordmark !== false) brandText.style.display = "none";
+  } else {
+    logoImg.style.display = "none";
+    logoMark.style.display = "block";
+    brandText.style.display = "flex";
+  }
+
+  const rowsEl = document.getElementById("rows");
+  rowsEl.innerHTML = "";
+
+  const rows = Array.isArray(data.rows) ? data.rows.slice(0, 10) : [];
+  document.getElementById("page").classList.toggle("compact", rows.length > 8);
+
+  for (const row of rows) {
+    const values = (Array.isArray(row.values) ? row.values : [])
+      .slice(0, 3)
+      .map(normalizeValue);
+
+    const rowEl = document.createElement("div");
+    rowEl.className = "row";
+
+    const marker = document.createElement("div");
+    marker.className = "marker";
+    if (row.marker === "square") marker.classList.add("square");
+    if (row.marker === "none") marker.style.visibility = "hidden";
+
+    const label = document.createElement("div");
+    label.className = "label";
+    label.textContent = row.label ?? "";
+
+    const valuesEl = document.createElement("div");
+    valuesEl.className = `values count-${values.length}`;
+
+    for (const value of values) {
+      const valueEl = document.createElement("div");
+      valueEl.className = `value ${value.tone || ""}`.trim();
+      valueEl.textContent = value.text;
+      valuesEl.appendChild(valueEl);
+    }
+
+    rowEl.appendChild(marker);
+    rowEl.appendChild(label);
+    rowEl.appendChild(valuesEl);
+    rowsEl.appendChild(rowEl);
+  }
+
+  document.body.dataset.rendered = "true";
+}
+
+window.renderPitchAgentCard = renderCard;
+renderCard(window.PITCH_AGENT_CARD_DATA || DEFAULT_DATA);
+</script>
+</body>
+</html>

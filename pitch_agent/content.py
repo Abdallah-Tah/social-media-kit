@@ -54,12 +54,13 @@ PILLARS = [
     "post_match_grades",
     "builder_update",
     "matchday_preview",
+    "match_prediction",
     "real_data_connected",
 ]
 
 # Fixture-driven pillars work before any player grades exist: they read the
 # matches table instead of the Form Index leaderboard.
-FIXTURE_PILLARS = ("matchday_preview", "real_data_connected")
+FIXTURE_PILLARS = ("matchday_preview", "match_prediction", "real_data_connected")
 
 # The four pillars frozen as production-ready for the World Cup launch. Other
 # pillars still run but are not yet considered launch quality.
@@ -155,6 +156,13 @@ FAN_GOAL_STRINGS = {
         "coming up and an invitation to follow for Form Index updates once the "
         "matches are played."
     ),
+    "match_prediction": (
+        "Write a short, football-only post sharing The Pitch Agent's data-based "
+        "match estimates for upcoming World Cup fixtures. Name the favoured side "
+        "and the probability for the next few matches. Make clear these are "
+        "estimates from public data, not betting tips and not certainties. Avoid "
+        "any betting or money language."
+    ),
     "real_data_connected": (
         "Generate a structured builder update confirming that real World Cup "
         "fixtures are now connected and the agent is ready to grade results."
@@ -219,8 +227,12 @@ def generate_content(
     # Fetch data based on pillar
     if pillar in FIXTURE_PILLARS:
         scope = "fixtures"
-        from pitch_agent.fixtures import get_fixtures
-        data = get_fixtures(db_path=db_path, limit=10)
+        if pillar == "match_prediction":
+            from pitch_agent.predict import predict_upcoming
+            data = predict_upcoming(db_path=db_path, limit=10)
+        else:
+            from pitch_agent.fixtures import get_fixtures
+            data = get_fixtures(db_path=db_path, limit=10)
     else:
         scope = _default_scope_for_pillar(pillar, leaderboard_scope)
         data = _fetch_pillar_data(pillar, db_path, position, match_id, scope)
@@ -341,9 +353,14 @@ def _ensure_review_chart(
     data: list[dict[str, Any]],
     position: str | None = None,
 ) -> None:
-    """Render a review chart when the metadata points to a missing chart file."""
+    """Render the review chart for the current content.
+
+    Always regenerates so the reviewed image reflects the current fixtures/scores
+    and branding — chart paths are deterministic and shared across runs, so a
+    stale file from a previous run must not be reused.
+    """
     chart_path = metadata.get("chart_path")
-    if not chart_path or not data or Path(chart_path).is_file():
+    if not chart_path or not data:
         return
 
     from pitch_agent.charts import render_for_pillar
@@ -376,10 +393,12 @@ def _build_operational_metadata(
         provider_name = _fixture_provider(data)
         quality = "fixture-only"
         status_note = "real fixtures, no player grades yet"
+        charts_dir = Path("artifacts") / "pitch_agent" / "charts"
         if pillar == "matchday_preview":
-            chart_path = str(
-                Path("artifacts") / "pitch_agent" / "charts" / "fixtures.png"
-            )
+            chart_path = str(charts_dir / "fixtures.png")
+        elif pillar == "match_prediction":
+            chart_path = str(charts_dir / "predictions.png")
+            status_note = "data-based estimates, not betting advice"
     else:
         providers: set[str] = set()
         quality_levels: set[str] = set()
@@ -450,6 +469,8 @@ def _generate_fan_mode(
     """
     if pillar == "matchday_preview":
         return _generate_matchday_preview(data)
+    if pillar == "match_prediction":
+        return _generate_match_prediction(data)
     if pillar in FIXTURE_PILLARS:
         # e.g. real_data_connected is a builder-mode pillar with no fan narrative.
         return (
@@ -498,15 +519,58 @@ def _generate_matchday_preview(fixtures: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _generate_match_prediction(predictions: list[dict[str, Any]]) -> str:
+    """Build a short, human preview of data-based match predictions.
+
+    Frames everything as estimates, never betting tips, and carries both the
+    prediction disclaimer and the standard trademark disclaimer.
+    """
+    from pitch_agent.predict import PREDICTION_DISCLAIMER
+
+    if not predictions:
+        return (
+            "No upcoming fixtures to estimate yet.\n\n"
+            "Predictions appear once the schedule and early results are in.\n\n"
+            f"{TRADEMARK_DISCLAIMER}"
+        )
+
+    upcoming = predictions[:5]
+    lines = ["🔮 Match Predictions", ""]
+    lines.append(f"Our model's data-based estimates for the next {len(upcoming)} matches:")
+    lines.append("")
+    for p in upcoming:
+        home = p.get("home_team_name", "")
+        away = p.get("away_team_name", "")
+        outcome = p.get("predicted_outcome", "")
+        confidence = max(p.get("p_home", 0), p.get("p_draw", 0), p.get("p_away", 0))
+        if confidence < 0.40:
+            # Near coin-flip: don't oversell a weak edge.
+            pick = "too close to call"
+        elif outcome == "HOME":
+            pick = f"{home} favoured ({round(p.get('p_home', 0) * 100)}%)"
+        elif outcome == "AWAY":
+            pick = f"{away} favoured ({round(p.get('p_away', 0) * 100)}%)"
+        else:
+            pick = f"likely draw ({round(p.get('p_draw', 0) * 100)}%)"
+        date = _short_date(p.get("date", ""))
+        line = f"• {home} vs {away} — {pick}"
+        if date:
+            line += f" ({date})"
+        lines.append(line)
+    lines.append("")
+    lines.append("These are estimates from public data, not predictions of certainty.")
+    lines.append("")
+    lines.append(PREDICTION_DISCLAIMER)
+    lines.append("")
+    lines.append(TRADEMARK_DISCLAIMER)
+    return "\n".join(lines)
+
+
 def _fixture_context(fixture: dict[str, Any]) -> str:
     """Return a 'Group A' / stage label for a fixture when available."""
-    group = str(fixture.get("group_name") or "").strip()
-    if group:
-        return group.replace("_", " ").title()
-    stage = str(fixture.get("stage") or "").strip()
-    if stage:
-        return stage.replace("_", " ").title()
-    return ""
+    from pitch_agent.fixtures import normalize_stage_label
+    return (normalize_stage_label(fixture.get("group_name"))
+            or normalize_stage_label(fixture.get("stage")))
 
 
 def _short_date(value: str) -> str:

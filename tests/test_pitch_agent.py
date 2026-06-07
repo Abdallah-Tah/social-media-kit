@@ -1511,17 +1511,18 @@ def _matches_columns(db_path: str) -> set[str]:
 
 
 def test_migrate_db_adds_missing_columns_idempotently(tmp_path):
-    """migrate-db should add status/provider_name and be safe to re-run."""
+    """migrate-db should add status/provider_name/external_id and be safe to re-run."""
     from pitch_agent.db import migrate_db
 
     db_path = _make_old_schema_db(tmp_path)
     assert "status" not in _matches_columns(db_path)
     assert "provider_name" not in _matches_columns(db_path)
+    assert "external_id" not in _matches_columns(db_path)
 
     added = migrate_db(db_path)
-    assert set(added) == {"status", "provider_name"}
+    assert set(added) == {"status", "provider_name", "external_id"}
     cols = _matches_columns(db_path)
-    assert "status" in cols and "provider_name" in cols
+    assert "status" in cols and "provider_name" in cols and "external_id" in cols
 
     # Idempotent: a second run changes nothing.
     assert migrate_db(db_path) == []
@@ -1605,14 +1606,23 @@ def test_chart_footer_uses_brand_with_parent():
     assert "Not affiliated with FIFA" in footer
 
 
-def test_load_brand_returns_empty_logo_when_file_missing():
+def test_load_brand_resolves_existing_logo_and_drops_missing(tmp_path):
     from pitch_agent.config import load_brand
 
     brand = load_brand()
     assert brand["name"] == "The Pitch Agent"
     assert brand["parent_brand"] == "BuildWithAbdallah"
-    # Default logo path does not exist in the repo, so it resolves to "".
-    assert brand["logo_path"] == ""
+    # The repo now ships the real logo, so the default path resolves to an
+    # existing absolute file.
+    assert brand["logo_path"]
+    assert Path(brand["logo_path"]).is_file()
+
+    # A configured-but-missing logo must still resolve to "" so callers never
+    # have to guard against a missing file.
+    cfg = tmp_path / "brand.yaml"
+    cfg.write_text("brand:\n  logo_path: assets/brand/does-not-exist.png\n",
+                   encoding="utf-8")
+    assert load_brand(cfg)["logo_path"] == ""
 
 
 def test_chart_renders_without_logo(tmp_path, monkeypatch):
@@ -2191,3 +2201,388 @@ def test_full_pipeline(tmp_path):
     assert len(results) > 0, "Leaderboard should have results"
 
     conn.close()
+
+
+# ── Fixture data normalization: single source, dedupe, stage labels ───────────
+
+
+def _seed_mixed_provider_db(tmp_path: Path) -> str:
+    """Seed football-data fixtures alongside CSV/demo and legacy null rows."""
+    from pitch_agent.db import upsert_match
+
+    db_path = str(tmp_path / "mixed.db")
+    conn = init_db(db_path)
+    upsert_match(conn, {
+        "match_id": "FD1", "external_id": "FD1", "competition_id": "WC",
+        "home_team_name": "Mexico", "away_team_name": "South Africa",
+        "date": "2026-06-11", "stage": "GROUP_STAGE", "group": "A",
+        "status": "TIMED", "provider_name": "football-data",
+    })
+    upsert_match(conn, {
+        "match_id": "FD2", "external_id": "FD2", "competition_id": "WC",
+        "home_team_name": "Canada", "away_team_name": "Bosnia-H.",
+        "date": "2026-06-12", "stage": "GROUP_STAGE", "group": "B",
+        "status": "TIMED", "provider_name": "football-data",
+    })
+    # CSV/demo row — must not appear in a football-data preview.
+    upsert_match(conn, {
+        "match_id": "CSV1", "competition_id": "WC",
+        "home_team_name": "Argentina", "away_team_name": "Saudi Arabia",
+        "date": "2026-06-10", "stage": "GROUP_STAGE", "group": "A",
+        "status": "TIMED", "provider_name": "csv",
+    })
+    # Legacy row with a null/empty provider — treated as demo, excluded.
+    upsert_match(conn, {
+        "match_id": "LEG1", "competition_id": "WC",
+        "home_team_name": "Legacy", "away_team_name": "Stale",
+        "date": "2026-06-09", "stage": "GROUP_STAGE", "group": "C",
+        "status": "TIMED", "provider_name": "",
+    })
+    conn.close()
+    return db_path
+
+
+def test_normalize_stage_label_groups_and_knockouts():
+    from pitch_agent.fixtures import normalize_stage_label
+
+    assert normalize_stage_label("A") == "Group A"
+    assert normalize_stage_label("GROUP A") == "Group A"
+    assert normalize_stage_label("GROUP_A") == "Group A"
+    assert normalize_stage_label("Group A") == "Group A"  # idempotent
+    assert normalize_stage_label("B") == "Group B"
+    assert normalize_stage_label("LAST_16") == "Round of 16"
+    assert normalize_stage_label("last_32") == "Round of 32"
+    assert normalize_stage_label("") == ""
+    assert normalize_stage_label(None) == ""
+    # Unknown codes humanize safely rather than raising.
+    assert normalize_stage_label("PRELIM_ROUND") == "Prelim Round"
+
+
+def test_get_fixtures_prefers_football_data_and_excludes_demo(tmp_path):
+    """Auto mode: football-data rows present → CSV/legacy rows are excluded."""
+    from pitch_agent.fixtures import get_fixtures
+
+    db_path = _seed_mixed_provider_db(tmp_path)
+    fixtures = get_fixtures(db_path, competition_id="WC", limit=10)
+
+    labels = [f["match_label"] for f in fixtures]
+    providers = {f["provider_name"] for f in fixtures}
+    assert providers == {"football-data"}
+    assert "Mexico vs South Africa" in labels
+    assert "Argentina vs Saudi Arabia" not in labels  # CSV/demo excluded
+    assert "Legacy vs Stale" not in labels             # legacy/null excluded
+
+
+def test_get_fixtures_explicit_football_data_only(tmp_path):
+    """Explicit provider=football-data returns only football-data rows."""
+    from pitch_agent.fixtures import get_fixtures
+
+    db_path = _seed_mixed_provider_db(tmp_path)
+    fixtures = get_fixtures(
+        db_path, competition_id="WC", limit=10, provider_name="football-data",
+    )
+    assert {f["provider_name"] for f in fixtures} == {"football-data"}
+    assert "Argentina vs Saudi Arabia" not in [f["match_label"] for f in fixtures]
+
+
+def test_get_fixtures_falls_back_to_csv_when_no_football_data(tmp_path):
+    """With no football-data rows, CSV/legacy rows are used."""
+    from pitch_agent.db import upsert_match
+    from pitch_agent.fixtures import get_fixtures
+
+    db_path = str(tmp_path / "csv_only.db")
+    conn = init_db(db_path)
+    upsert_match(conn, {
+        "match_id": "C1", "competition_id": "WC",
+        "home_team_name": "Argentina", "away_team_name": "Saudi Arabia",
+        "date": "2026-06-10", "group": "A", "provider_name": "csv",
+    })
+    conn.close()
+
+    fixtures = get_fixtures(db_path, competition_id="WC", limit=10)
+    assert [f["match_label"] for f in fixtures] == ["Argentina vs Saudi Arabia"]
+
+
+def test_get_fixtures_shows_match_only_when_in_football_data(tmp_path):
+    """Argentina vs Saudi Arabia appears only when it is a football-data row."""
+    from pitch_agent.db import upsert_match
+    from pitch_agent.fixtures import get_fixtures
+
+    db_path = str(tmp_path / "fd_arg.db")
+    conn = init_db(db_path)
+    upsert_match(conn, {
+        "match_id": "FD9", "external_id": "FD9", "competition_id": "WC",
+        "home_team_name": "Argentina", "away_team_name": "Saudi Arabia",
+        "date": "2026-06-12", "stage": "GROUP_STAGE", "group": "A",
+        "status": "TIMED", "provider_name": "football-data",
+    })
+    conn.close()
+
+    labels = [f["match_label"] for f in get_fixtures(
+        db_path, competition_id="WC", provider_name="football-data")]
+    assert "Argentina vs Saudi Arabia" in labels
+
+
+def test_get_fixtures_dedupes_by_external_id(tmp_path):
+    """Two rows sharing one external_id collapse to a single fixture."""
+    from pitch_agent.db import upsert_match
+    from pitch_agent.fixtures import get_fixtures
+
+    db_path = str(tmp_path / "dup.db")
+    conn = init_db(db_path)
+    upsert_match(conn, {
+        "match_id": "A", "external_id": "SAME", "competition_id": "WC",
+        "home_team_name": "X", "away_team_name": "Y", "date": "2026-06-11",
+        "provider_name": "football-data",
+    })
+    upsert_match(conn, {
+        "match_id": "B", "external_id": "SAME", "competition_id": "WC",
+        "home_team_name": "X", "away_team_name": "Y", "date": "2026-06-11",
+        "provider_name": "football-data",
+    })
+    conn.close()
+
+    fixtures = get_fixtures(db_path, competition_id="WC", provider_name="football-data")
+    assert len(fixtures) == 1
+
+
+def test_render_chart_fixtures_provider_uses_only_football_data(tmp_path, monkeypatch):
+    """render-chart --type fixtures --provider football-data renders only FD rows."""
+    from pitch_agent.cli import cmd_render_chart
+    import pitch_agent.charts as charts
+
+    db_path = _seed_mixed_provider_db(tmp_path)
+    captured: dict[str, list] = {}
+
+    def spy(fixtures, **kwargs):
+        captured["fixtures"] = list(fixtures)
+        return str(tmp_path / "out.png")
+
+    monkeypatch.setattr(charts, "render_fixtures_chart", spy)
+
+    rc = cmd_render_chart(argparse.Namespace(
+        type="fixtures", provider="football-data", competition="WC",
+        limit=10, output=str(tmp_path / "out.png"),
+        position=None, scope="daily", db=db_path,
+    ))
+    assert rc == 0
+    labels = [f["match_label"] for f in captured["fixtures"]]
+    assert {f["provider_name"] for f in captured["fixtures"]} == {"football-data"}
+    assert "Argentina vs Saudi Arabia" not in labels
+
+
+def test_matchday_preview_uses_only_football_data_rows(tmp_path):
+    """matchday_preview content excludes CSV/demo rows when football-data exists."""
+    db_path = _seed_mixed_provider_db(tmp_path)
+    result = generate_content(
+        "matchday_preview", mode="fan_mode", db_path=db_path, dry_run=True,
+    )
+    content = result["content"]
+    assert "Mexico vs South Africa" in content
+    assert "Argentina vs Saudi Arabia" not in content
+    assert result["metadata"]["provider_name"] == "football-data"
+    # Group label is normalized in the preview text.
+    assert "Group A" in content
+
+
+def test_fixtures_chart_excludes_demo_rows(tmp_path, monkeypatch):
+    """The fixtures chart, fed via get_fixtures, never includes CSV/demo rows."""
+    monkeypatch.chdir(tmp_path)
+    from pitch_agent.fixtures import get_fixtures
+    from pitch_agent.charts import _fixtures_to_card_rows
+
+    db_path = _seed_mixed_provider_db(tmp_path)
+    fixtures = get_fixtures(db_path, competition_id="WC", limit=10)
+    card_rows = _fixtures_to_card_rows(fixtures)
+
+    labels = [r["label"] for r in card_rows]
+    assert "Argentina vs Saudi Arabia" not in labels
+    # Stage label normalized for the card's accent column.
+    assert any(r["col_a"] == "Group A" for r in card_rows)
+
+
+# ── Predictions (Poisson model + accuracy scoring) ──────────────────────────
+
+from pitch_agent.db import upsert_match
+from pitch_agent.predict import (
+    compute_team_ratings,
+    predict_match,
+    predict_fixtures,
+    save_predictions,
+    score_predictions,
+    accuracy_summary,
+    predict_upcoming,
+)
+
+
+def _finished(mid, home, away, hs, as_, date="2026-06-11", status="FINISHED"):
+    return {
+        "match_id": mid, "external_id": mid, "competition_id": "WC",
+        "home_team_name": home, "away_team_name": away,
+        "home_score": hs, "away_score": as_, "date": date,
+        "status": status, "provider_name": "football-data",
+    }
+
+
+def test_prediction_probabilities_sum_to_one():
+    """A prediction's win/draw/loss probabilities must sum to ~1.0."""
+    ratings, avg = compute_team_ratings([])
+    p = predict_match("Brazil", "Qatar", ratings, avg)
+    total = p["p_home"] + p["p_draw"] + p["p_away"]
+    assert abs(total - 1.0) < 1e-6
+
+
+def test_stronger_team_is_favored():
+    """A team that scores a lot and concedes little should be favored."""
+    matches = [
+        _finished("1", "Brazil", "Serbia", 4, 0),
+        _finished("2", "Brazil", "Switzerland", 3, 0),
+        _finished("3", "Qatar", "Senegal", 0, 3),
+        _finished("4", "Qatar", "Netherlands", 0, 2),
+    ]
+    ratings, avg = compute_team_ratings(matches)
+    # Neutral venue removes home advantage so the bias is purely data-driven.
+    p = predict_match("Brazil", "Qatar", ratings, avg, neutral=True)
+    assert p["predicted_outcome"] == "HOME"
+    assert p["p_home"] > p["p_away"]
+
+
+def test_neutral_symmetry_for_equal_teams():
+    """Two teams with identical form on a neutral venue are ~symmetric."""
+    ratings, avg = compute_team_ratings([])  # both unknown → neutral 1.0
+    p = predict_match("A", "B", ratings, avg, neutral=True)
+    assert abs(p["p_home"] - p["p_away"]) < 1e-6
+
+
+def test_home_advantage_helps_home_team():
+    """With home advantage on, the home side beats its neutral probability."""
+    ratings, avg = compute_team_ratings([])
+    neutral = predict_match("A", "B", ratings, avg, neutral=True)
+    home = predict_match("A", "B", ratings, avg, neutral=False)
+    assert home["p_home"] > neutral["p_home"]
+
+
+def test_predict_fixtures_skips_finished_and_unknown():
+    """Only upcoming fixtures with both teams known get predicted."""
+    ratings, avg = compute_team_ratings([])
+    fixtures = [
+        {"match_id": "10", "home_team_name": "A", "away_team_name": "B",
+         "status": "SCHEDULED", "date": "2026-06-20"},
+        {"match_id": "11", "home_team_name": "C", "away_team_name": "D",
+         "status": "FINISHED", "date": "2026-06-10"},  # already played → skip
+        {"match_id": "12", "home_team_name": "", "away_team_name": "F",
+         "status": "SCHEDULED", "date": "2026-06-21"},  # unknown team → skip
+    ]
+    preds = predict_fixtures(fixtures, ratings, avg)
+    assert [p["match_id"] for p in preds] == ["10"]
+
+
+def test_save_and_score_predictions_accuracy(tmp_path):
+    """Predictions save, then score against real results into a scorecard."""
+    db_path = str(tmp_path / "test.db")
+    conn = init_db(db_path)
+    # One upcoming fixture, predicted then later finished as a home win.
+    upsert_match(conn, _finished("100", "Brazil", "Qatar", 0, 0, status="SCHEDULED"))
+    conn.commit()
+
+    preds = predict_upcoming(db_path=db_path, limit=10)
+    assert len(preds) == 1
+    save_predictions(preds, db_path=db_path)
+
+    # Result comes in: Brazil win.
+    upsert_match(conn, _finished("100", "Brazil", "Qatar", 2, 0, status="FINISHED"))
+    conn.commit()
+    conn.close()
+
+    scored = score_predictions(db_path=db_path)
+    assert len(scored) == 1
+    assert scored[0]["actual_outcome"] == "HOME"
+
+    summary = accuracy_summary(db_path=db_path)
+    assert summary["n"] == 1
+    assert 0.0 <= summary["accuracy"] <= 1.0
+    assert summary["brier"] >= 0.0
+
+
+def test_prediction_card_has_disclaimer_footer(tmp_path, monkeypatch):
+    """The rendered prediction card carries the not-affiliated disclaimer."""
+    monkeypatch.chdir(tmp_path)
+    from pitch_agent.charts import _predictions_to_card_rows
+    from pitch_agent.predict import PREDICTION_DISCLAIMER
+
+    ratings, avg = compute_team_ratings([])
+    p = predict_match("Brazil", "Qatar", ratings, avg)
+    rows = _predictions_to_card_rows([p])
+    assert rows and "Brazil vs Qatar" in rows[0]["label"]
+    assert "not affiliated with fifa" in PREDICTION_DISCLAIMER.lower()
+
+
+# ── Group standings projection (Monte-Carlo) ────────────────────────────────
+
+from pitch_agent.predict import simulate_group, project_group
+
+
+def _grp(mid, home, away, hs=0, as_=0, status="SCHEDULED", group="A"):
+    return {
+        "match_id": mid, "home_team_name": home, "away_team_name": away,
+        "home_score": hs, "away_score": as_, "status": status,
+        "group_name": group, "provider_name": "football-data",
+    }
+
+
+def test_group_projection_probabilities_are_valid():
+    """Advance/win probabilities are in [0,1] and group-win sums to ~1."""
+    ratings, avg = compute_team_ratings([])
+    matches = [
+        _grp("1", "A", "B"), _grp("2", "C", "D"),
+        _grp("3", "A", "C"), _grp("4", "B", "D"),
+        _grp("5", "A", "D"), _grp("6", "B", "C"),
+    ]
+    proj = simulate_group(matches, ratings, avg, n_sims=2000, seed=1)
+    assert len(proj) == 4
+    for r in proj:
+        assert 0.0 <= r["p_advance"] <= 1.0
+        assert 0.0 <= r["p_win_group"] <= 1.0
+    assert abs(sum(r["p_win_group"] for r in proj) - 1.0) < 0.02
+    # Two of four advance → advance probabilities sum to ~2.0.
+    assert abs(sum(r["p_advance"] for r in proj) - 2.0) < 0.05
+
+
+def test_group_projection_favors_stronger_team():
+    """A team that already won and scores freely should advance more often."""
+    matches = [
+        _grp("1", "Strong", "Weak1", 4, 0, status="FINISHED"),
+        _grp("2", "Strong", "Weak2", 3, 0, status="FINISHED"),
+        _grp("3", "Weak1", "Weak2"),
+        _grp("4", "Strong", "Weak1"),
+        _grp("5", "Strong", "Weak2"),
+        _grp("6", "Weak1", "Weak2"),
+    ]
+    ratings, avg = compute_team_ratings(matches)
+    proj = simulate_group(matches, ratings, avg, n_sims=3000, seed=7)
+    strong = next(r for r in proj if r["team"] == "Strong")
+    assert strong["p_advance"] > 0.9
+    assert proj[0]["team"] == "Strong"  # sorted by advance prob
+
+
+def test_group_projection_is_deterministic_with_seed():
+    """Same seed → identical projection (reproducible for tests and re-runs)."""
+    ratings, avg = compute_team_ratings([])
+    matches = [_grp("1", "A", "B"), _grp("2", "C", "D"),
+               _grp("3", "A", "C"), _grp("4", "B", "D")]
+    a = simulate_group(matches, ratings, avg, n_sims=500, seed=42)
+    b = simulate_group(matches, ratings, avg, n_sims=500, seed=42)
+    assert a == b
+
+
+def test_project_group_reads_db_by_label(tmp_path):
+    """project_group filters matches by normalized group label from the DB."""
+    db_path = str(tmp_path / "test.db")
+    conn = init_db(db_path)
+    upsert_match(conn, _grp("1", "A", "B", group="A"))
+    upsert_match(conn, _grp("2", "C", "D", group="B"))  # different group
+    conn.commit()
+    conn.close()
+    proj = project_group("Group A", db_path=db_path, n_sims=500)
+    teams = {r["team"] for r in proj}
+    assert teams == {"A", "B"}

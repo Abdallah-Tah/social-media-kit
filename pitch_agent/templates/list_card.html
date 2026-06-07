@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1600, height=1000, initial-scale=1">
+  <title>Build With Abdallah - Social Card</title>
+  <style>
+    :root {
+      --navy: #071a44;
+      --navy-2: #002b73;
+      --blue: #0866ff;
+      --text: #081b44;
+      --muted: #40527a;
+      --line: rgba(10, 42, 90, .13);
+      --soft: rgba(8, 42, 96, .08);
+      --bg: #f8fbff;
+      --card-w: 1600px;
+      --card-h: 1000px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: var(--card-w); height: var(--card-h); }
+
+    body {
+      margin: 0;
+      display: grid;
+      place-items: center;
+      background: #dce6f5;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    }
+
+    .social-card {
+      position: relative;
+      width: var(--card-w);
+      height: var(--card-h);
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 45% 45%, rgba(255,255,255,.92) 0 28%, transparent 58%),
+        linear-gradient(135deg, #ffffff 0%, var(--bg) 58%, #ffffff 100%);
+      color: var(--text);
+      isolation: isolate;
+    }
+
+    /* ── Watermark (real logo, large and soft) ──────────────────────────────── */
+    .watermark {
+      position: absolute;
+      right: 80px;
+      top: 50%;
+      transform: translateY(-55%);
+      opacity: .045;
+      z-index: 0;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .watermark img {
+      width: 680px;
+      height: 680px;
+      object-fit: contain;
+    }
+
+    /* ── Navy corner blocks ─────────────────────────────────────────────────── */
+    .corner {
+      position: absolute;
+      width: 250px;
+      height: 250px;
+      background: linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%);
+      border: 5px solid var(--blue);
+      box-shadow: 0 18px 35px rgba(7, 26, 68, .18);
+    }
+
+    .corner.top-right {
+      top: -125px;
+      right: -125px;
+      transform: rotate(30deg);
+      border-radius: 34px;
+    }
+
+    .corner.bottom-left {
+      bottom: -132px;
+      left: -132px;
+      transform: rotate(63deg);
+      border-radius: 34px;
+    }
+
+    /* ── Dot decorations ────────────────────────────────────────────────────── */
+    .dots {
+      position: absolute;
+      display: grid;
+      grid-template-columns: repeat(6, 8px);
+      gap: 16px;
+      opacity: .45;
+    }
+
+    .dots span {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #6b8fca;
+    }
+
+    .dots.top { top: 28px; left: 28px; }
+    .dots.bottom { right: 34px; bottom: 34px; }
+    .dots.bottom[hidden] { display: none; }
+
+    /* ── Brand header ───────────────────────────────────────────────────────── */
+    .header {
+      position: absolute;
+      top: 52px;
+      left: 100px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+
+    .logo-mark {
+      width: 110px;
+      height: 110px;
+      object-fit: contain;
+    }
+
+    .divider {
+      width: 2px;
+      height: 96px;
+      background: var(--blue);
+      opacity: .75;
+    }
+
+    .brand-title {
+      margin: 0;
+      font-size: 48px;
+      line-height: 1;
+      font-weight: 850;
+      letter-spacing: -1.3px;
+      color: var(--navy);
+    }
+
+    .brand-title .accent { color: var(--blue); }
+
+    .brand-subtitle {
+      margin: 15px 0 0;
+      font-size: 13px;
+      font-weight: 750;
+      letter-spacing: 7px;
+      text-transform: uppercase;
+      color: var(--navy);
+    }
+
+    .brand-subtitle b {
+      color: var(--blue);
+      margin: 0 12px;
+    }
+
+    /* ── Content area ───────────────────────────────────────────────────────── */
+    .content {
+      position: absolute;
+      left: 100px;
+      right: 100px;
+      top: 214px;
+    }
+
+    .title {
+      margin: 0;
+      max-width: 980px;
+      font-size: clamp(56px, 5vw, 76px);
+      line-height: 1;
+      font-weight: 900;
+      letter-spacing: -2.8px;
+      text-transform: uppercase;
+      color: var(--navy);
+      /* Allow up to two lines; never truncate the title. */
+      white-space: normal;
+      overflow: visible;
+      text-overflow: unset;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    /* Long titles (> ~28 chars): shrink the type and widen the box so the
+       full text still fits on two lines instead of being cut off. */
+    .title.long-title {
+      font-size: 62px;
+      max-width: 1100px;
+      letter-spacing: -2px;
+    }
+
+    .meta {
+      margin-top: 18px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      font-size: 28px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    .meta .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--blue);
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    .meta span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ── Table / list rows ──────────────────────────────────────────────────── */
+    .table-shell {
+      margin-top: 48px;
+      margin-left: 4px;
+      width: calc(100% - 12px);
+    }
+
+    /* Real data rows */
+    .row {
+      min-height: 66px;
+      display: grid;
+      grid-template-columns: 32px 1fr;
+      align-items: center;
+      column-gap: 24px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .row:last-child { border-bottom: none; }
+
+    .marker {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--blue);
+      justify-self: center;
+    }
+
+    .marker.square {
+      width: 22px;
+      height: 22px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, #dce5f2, #bfcbe0);
+    }
+
+    .row-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-width: 0;
+      gap: 32px;
+    }
+
+    .label {
+      font-size: 32px;
+      font-weight: 680;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .values {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 32px;
+      flex-shrink: 0;
+    }
+
+    .values.count-0 { display: none; }
+
+    .value {
+      font-size: 26px;
+      color: var(--muted);
+      text-align: right;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 80px;
+      max-width: 200px;
+    }
+
+    .value.accent {
+      color: var(--blue);
+      font-weight: 800;
+    }
+
+    .value.strong {
+      color: var(--text);
+      font-weight: 800;
+    }
+
+    /* Skeleton placeholder rows */
+    .skeleton .row-inner {
+      display: grid;
+      grid-template-columns: 1fr 90px 118px;
+      column-gap: 24px;
+      align-items: center;
+    }
+
+    .box {
+      width: 30px;
+      height: 30px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, #dce5f2, #bfcbe0);
+    }
+
+    .line {
+      height: 10px;
+      width: var(--w, 100%);
+      border-radius: 12px;
+      background: linear-gradient(90deg, rgba(13, 52, 105, .13), rgba(13, 52, 105, .04));
+    }
+
+    .pill {
+      height: 20px;
+      border-radius: 12px;
+      background: rgba(23, 55, 112, .10);
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────────────────── */
+    .footer[hidden] { display: none; }
+
+    .content.no-footer .table-shell { margin-top: 42px; }
+
+    .footer {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 32px;
+      text-align: center;
+      font-size: 20px;
+      font-style: italic;
+      color: var(--navy);
+      letter-spacing: -.2px;
+    }
+
+    /* ── Compact / ultra-dense modes ─────────────────────────────────────────── */
+    .compact .row { min-height: 56px; }
+    .compact .label { font-size: 28px; }
+    .compact .value { font-size: 23px; }
+    .compact .table-shell { margin-top: 36px; }
+
+    .ultra .row { min-height: 50px; }
+    .ultra .label { font-size: 26px; }
+    .ultra .value { font-size: 21px; }
+    .ultra .table-shell { margin-top: 28px; }
+  </style>
+
+  <script>
+    /**
+     * Reusable post data — change these before screenshot.
+     *
+     * rows can be:
+     *   Real data:  [{ label: "Text", value1: "A", value2: "B" }]
+     *   Skeleton:   [{ labelWidth: "72%" }]
+     *
+     * footerText:
+     *   "BuildWithAbdallah.com"                        — normal posts
+     *   "BuildWithAbdallah.com | Independent analytics | Not affiliated with FIFA"
+     *                                                  — World Cup / football posts
+     *   ""                                             — hide footer
+     */
+    window.BWA_POST = {
+      logoUrl: "",
+      title: "Title Goes Here",
+      subtitle: "Subtitle",
+      source: "Source",
+      date: "Date",
+      footerText: "BuildWithAbdallah.com",
+      showBottomDots: true,
+      rows: [
+        { label: "Example row one",   value1: "Group A", value2: "2026-06-11" },
+        { label: "Example row two",   value1: "Group B", value2: "2026-06-12" },
+        { label: "Example row three", value1: "Group C", value2: "2026-06-13" },
+        { label: "Example row four",  value1: "Group D", value2: "2026-06-14" },
+        { label: "Example row five",  value1: "Group E", value2: "2026-06-15" },
+      ]
+    };
+
+    /* ── Helpers ──────────────────────────────────────────────────────────── */
+
+    function setText(id, value) {
+      var el = document.getElementById(id);
+      if (el && value !== undefined && value !== null) el.textContent = value;
+    }
+
+    function normalizeValue(value, index) {
+      if (value == null) return { text: "", tone: "" };
+      if (typeof value === "string" || typeof value === "number") {
+        return { text: String(value), tone: index === 0 ? "accent" : "" };
+      }
+      return {
+        text: String(value.text ?? ""),
+        tone: String(value.tone ?? (index === 0 ? "accent" : ""))
+      };
+    }
+
+    /* ── Row renderers ────────────────────────────────────────────────────── */
+
+    function isSkeletonRow(row) {
+      return !row.label && row.labelWidth;
+    }
+
+    function renderSkeletonRow(row) {
+      var div = document.createElement("div");
+      div.className = "row";
+      div.innerHTML =
+        '<span class="box"></span>' +
+        '<div class="row-inner">' +
+          '<span class="line" style="--w: ' + (row.labelWidth || "72%") + '"></span>' +
+          '<span class="pill"></span>' +
+          '<span class="pill"></span>' +
+        '</div>';
+      return div;
+    }
+
+    function renderDataRow(row) {
+      var rowEl = document.createElement("div");
+      rowEl.className = "row";
+
+      var marker = document.createElement("div");
+      marker.className = "marker";
+      if (row.marker === "square") marker.classList.add("square");
+      if (row.marker === "none") marker.style.visibility = "hidden";
+
+      var rowInner = document.createElement("div");
+      rowInner.className = "row-inner";
+
+      var label = document.createElement("div");
+      label.className = "label";
+      label.textContent = row.label ?? "";
+
+      var valuesEl = document.createElement("div");
+
+      /* Support both { label, values: [{text, tone}] } and
+         { label, value1, value2, value3 } formats */
+      var rawValues = row.values;
+      if (!rawValues) {
+        rawValues = [];
+        if (row.value1 != null && row.value1 !== "")
+          rawValues.push(typeof row.value1 === "object" ? row.value1 : { text: String(row.value1), tone: "accent" });
+        if (row.value2 != null && row.value2 !== "")
+          rawValues.push(typeof row.value2 === "object" ? row.value2 : { text: String(row.value2), tone: "" });
+        if (row.value3 != null && row.value3 !== "")
+          rawValues.push(typeof row.value3 === "object" ? row.value3 : { text: String(row.value3), tone: "" });
+      }
+
+      var values = (Array.isArray(rawValues) ? rawValues : []).slice(0, 3).map(normalizeValue);
+      valuesEl.className = "values count-" + values.length;
+
+      for (var i = 0; i < values.length; i++) {
+        var valueEl = document.createElement("div");
+        valueEl.className = "value " + (values[i].tone || "");
+        valueEl.textContent = values[i].text;
+        valuesEl.appendChild(valueEl);
+      }
+
+      rowInner.appendChild(label);
+      rowInner.appendChild(valuesEl);
+      rowEl.appendChild(marker);
+      rowEl.appendChild(rowInner);
+      return rowEl;
+    }
+
+    /* ── Main render ──────────────────────────────────────────────────────── */
+
+    function renderCard(input) {
+      var post = input || {};
+
+      /* Title — full text, never truncated. Long titles get a smaller class. */
+      var titleEl = document.getElementById("title");
+      if (titleEl) {
+        var titleText = post.title || "";
+        titleEl.textContent = titleText;
+        titleEl.classList.toggle("long-title", titleText.length > 28);
+      }
+
+      /* Meta row: subtitle • source • date */
+      var metaEl = document.getElementById("meta");
+      if (post.subtitle || post.source || post.date) {
+        setText("meta-subtitle", post.subtitle || "");
+        setText("meta-source",   post.source   || "");
+        setText("meta-date",     post.date     || "");
+        /* Hide empty segments and their dots */
+        var subDot  = document.getElementById("dot-source");
+        var srcEl   = document.getElementById("meta-source");
+        var srcDot  = document.getElementById("dot-date");
+        var dateEl  = document.getElementById("meta-date");
+        if (subDot && srcEl)  subDot.style.display = post.source  ? "" : "none";
+        if (srcDot && dateEl) srcDot.style.display = post.date    ? "" : "none";
+        metaEl.style.display = "";
+      } else if (post.subtitle === undefined && post.title) {
+        /* Legacy PITCH_AGENT_CARD_DATA format: "Sub • Source • Date" in one field */
+        metaEl.style.display = "";
+      } else {
+        metaEl.style.display = "none";
+      }
+
+      /* Brand */
+      if (post.brand) {
+        var brand = post.brand;
+        if (brand.nameHtml)  document.getElementById("brandName").innerHTML  = brand.nameHtml;
+        if (brand.tagline)   setText("tagline", brand.tagline);
+      }
+
+      /* Logo image — supports both BWA_POST.logoUrl and brand.logoUrl */
+      var logoUrl = post.logoUrl || (post.brand && post.brand.logoUrl) || "";
+      var logoMark = document.getElementById("logoMark");
+      var watermarkEl = document.getElementById("watermark");
+      if (logoUrl) {
+        logoMark.innerHTML = "";
+        var img = document.createElement("img");
+        img.className = "logo-mark";
+        img.src = logoUrl;
+        img.alt = "Build With Abdallah logo";
+        img.onerror = function () { this.style.display = "none"; };
+        logoMark.appendChild(img);
+
+        /* Watermark logo */
+        var wmImg = watermarkEl.querySelector("img");
+        if (wmImg) wmImg.src = logoUrl;
+      }
+
+      /* Footer */
+      var footerEl = document.getElementById("footer");
+      var footerText = post.footerText !== undefined
+        ? post.footerText
+        : (post.brand && post.brand.footer !== undefined ? post.brand.footer : null);
+      if (footerText) {
+        footerEl.textContent = footerText;
+        footerEl.hidden = false;
+        document.getElementById("content").classList.remove("no-footer");
+      } else if (footerText === "") {
+        footerEl.hidden = true;
+        document.getElementById("content").classList.add("no-footer");
+      }
+
+      /* Bottom-right dots */
+      var dotsBR = document.getElementById("dotsBottomRight");
+      if (dotsBR) {
+        dotsBR.hidden = (post.showBottomDots === false ||
+                         (post.brand && post.brand.showBottomRightDots === false));
+      }
+
+      /* Rows */
+      var shell = document.getElementById("rows");
+      shell.innerHTML = "";
+      var card = document.querySelector(".social-card");
+      card.classList.remove("skeleton", "compact", "ultra");
+
+      var rows = Array.isArray(post.rows) ? post.rows : [];
+      if (rows.length > 0 && isSkeletonRow(rows[0])) {
+        card.classList.add("skeleton");
+        for (var i = 0; i < rows.length; i++) {
+          shell.appendChild(renderSkeletonRow(rows[i]));
+        }
+      } else {
+        var n = rows.length;
+        card.classList.toggle("compact", n > 8);
+        card.classList.toggle("ultra",   n > 8);
+        for (var j = 0; j < Math.min(n, 10); j++) {
+          shell.appendChild(renderDataRow(rows[j]));
+        }
+      }
+
+      document.body.dataset.rendered = "true";
+    }
+
+    /* ── Exports ─────────────────────────────────────────────────────────── */
+
+    /* Playwright calls this:  window.renderPitchAgentCard(data) */
+    window.renderPitchAgentCard = renderCard;
+
+    /* Standalone: auto-render with BWA_POST defaults on page load */
+    document.addEventListener("DOMContentLoaded", function () {
+      renderCard(window.BWA_POST);
+    });
+  </script>
+</head>
+<body>
+  <main class="social-card" aria-label="Build With Abdallah social media template">
+    <div class="corner top-right"></div>
+    <div class="corner bottom-left"></div>
+
+    <div class="dots top" aria-hidden="true">
+      <span></span><span></span><span></span><span></span><span></span><span></span>
+      <span></span><span></span><span></span><span></span><span></span><span></span>
+      <span></span><span></span><span></span><span></span><span></span><span></span>
+      <span></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
+
+    <div class="watermark" id="watermark" aria-hidden="true">
+      <!-- src is set dynamically from logoUrl; this placeholder keeps layout stable -->
+      <img src="" alt="">
+    </div>
+
+    <header class="header">
+      <div id="logoMark">
+        <!-- Logo <img> is injected dynamically from logoUrl -->
+      </div>
+      <div class="divider"></div>
+      <div>
+        <h2 class="brand-title" id="brandName">Build With <span class="accent">Abdallah</span></h2>
+        <p class="brand-subtitle" id="tagline">Software <b>•</b> Automation <b>•</b> APIs <b>•</b> Solutions</p>
+      </div>
+    </header>
+
+    <section class="content" id="content">
+      <h1 class="title" id="title">TITLE GOES HERE</h1>
+      <div class="meta" id="meta">
+        <span id="meta-subtitle">Subtitle</span>
+        <span class="dot" id="dot-source"></span>
+        <span id="meta-source">Source</span>
+        <span class="dot" id="dot-date"></span>
+        <span id="meta-date">Date</span>
+      </div>
+
+      <div class="table-shell" id="rows" aria-hidden="true"></div>
+    </section>
+
+    <footer class="footer" id="footer">BuildWithAbdallah.com</footer>
+
+    <div class="dots bottom" id="dotsBottomRight" aria-hidden="true">
+      <span></span><span></span><span></span><span></span><span></span><span></span>
+      <span></span><span></span><span></span><span></span><span></span><span></span>
+      <span></span><span></span><span></span><span></span><span></span><span></span>
+      <span></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
+  </main>
+</body>
+</html>

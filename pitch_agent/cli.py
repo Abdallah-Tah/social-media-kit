@@ -92,9 +92,47 @@ def build_parser() -> argparse.ArgumentParser:
     # ── fixtures ─────────────────────────────────────────────────────────
     p_fix = sub.add_parser("fixtures", help="Show stored upcoming fixtures")
     p_fix.add_argument("--competition", default=None, help="Competition ID filter")
+    p_fix.add_argument("--provider", default=None,
+                       help="Restrict to one provider (e.g. football-data). "
+                            "Default prefers football-data when those rows exist.")
     p_fix.add_argument("--limit", type=int, default=10, help="Number of fixtures")
     p_fix.add_argument("--db", default="pitch_agent.db", help="Database path")
     p_fix.set_defaults(func=cmd_fixtures)
+
+    # ── predict ──────────────────────────────────────────────────────────
+    p_pred = sub.add_parser("predict",
+                            help="Predict upcoming match outcomes (data-based estimate)")
+    p_pred.add_argument("--competition", default=None, help="Competition ID filter")
+    p_pred.add_argument("--limit", type=int, default=10, help="Number of fixtures")
+    p_pred.add_argument("--neutral", action="store_true",
+                        help="Treat all venues as neutral (no home advantage)")
+    p_pred.add_argument("--render", action="store_true", help="Render a prediction card PNG")
+    p_pred.add_argument("--output", "-o", default=None, help="Output PNG path (with --render)")
+    p_pred.add_argument("--save", action="store_true",
+                        help="Save predictions to the DB for later accuracy scoring")
+    p_pred.add_argument("--db", default="pitch_agent.db", help="Database path")
+    p_pred.set_defaults(func=cmd_predict)
+
+    # ── predict-accuracy ─────────────────────────────────────────────────
+    p_acc = sub.add_parser("predict-accuracy",
+                           help="Score saved predictions against real results")
+    p_acc.add_argument("--render", action="store_true", help="Render a scorecard PNG")
+    p_acc.add_argument("--output", "-o", default=None, help="Output PNG path (with --render)")
+    p_acc.add_argument("--db", default="pitch_agent.db", help="Database path")
+    p_acc.set_defaults(func=cmd_predict_accuracy)
+
+    # ── project-group ────────────────────────────────────────────────────
+    p_proj = sub.add_parser("project-group",
+                            help="Project group standings (chance to advance) via simulation")
+    p_proj.add_argument("--group", required=True,
+                        help="Group label, e.g. 'A' or 'Group A'")
+    p_proj.add_argument("--sims", type=int, default=10000, help="Number of simulations")
+    p_proj.add_argument("--advance", type=int, default=2,
+                        help="How many teams advance (top N)")
+    p_proj.add_argument("--render", action="store_true", help="Render a projection card PNG")
+    p_proj.add_argument("--output", "-o", default=None, help="Output PNG path (with --render)")
+    p_proj.add_argument("--db", default="pitch_agent.db", help="Database path")
+    p_proj.set_defaults(func=cmd_project_group)
 
     # ── render-chart ─────────────────────────────────────────────────────
     p_chart = sub.add_parser("render-chart", help="Render a chart as PNG")
@@ -107,20 +145,21 @@ def build_parser() -> argparse.ArgumentParser:
                          choices=["daily", "player_match", "tournament"],
                          default="daily",
                          help="Leaderboard scope: daily, player-match, or tournament")
+    p_chart.add_argument("--competition", default=None,
+                         help="Competition ID filter (fixtures chart)")
+    p_chart.add_argument("--provider", default=None,
+                         help="Restrict the fixtures chart to one provider "
+                              "(e.g. football-data). Default prefers football-data.")
     p_chart.add_argument("--limit", type=int, default=10, help="Number of entries")
     p_chart.add_argument("--output", "-o", default=None, help="Output PNG path")
     p_chart.add_argument("--db", default="pitch_agent.db", help="Database path")
     p_chart.set_defaults(func=cmd_render_chart)
 
     # ── generate-content ─────────────────────────────────────────────────
+    from pitch_agent.content import PILLARS
     p_content = sub.add_parser("generate-content", help="Generate content for a pillar")
     p_content.add_argument("--pillar",
-        choices=[
-            "form_index_update", "position_leaderboard", "player_spotlight",
-            "team_form_report", "news_digest", "stat_of_the_day",
-            "underdog_watch", "post_match_grades", "builder_update",
-            "matchday_preview", "real_data_connected",
-        ],
+        choices=list(PILLARS),
         required=True,
         help="Content pillar")
     p_content.add_argument("--mode", choices=["fan_mode", "builder_mode"],
@@ -346,12 +385,13 @@ def cmd_leaderboard(args: argparse.Namespace) -> int:
 
 
 def cmd_fixtures(args: argparse.Namespace) -> int:
-    from pitch_agent.fixtures import get_fixtures
+    from pitch_agent.fixtures import get_fixtures, normalize_stage_label
 
     fixtures = get_fixtures(
         db_path=args.db,
         competition_id=args.competition,
         limit=args.limit,
+        provider_name=getattr(args, "provider", None),
     )
     if not fixtures:
         print("No fixtures found. Run `sync-data` first.")
@@ -361,11 +401,122 @@ def cmd_fixtures(args: argparse.Namespace) -> int:
     print(f"{'Date':<12} {'Stage/Group':<16} {'Match':<34} {'Status':<10}")
     print("-" * 74)
     for fx in fixtures:
-        context = (fx.get("group_name") or fx.get("stage") or "").replace("_", " ")
+        context = (normalize_stage_label(fx.get("group_name"))
+                   or normalize_stage_label(fx.get("stage")))
         date = str(fx.get("date") or "")[:10]
         print(f"{date:<12} {context[:16]:<16} {fx['match_label'][:34]:<34} "
               f"{(fx.get('status') or '')[:10]:<10}")
     print(f"\n{get_chart_footer()}")
+    return 0
+
+
+def cmd_predict(args: argparse.Namespace) -> int:
+    from pitch_agent.predict import (
+        PREDICTION_DISCLAIMER, predict_upcoming, save_predictions,
+    )
+
+    predictions = predict_upcoming(
+        db_path=args.db,
+        competition_id=args.competition,
+        limit=args.limit,
+        neutral=args.neutral,
+    )
+    if not predictions:
+        print("No upcoming fixtures to predict. Run `sync-data` first.")
+        return 1
+
+    print(f"\n🔮 Match Predictions ({len(predictions)})\n")
+    print(f"{'Match':<34} {'Home%':>6} {'Draw%':>6} {'Away%':>6}  {'Score':>6}")
+    print("-" * 64)
+    for p in predictions:
+        match = f"{p['home_team_name']} vs {p['away_team_name']}"
+        print(f"{match[:34]:<34} {p['p_home']*100:>5.0f}% {p['p_draw']*100:>5.0f}% "
+              f"{p['p_away']*100:>5.0f}%  {p['most_likely_score']:>6}")
+
+    if args.save:
+        n = save_predictions(predictions, db_path=args.db)
+        print(f"\n💾 Saved {n} prediction(s) for later accuracy scoring.")
+
+    if args.render:
+        from pitch_agent.charts import render_prediction_chart
+        out = render_prediction_chart(predictions, output_path=args.output, limit=args.limit)
+        print(f"🖼️  Prediction card: {out}")
+
+    print(f"\n{PREDICTION_DISCLAIMER}")
+    return 0
+
+
+def cmd_predict_accuracy(args: argparse.Namespace) -> int:
+    from pitch_agent.predict import (
+        PREDICTION_DISCLAIMER, accuracy_summary, score_predictions,
+    )
+
+    summary = accuracy_summary(db_path=args.db)
+    if summary["n"] == 0:
+        print("No scored predictions yet. Save predictions with "
+              "`predict --save`, then sync results.")
+        return 1
+
+    print(f"\n📊 Prediction Accuracy\n")
+    print(f"Predictions scored : {summary['n']}")
+    print(f"Correct outcomes   : {summary['correct']} ({summary['accuracy']*100:.0f}%)")
+    print(f"Brier score        : {summary['brier']:.3f}  (lower is better)")
+
+    scored = score_predictions(db_path=args.db)
+    print(f"\n{'Match':<34} {'Pred':>5} {'Actual':>7} {'Hit':>4}")
+    print("-" * 54)
+    for s in scored:
+        match = f"{s['home_team_name']} vs {s['away_team_name']}"
+        hit = "✅" if s["correct"] else "❌"
+        print(f"{match[:34]:<34} {s['predicted_outcome']:>5} "
+              f"{s['actual_outcome']:>7} {hit:>4}")
+
+    if args.render:
+        from pitch_agent.brand_template import generate_list_card_html
+        rows = [{
+            "label": f"{s['home_team_name']} vs {s['away_team_name']}",
+            "col_a": f"{s['predicted_outcome']} → {s['actual_outcome']}",
+            "col_b": "Correct" if s["correct"] else "Miss",
+        } for s in scored]
+        out = generate_list_card_html(
+            "Prediction Accuracy",
+            f"{summary['correct']}/{summary['n']} correct "
+            f"({summary['accuracy']*100:.0f}%) • Poisson model",
+            rows,
+            args.output or "artifacts/pitch_agent/charts/prediction_accuracy.png",
+            footer_text=f"BuildWithAbdallah.com | {PREDICTION_DISCLAIMER}",
+        )
+        print(f"🖼️  Scorecard card: {out}")
+
+    print(f"\n{PREDICTION_DISCLAIMER}")
+    return 0
+
+
+def cmd_project_group(args: argparse.Namespace) -> int:
+    from pitch_agent.predict import PREDICTION_DISCLAIMER, project_group
+    from pitch_agent.fixtures import normalize_stage_label
+
+    label = normalize_stage_label(args.group)
+    projection = project_group(
+        args.group, db_path=args.db, advance_count=args.advance, n_sims=args.sims,
+    )
+    if not projection:
+        print(f"No matches found for {label}. Run `sync-data` first.")
+        return 1
+
+    print(f"\n📈 {label} — Projected Standings ({args.sims:,} sims)\n")
+    print(f"{'Team':<24} {'Pts':>4} {'xPts':>6} {'Advance':>9} {'Win':>7}")
+    print("-" * 54)
+    for r in projection:
+        print(f"{r['team'][:24]:<24} {r['current_points']:>4} {r['exp_points']:>6.1f} "
+              f"{r['p_advance']*100:>7.0f}% {r['p_win_group']*100:>6.0f}%")
+
+    if args.render:
+        from pitch_agent.charts import render_group_projection_chart
+        out = render_group_projection_chart(projection, label, output_path=args.output)
+        print(f"\n🖼️  Projection card: {out}")
+
+    print(f"\n{PREDICTION_DISCLAIMER}")
     return 0
 
 
@@ -375,7 +526,12 @@ def cmd_render_chart(args: argparse.Namespace) -> int:
 
     if args.type == "fixtures":
         from pitch_agent.fixtures import get_fixtures
-        fixtures = get_fixtures(db_path=args.db, limit=args.limit)
+        fixtures = get_fixtures(
+            db_path=args.db,
+            competition_id=getattr(args, "competition", None),
+            limit=args.limit,
+            provider_name=getattr(args, "provider", None),
+        )
         if not fixtures:
             print("No fixtures found. Run `sync-data` first.")
             return 1
