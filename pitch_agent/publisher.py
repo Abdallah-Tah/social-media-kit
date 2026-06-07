@@ -38,7 +38,7 @@ class SocialPublisher:
         message = (
             f"⚽ {title}\n\n"
             "World Cup football analytics from The Pitch Agent.\n\n"
-            "Data-based estimates, not betting advice.\n"
+            "Educational predictions from public data, not betting advice.\n"
             "Independent analytics, not affiliated with FIFA.\n\n"
             "#WorldCup2026 #Football #BuildWithAbdallah"
         )
@@ -70,7 +70,7 @@ class SocialPublisher:
             f"Mode: <code>{mode}</code>\n"
             f"Matches: <code>{match_count}</code>\n\n"
             f"Reply with <b>APPROVE</b> to publish, or <b>REJECT</b> to cancel.\n\n"
-            f"BuildWithAbdallah.com | Data-based estimates | Not betting advice | Not affiliated with FIFA"
+            f"BuildWithAbdallah.com | Educational predictions | Not betting advice | Not affiliated with FIFA"
         )
 
         url = f"https://api.telegram.org/bot{self.telegram_token}/sendPhoto"
@@ -102,7 +102,7 @@ class SocialPublisher:
             f"Mode: <code>{mode}</code>\n"
             f"Matches: <code>{match_count}</code>\n\n"
             f"Posted to Facebook ✅\n\n"
-            f"BuildWithAbdallah.com | Data-based estimates | Not betting advice | Not affiliated with FIFA"
+            f"BuildWithAbdallah.com | Educational predictions | Not betting advice | Not affiliated with FIFA"
         )
 
         url = f"https://api.telegram.org/bot{self.telegram_token}/sendPhoto"

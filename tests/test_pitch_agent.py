@@ -1055,7 +1055,7 @@ def test_chart_default_output_folder_and_branding(tmp_path, monkeypatch):
     assert path == Path("artifacts/pitch_agent/charts/leaderboard_def.png")
     assert path.exists()
     assert path.stat().st_size > 0
-    assert "Data-based estimates" in get_chart_footer()
+    assert "Educational predictions" in get_chart_footer()
     assert "Not affiliated with FIFA" in get_chart_footer()
 
 
@@ -1345,7 +1345,7 @@ def test_fixtures_chart_uses_branded_footer(tmp_path, monkeypatch):
     import pitch_agent.charts as charts
 
     branded = (
-        "BuildWithAbdallah.com | Data-based estimates | Not betting advice | "
+        "BuildWithAbdallah.com | Educational predictions | Not betting advice | "
         "Not affiliated with FIFA"
     )
     captured: dict[str, str] = {}
@@ -1601,7 +1601,7 @@ def test_chart_footer_uses_brand_with_parent():
     from pitch_agent.transparency import get_chart_footer
 
     footer = get_chart_footer()
-    assert "BuildWithAbdallah.com | Data-based estimates" in footer
+    assert "BuildWithAbdallah.com | Educational predictions" in footer
     assert "Not betting advice" in footer
     assert "Not affiliated with FIFA" in footer
 
@@ -1651,7 +1651,7 @@ def test_chart_uses_logo_when_present(tmp_path, monkeypatch):
         "pitch_agent.config.load_brand",
         lambda *a, **k: {
             "name": "The Pitch Agent", "parent_brand": "BuildWithAbdallah",
-            "footer": "BuildWithAbdallah.com | Data-based estimates | Not betting advice | Not affiliated with FIFA",
+            "footer": "BuildWithAbdallah.com | Educational predictions | Not betting advice | Not affiliated with FIFA",
             "logo_path": str(logo),
         },
     )
@@ -1760,7 +1760,7 @@ def test_branded_chart_missing_logo_does_not_crash(tmp_path, monkeypatch):
         "pitch_agent.config.load_brand",
         lambda *a, **k: {
             "name": "The Pitch Agent", "parent_brand": "BuildWithAbdallah",
-            "footer": "BuildWithAbdallah.com | Data-based estimates | Not betting advice | Not affiliated with FIFA",
+            "footer": "BuildWithAbdallah.com | Educational predictions | Not betting advice | Not affiliated with FIFA",
             "logo_path": "",  # missing logo
             "background_color": "#F8FAFF", "primary_text": "#071A3D",
             "secondary_text": "#64748B", "accent_blue": "#0B63F6",
@@ -2586,3 +2586,58 @@ def test_project_group_reads_db_by_label(tmp_path):
     proj = project_group("Group A", db_path=db_path, n_sims=500)
     teams = {r["team"] for r in proj}
     assert teams == {"A", "B"}
+
+
+def test_prediction_validation_allows_educational_prediction_language():
+    """Educational prediction wording is allowed when the disclaimer is present."""
+    from pitch_agent import PITCH_AGENT_CAPTION_DISCLAIMER, PITCH_AGENT_CARD_FOOTER
+    from pitch_agent.validation import validate_pitch_agent_post
+
+    caption = (
+        "🔮 World Cup Match Predictions\n\n"
+        "Here are The Pitch Agent's data-based predictions.\n"
+        "Brazil vs Qatar — predicted score 2–0.\n\n"
+        f"{PITCH_AGENT_CAPTION_DISCLAIMER}"
+    )
+    errors = validate_pitch_agent_post(
+        title="World Cup Match Predictions",
+        caption=caption,
+        footer_text=PITCH_AGENT_CARD_FOOTER,
+        rows=[{"label": "Brazil vs Qatar"}],
+        require_rows=True,
+    )
+    assert errors == []
+
+
+def test_prediction_validation_blocks_gambling_and_certainty_language():
+    """Gambling/certainty wording stays blocked even though prediction is allowed."""
+    from pitch_agent import PITCH_AGENT_CAPTION_DISCLAIMER, PITCH_AGENT_CARD_FOOTER
+    from pitch_agent.validation import validate_pitch_agent_post
+
+    safe_suffix = f"\n\n{PITCH_AGENT_CAPTION_DISCLAIMER}"
+    bet_errors = validate_pitch_agent_post(
+        title="AI Match Prediction",
+        caption="Bet on Brazil tonight." + safe_suffix,
+        footer_text=PITCH_AGENT_CARD_FOOTER,
+    )
+    guarantee_errors = validate_pitch_agent_post(
+        title="Data-Based Prediction",
+        caption="Brazil guaranteed win." + safe_suffix,
+        footer_text=PITCH_AGENT_CARD_FOOTER,
+    )
+
+    assert any("bet on" in e for e in bet_errors)
+    assert any("guaranteed" in e for e in guarantee_errors)
+
+
+def test_prediction_validation_requires_long_disclaimer():
+    """Pitch Agent prediction posts must carry the long educational disclaimer."""
+    from pitch_agent import PITCH_AGENT_CARD_FOOTER
+    from pitch_agent.validation import validate_pitch_agent_post
+
+    errors = validate_pitch_agent_post(
+        title="World Cup Match Predictions",
+        caption="This is a data-based prediction with a predicted score.",
+        footer_text=PITCH_AGENT_CARD_FOOTER,
+    )
+    assert any("long Pitch Agent prediction disclaimer" in e for e in errors)

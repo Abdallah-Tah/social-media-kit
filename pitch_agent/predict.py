@@ -41,8 +41,8 @@ MAX_GOALS = 10
 FINISHED_STATUSES = {"FINISHED", "AWARDED"}
 
 PREDICTION_DISCLAIMER = (
-    "Data-based estimates, not betting advice. Independent analytics, "
-    "not affiliated with FIFA."
+    "Educational predictions generated from public data, not betting advice "
+    "and not guarantees. Independent analytics, not affiliated with FIFA."
 )
 
 

@@ -158,10 +158,11 @@ FAN_GOAL_STRINGS = {
     ),
     "match_prediction": (
         "Write a short, football-only post sharing The Pitch Agent's data-based "
-        "match estimates for upcoming World Cup fixtures. Use match outlook "
-        "language, not certainty claims. Mention the side with a model edge only "
-        "when the confidence is clear. Make clear these are estimates from public "
-        "data, not guarantees. Include the required World Cup disclaimer."
+        "educational match predictions for upcoming World Cup fixtures. Use "
+        "prediction, match outlook, and predicted score language only when it is "
+        "clearly framed as data-based, educational, and not betting advice. Mention "
+        "the side with a model edge only when confidence is clear. Include the "
+        "required World Cup disclaimer."
     ),
     "real_data_connected": (
         "Generate a structured builder update confirming that real World Cup "
@@ -531,8 +532,8 @@ def _generate_matchday_preview(fixtures: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _estimate_phrase(pred: dict[str, Any]) -> str:
-    """Return safe, compact public wording for a model estimate."""
+def _prediction_phrase(pred: dict[str, Any]) -> str:
+    """Return safe, compact public wording for an educational model prediction."""
     outcome = pred.get("predicted_outcome", "")
     p_home = float(pred.get("p_home", 0) or 0)
     p_draw = float(pred.get("p_draw", 0) or 0)
@@ -554,36 +555,36 @@ def _estimate_phrase(pred: dict[str, Any]) -> str:
 
 
 def _generate_match_prediction(predictions: list[dict[str, Any]]) -> str:
-    """Build a short, human preview of data-based match estimates.
+    """Build a short, human preview of educational match predictions.
 
-    Public wording uses estimates/outlook language, avoids certainty claims,
-    and includes the required independent-project disclaimer.
+    Public wording may use prediction language when it is clearly framed as
+    educational, data-based, not guaranteed, and not betting advice.
     """
     from pitch_agent.predict import PREDICTION_DISCLAIMER
 
     if not predictions:
         return (
-            "No upcoming fixtures to estimate yet.\n\n"
-            "Model estimates appear once the schedule and early results are in.\n\n"
+            "No upcoming fixtures to predict yet.\n\n"
+            "Educational predictions appear once the schedule and early results are in.\n\n"
             f"{PITCH_AGENT_CAPTION_DISCLAIMER}"
         )
 
     upcoming = predictions[:3]
-    lines = ["🔮 Match Estimates", ""]
+    lines = ["🔮 World Cup Match Predictions", ""]
     lines.append(
-        f"Here are our model's estimates based on public data for the next {len(upcoming)} matches:"
+        f"Here are The Pitch Agent's data-based predictions for the next {len(upcoming)} matches:"
     )
     lines.append("")
     for p in upcoming:
         home = p.get("home_team_name", "")
         away = p.get("away_team_name", "")
         projected = str(p.get("most_likely_score", "")).replace("-", "–")
-        line = f"• {home} vs {away} — {_estimate_phrase(p)}"
+        line = f"• {home} vs {away} — {_prediction_phrase(p)}"
         if projected:
-            line += f" — projected {projected}"
+            line += f" — predicted {projected}"
         lines.append(line)
     lines.append("")
-    lines.append("These are model estimates based on public data, not guarantees.")
+    lines.append("These predictions are generated from public data for educational analytics only. They are not guarantees and not betting advice.")
     lines.append("")
     lines.append(PREDICTION_DISCLAIMER)
     lines.append("")
@@ -888,9 +889,9 @@ def _anthropic_prompt(
     return (
         "Rewrite this football Form Index post for The Pitch Agent. Keep it "
         "concise, fan friendly, and focused only on what happened on the pitch. "
-        "Use simple English and avoid hype, certainty claims, gambling language, "
-        "and the public word prediction. Use match estimate or model estimate "
-        "when discussing future fixtures. Keep the independent project note if "
+        "Use simple English and avoid hype, certainty claims, and gambling language. "
+        "Prediction wording is allowed only when framed as educational and "
+        "data-based. Keep the independent project note if "
         "it appears. Do not add money-related language.\n\n"
         f"pillar: {pillar}\n"
         f"leaderboard: {json.dumps(compact_rows, ensure_ascii=True)}\n"

@@ -1,15 +1,19 @@
 """Lightweight safety checks for generated Pitch Agent content.
 
-These checks are intentionally small and dependency-free. They run before review
-or publishing paths so World Cup cards/posts keep the required disclaimer and do
-not accidentally use gambling, certainty, or placeholder wording.
+The Pitch Agent may publish educational/data-based prediction language, but it
+must never drift into betting, odds, certainty, or financial-advice language.
+These checks are dependency-free so they can run on Raspberry Pi/server jobs.
 """
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
-from pitch_agent import PITCH_AGENT_CARD_FOOTER, PITCH_AGENT_CAPTION_DISCLAIMER
+from pitch_agent import (
+    PITCH_AGENT_CAPTION_DISCLAIMER,
+    PITCH_AGENT_CARD_FOOTER,
+    PITCH_AGENT_ESTIMATE_FOOTER,
+)
 
 PLACEHOLDER_TERMS = (
     "[add setup steps here]",
@@ -20,19 +24,24 @@ PLACEHOLDER_TERMS = (
     "[value]",
 )
 
+# Do not include generic "prediction" / "predicted" here. Public educational
+# prediction wording is allowed when paired with the required disclaimers.
 FORBIDDEN_PUBLIC_TERMS = (
-    " prediction ",
-    " predictions ",
+    "betting advice",
     "odds",
+    "gamble",
     "gambling",
     "sportsbook",
-    "wagering",
-    "guaranteed prediction",
+    "wager",
+    "bet on",
+    "risk-free",
+    "profit from betting",
+    "profit from predictions",
+    "guaranteed win",
     "sure win",
     " lock ",
-    " pick ",
-    " betting pick",
-    " gambling pick",
+    "betting pick",
+    "gambling pick",
 )
 
 CERTAINTY_TERMS = (
@@ -42,19 +51,43 @@ CERTAINTY_TERMS = (
     "will definitely",
 )
 
-# Required disclaimer contains "Not betting advice". Treat that exact phrase as
-# allowed while still blocking other betting/pick/gambling language.
+APPROVED_PITCH_AGENT_FOOTERS = (
+    PITCH_AGENT_CARD_FOOTER,
+    PITCH_AGENT_ESTIMATE_FOOTER,
+)
+
+# Required disclaimers contain "Not betting advice". Treat that exact phrase as
+# allowed while still blocking betting-advice language without the negation.
 ALLOWED_DISCLAIMER_PHRASES = (
     "not betting advice",
+    "not guarantees",
+    "educational predictions, not betting advice",
     "data-based estimates, not betting advice",
+)
+
+SAFE_PREDICTION_PHRASES = (
+    "data-based prediction",
+    "data-based predictions",
+    "educational prediction",
+    "educational predictions",
+    "model prediction",
+    "model predictions",
+    "predicted score",
+    "ai match prediction",
+    "ai match predictions",
 )
 
 
 def _without_allowed_phrases(text: str) -> str:
     lowered = f" {text.lower()} "
-    for phrase in ALLOWED_DISCLAIMER_PHRASES:
+    for phrase in ALLOWED_DISCLAIMER_PHRASES + SAFE_PREDICTION_PHRASES:
         lowered = lowered.replace(phrase, "")
     return lowered
+
+
+def _is_prediction_content(title: str, caption: str) -> bool:
+    lowered = f" {title.lower()}\n{caption.lower()} "
+    return any(word in lowered for word in (" prediction", " predictions", " predicted", "model estimate", "data-based estimate"))
 
 
 def validate_pitch_agent_post(
@@ -68,7 +101,7 @@ def validate_pitch_agent_post(
     require_image: bool = False,
     require_rows: bool = False,
     require_source: bool = False,
-    max_caption_chars: int = 1200,
+    max_caption_chars: int = 1400,
 ) -> list[str]:
     """Return a list of validation problems; an empty list means safe to continue."""
     errors: list[str] = []
@@ -96,7 +129,7 @@ def validate_pitch_agent_post(
     combined = f"{title}\n{caption}\n{footer}"
     lowered = _without_allowed_phrases(combined)
     for term in FORBIDDEN_PUBLIC_TERMS:
-        if term.strip() in lowered:
+        if term in lowered:
             errors.append(f"forbidden public wording: {term.strip()}")
     for term in CERTAINTY_TERMS:
         if term in lowered:
@@ -105,11 +138,15 @@ def validate_pitch_agent_post(
         if term in combined.lower():
             errors.append(f"placeholder text found: {term}")
 
-    if footer and footer != "BuildWithAbdallah.com" and PITCH_AGENT_CARD_FOOTER not in footer:
+    is_pitch_footer = footer and footer != "BuildWithAbdallah.com"
+    if is_pitch_footer and footer not in APPROVED_PITCH_AGENT_FOOTERS:
         errors.append("Pitch Agent footer/disclaimer is missing or not the approved wording")
-    if "Match Estimates" in title or "model estimate" in caption.lower():
+
+    if _is_prediction_content(title, caption):
+        if footer not in APPROVED_PITCH_AGENT_FOOTERS:
+            errors.append("Pitch Agent prediction footer/disclaimer is missing")
         if PITCH_AGENT_CAPTION_DISCLAIMER not in caption:
-            errors.append("long Pitch Agent estimate disclaimer is missing")
+            errors.append("long Pitch Agent prediction disclaimer is missing")
 
     return errors
 

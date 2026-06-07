@@ -248,18 +248,18 @@ def render_prediction_chart(
     predictions: list[dict[str, Any]],
     output_path: str | None = None,
     limit: int = 10,
-    title: str = "World Cup Match Estimates",
-    subtitle: str = "Data-based estimates • Poisson model • football-data.org",
+    title: str = "World Cup Match Predictions",
+    subtitle: str = "Educational data model • Public football data • BuildWithAbdallah",
 ) -> str:
-    """Render a branded card of match estimates (model edge + projected score).
+    """Render a branded card of educational match predictions (model edge + predicted score).
 
     Uses the shared HTML card template; falls back to matplotlib if Playwright is
     unavailable, so it never crashes the pipeline. The footer carries the
-    required data-based-estimate / not-affiliated disclaimer.
+    required educational-prediction / not-affiliated disclaimer.
     """
 
     if output_path is None:
-        output_path = str(DEFAULT_CHART_DIR / "match_estimates.png")
+        output_path = str(DEFAULT_CHART_DIR / "match_predictions.png")
 
     footer = PITCH_AGENT_CARD_FOOTER
     rows = list(predictions[:limit])
@@ -280,7 +280,7 @@ def render_prediction_chart(
     brand, theme = _load_brand_and_theme()
     brand["footer"] = footer
     fig, ax, layout = brand_template.create_canvas(4, brand, theme, title=title, subtitle=subtitle)
-    _draw_empty(ax, theme, "No upcoming fixtures to estimate")
+    _draw_empty(ax, theme, "No upcoming fixtures to predict")
     return brand_template.save_chart(fig, output_path, theme)
 
 
@@ -341,7 +341,7 @@ def render_group_projection_chart(
     group_label: str,
     output_path: str | None = None,
     title: str | None = None,
-    subtitle: str = "Data-based estimates • 10k simulations • football-data.org",
+    subtitle: str = "Educational data model • 10k simulations • Public football data",
 ) -> str:
     """Render a branded card of a group's advance/win probabilities."""
     if output_path is None:

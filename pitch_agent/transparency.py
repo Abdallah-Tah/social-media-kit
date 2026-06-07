@@ -41,8 +41,8 @@ def get_methodology() -> str:
         "What it uses: goals, assists, minutes played, cards, clean sheet impact, "
         "and team result.",
         "What it does not do: it does not provide betting advice, odds, gambling "
-        "picks, or certainty claims. Match outlooks are data-based estimates "
-        "for content and analytics only.",
+        "picks, or certainty claims. Match predictions and outlooks are "
+        "educational model outputs from public data for learning and analytics only.",
         f"Current version: {MODEL_VERSION_LABEL} ({MODEL_VERSION}). This version is "
         "frozen so scores stay comparable day to day.",
         "Planned upgrade: Form Index v2.0 will add richer performance stats once a "

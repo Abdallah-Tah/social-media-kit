@@ -197,7 +197,7 @@ The scoring model is frozen as **Form Index v1.0 Lite**:
 
 This version is deliberately frozen so scores stay comparable day to day. The label `Form Index v1.0 Lite` appears in every score breakdown, leaderboard/content metadata, chart subtitle, and the public methodology (`python -m pitch_agent.cli transparency`). Richer stats are reserved for a future **Form Index v2.0** once a live data source is connected.
 
-See [Content pillars](#content-pillars) below for the launch-ready pillars. It does not provide betting advice, odds, gambling picks, or certainty claims. It may generate data-based match estimates for content and analytics purposes, and estimate posts must include clear disclaimers.
+See [Content pillars](#content-pillars) below for the launch-ready pillars. It can generate educational match predictions and data-based estimates for content and analytics purposes. It does not provide betting advice, odds, gambling picks, or certainty claims, and prediction posts must include clear disclaimers.
 
 ```bash
 python -m pitch_agent.cli init-db
@@ -282,7 +282,7 @@ Telegram review and content metadata label the data source so a reviewer always 
 
 ### Halal / content guardrails
 
-The Pitch Agent is performance analytics and content support only. It does **not** provide betting advice, odds, gambling picks, certainty claims, or guaranteed outcomes. It may generate data-based match estimates for match outlook content, but those estimates must be framed as model estimates based on public data, not guarantees. The project is **not affiliated with FIFA**, the FIFA World Cup, or any official tournament organizer. These rules are enforced for fan-mode output and reflected in the public methodology page.
+The Pitch Agent is an educational AI/data project for performance analytics, content generation, reusable charts, automation, and portfolio demonstration. It can generate educational match predictions and data-based estimates, but it does **not** provide betting advice, odds, gambling picks, certainty claims, or guaranteed outcomes. Predictions must be framed as model outputs from public data for learning and experimentation, not guarantees. The project is **not affiliated with FIFA**, the FIFA World Cup, or any official tournament organizer. These rules are enforced for fan-mode output and reflected in the public methodology page.
 
 ### Data Providers
 
@@ -336,9 +336,9 @@ The `buildwithabdallah_light` theme provides:
 - blue decorative dots in the corners and a header divider
 - dark-navy titles, muted-grey subtitles, bright-blue accents
 - clean ranked-row / fixture-list layouts with small `FWD/MID/DEF/GK` tags (no crowded legend)
-- the shared Pitch Agent footer: **BuildWithAbdallah.com | Data-based estimates | Not betting advice | Not affiliated with FIFA**
+- the shared Pitch Agent prediction footer: **BuildWithAbdallah.com | Educational predictions | Not betting advice | Not affiliated with FIFA**
 
-Layout is deterministic: fixed margins, a fixed-height title block, a fixed footer position, fixed row spacing, fixed font sizing, and text truncation — the same inputs always produce the same image dimensions. Charts are written to `artifacts/pitch_agent/charts/`. No FIFA logo, no World Cup logo, no trophy mark — original charts, flags, and team colors only.
+Layout is deterministic: fixed margins, a fixed-height title block, a fixed footer position, fixed row spacing, fixed font sizing, and safe text wrapping/truncation — the same inputs always produce the same image dimensions. Charts are written to `artifacts/pitch_agent/charts/`. No FIFA logo, no World Cup logo, no trophy mark — original charts, flags, and team colors only.
 
 Configuration lives in `config/pitch_agent.yaml`: identity under `brand:` (`name`, `parent_brand`, `logo_path`, `footer`, `chart_theme`) and palette under `theme:` (`background_color`, `primary_text`, `secondary_text`, `accent_blue`, `divider_color`, `watermark_text`, `watermark_alpha`). Default `chart_theme` is `buildwithabdallah_light`; set it to `dark` for the legacy palette.
 
