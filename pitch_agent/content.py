@@ -14,7 +14,7 @@ from typing import Any
 
 import requests
 
-from pitch_agent import MODEL_VERSION, MODEL_VERSION_LABEL
+from pitch_agent import MODEL_VERSION, MODEL_VERSION_LABEL, PITCH_AGENT_CAPTION_DISCLAIMER
 from pitch_agent.config import load_env
 from pitch_agent.transparency import TRADEMARK_DISCLAIMER
 
@@ -88,7 +88,7 @@ POSITION_PHRASES = {
 }
 
 # Consumer-facing tagline that frames the project as analytics, not tipping.
-FORM_INDEX_TAGLINE = "The Pitch Agent tracks performance, not predictions."
+FORM_INDEX_TAGLINE = "The Pitch Agent tracks performance and explains match outlooks with public data."
 
 # Keep fan posts comfortably short for X, Threads, Facebook, and LinkedIn.
 FAN_MODE_MAX_CHARS = 900
@@ -152,16 +152,17 @@ FAN_GOAL_STRINGS = {
     "matchday_preview": (
         "Write a short, football-only preview of the upcoming World Cup "
         "fixtures for The Pitch Agent. Mention the next few matches and any "
-        "group or stage context. No predictions, no money talk — just what is "
+        "group or stage context. No match estimates, no certainty claims — just what is "
         "coming up and an invitation to follow for Form Index updates once the "
         "matches are played."
     ),
     "match_prediction": (
         "Write a short, football-only post sharing The Pitch Agent's data-based "
-        "match estimates for upcoming World Cup fixtures. Name the favoured side "
-        "and the probability for the next few matches. Make clear these are "
-        "estimates from public data, not betting tips and not certainties. Avoid "
-        "any betting or money language."
+        "educational match predictions for upcoming World Cup fixtures. Use "
+        "prediction, match outlook, and predicted score language only when it is "
+        "clearly framed as data-based, educational, and not betting advice. Mention "
+        "the side with a model edge only when confidence is clear. Include the "
+        "required World Cup disclaimer."
     ),
     "real_data_connected": (
         "Generate a structured builder update confirming that real World Cup "
@@ -283,6 +284,21 @@ def generate_content(
             else:
                 result["content"] = ai_result["content"]
 
+    from pitch_agent.validation import validate_pitch_agent_post
+    validation_errors = validate_pitch_agent_post(
+        title=_public_validation_title(pillar),
+        caption=str(result["content"]),
+        rows=data if isinstance(data, list) else [],
+        footer_text=_public_validation_footer(pillar),
+        require_rows=pillar in FIXTURE_PILLARS,
+    )
+    result["validation_errors"] = validation_errors
+    if validation_errors:
+        msg = "Pitch Agent validation failed: " + "; ".join(validation_errors)
+        if not dry_run or strict_telegram:
+            raise ValueError(msg)
+        print("Pitch Agent validation warnings: " + "; ".join(validation_errors))
+
     if send_telegram_review:
         _ensure_review_chart(result["metadata"], data, position)
         from pitch_agent.telegram_review import send_review
@@ -314,6 +330,25 @@ def generate_content(
     conn.close()
 
     return result
+
+
+def _public_validation_title(pillar: str) -> str:
+    """Return the public title used for validation, not the internal enum name."""
+    titles = {
+        "match_prediction": "World Cup Match Predictions",
+        "matchday_preview": "Upcoming World Cup Matches",
+        "real_data_connected": "The Pitch Agent Real Data Connected",
+        "form_index_update": "Daily Form Index Update",
+        "position_leaderboard": "Position Leaderboard",
+        "player_spotlight": "Player Spotlight",
+        "post_match_grades": "Post-Match Grades",
+    }
+    return titles.get(pillar, str(pillar).replace("_", " ").title())
+
+
+def _public_validation_footer(pillar: str) -> str:
+    """Return the public footer/disclaimer expected for this content type."""
+    return None if pillar in FIXTURE_PILLARS else "BuildWithAbdallah.com"
 
 
 def _fetch_pillar_data(
@@ -397,7 +432,7 @@ def _build_operational_metadata(
         if pillar == "matchday_preview":
             chart_path = str(charts_dir / "fixtures.png")
         elif pillar == "match_prediction":
-            chart_path = str(charts_dir / "predictions.png")
+            chart_path = str(charts_dir / "match_estimates.png")
             status_note = "data-based estimates, not betting advice"
     else:
         providers: set[str] = set()
@@ -489,7 +524,7 @@ def _generate_fan_mode(
 
 
 def _generate_matchday_preview(fixtures: list[dict[str, Any]]) -> str:
-    """Build a short, prediction-free preview of the next few fixtures."""
+    """Build a short, estimate-free preview of the next few fixtures."""
     if not fixtures:
         return (
             "No upcoming fixtures available yet.\n\n"
@@ -519,50 +554,63 @@ def _generate_matchday_preview(fixtures: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _generate_match_prediction(predictions: list[dict[str, Any]]) -> str:
-    """Build a short, human preview of data-based match predictions.
+def _prediction_phrase(pred: dict[str, Any]) -> str:
+    """Return safe, compact public wording for an educational model prediction."""
+    outcome = pred.get("predicted_outcome", "")
+    p_home = float(pred.get("p_home", 0) or 0)
+    p_draw = float(pred.get("p_draw", 0) or 0)
+    p_away = float(pred.get("p_away", 0) or 0)
+    confidence = max(p_home, p_draw, p_away)
+    if confidence < 0.38:
+        return "too close to call"
+    if confidence < 0.46:
+        return "balanced matchup"
+    if outcome == "HOME":
+        label = pred.get("home_team_name", "Home")
+        edge = "strong edge" if confidence >= 0.65 else "slight edge"
+        return f"{label} {edge} ({round(p_home * 100)}%)"
+    if outcome == "AWAY":
+        label = pred.get("away_team_name", "Away")
+        edge = "strong edge" if confidence >= 0.65 else "slight edge"
+        return f"{label} {edge} ({round(p_away * 100)}%)"
+    return f"balanced matchup ({round(p_draw * 100)}% draw)"
 
-    Frames everything as estimates, never betting tips, and carries both the
-    prediction disclaimer and the standard trademark disclaimer.
+
+def _generate_match_prediction(predictions: list[dict[str, Any]]) -> str:
+    """Build a short, human preview of educational match predictions.
+
+    Public wording may use prediction language when it is clearly framed as
+    educational, data-based, not guaranteed, and not betting advice.
     """
     from pitch_agent.predict import PREDICTION_DISCLAIMER
 
     if not predictions:
         return (
-            "No upcoming fixtures to estimate yet.\n\n"
-            "Predictions appear once the schedule and early results are in.\n\n"
-            f"{TRADEMARK_DISCLAIMER}"
+            "No upcoming fixtures to predict yet.\n\n"
+            "Educational predictions appear once the schedule and early results are in.\n\n"
+            f"{PITCH_AGENT_CAPTION_DISCLAIMER}"
         )
 
-    upcoming = predictions[:5]
-    lines = ["🔮 Match Predictions", ""]
-    lines.append(f"Our model's data-based estimates for the next {len(upcoming)} matches:")
+    upcoming = predictions[:3]
+    lines = ["🔮 World Cup Match Predictions", ""]
+    lines.append(
+        f"Here are The Pitch Agent's data-based predictions for the next {len(upcoming)} matches:"
+    )
     lines.append("")
     for p in upcoming:
         home = p.get("home_team_name", "")
         away = p.get("away_team_name", "")
-        outcome = p.get("predicted_outcome", "")
-        confidence = max(p.get("p_home", 0), p.get("p_draw", 0), p.get("p_away", 0))
-        if confidence < 0.40:
-            # Near coin-flip: don't oversell a weak edge.
-            pick = "too close to call"
-        elif outcome == "HOME":
-            pick = f"{home} favoured ({round(p.get('p_home', 0) * 100)}%)"
-        elif outcome == "AWAY":
-            pick = f"{away} favoured ({round(p.get('p_away', 0) * 100)}%)"
-        else:
-            pick = f"likely draw ({round(p.get('p_draw', 0) * 100)}%)"
-        date = _short_date(p.get("date", ""))
-        line = f"• {home} vs {away} — {pick}"
-        if date:
-            line += f" ({date})"
+        projected = str(p.get("most_likely_score", "")).replace("-", "–")
+        line = f"• {home} vs {away} — {_prediction_phrase(p)}"
+        if projected:
+            line += f" — predicted {projected}"
         lines.append(line)
     lines.append("")
-    lines.append("These are estimates from public data, not predictions of certainty.")
+    lines.append("These predictions are generated from public data for educational analytics only. They are not guarantees and not betting advice.")
     lines.append("")
     lines.append(PREDICTION_DISCLAIMER)
     lines.append("")
-    lines.append(TRADEMARK_DISCLAIMER)
+    lines.append(PITCH_AGENT_CAPTION_DISCLAIMER)
     return "\n".join(lines)
 
 
@@ -863,8 +911,10 @@ def _anthropic_prompt(
     return (
         "Rewrite this football Form Index post for The Pitch Agent. Keep it "
         "concise, fan friendly, and focused only on what happened on the pitch. "
-        "Keep the independent project note if it appears. Do not add calls to "
-        "action, predictions, or money-related language.\n\n"
+        "Use simple English and avoid hype, certainty claims, and gambling language. "
+        "Prediction wording is allowed only when framed as educational and "
+        "data-based. Keep the independent project note if "
+        "it appears. Do not add money-related language.\n\n"
         f"pillar: {pillar}\n"
         f"leaderboard: {json.dumps(compact_rows, ensure_ascii=True)}\n"
         f"post:\n{content}"

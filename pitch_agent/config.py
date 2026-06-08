@@ -12,6 +12,8 @@ from typing import Any
 
 import yaml
 
+from pitch_agent import PITCH_AGENT_CARD_FOOTER
+
 # Project root = parent of the `pitch_agent/` package directory.
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = ROOT / "config"
@@ -142,10 +144,7 @@ class PitchAgentConfig:
 DEFAULT_BRAND = {
     "name": "The Pitch Agent",
     "parent_brand": "BuildWithAbdallah",
-    "footer": (
-        "BuildWithAbdallah.com | Independent analytics | "
-        "Not affiliated with FIFA"
-    ),
+    "footer": PITCH_AGENT_CARD_FOOTER,
     "logo_path": "",
     "chart_theme": "buildwithabdallah_light",
 }
@@ -173,9 +172,8 @@ def load_brand(config_path: Path | str | None = None) -> dict[str, str]:
 
     brand = dict(DEFAULT_BRAND)
     for key in DEFAULT_BRAND:
-        value = brand_settings.get(key)
-        if value:
-            brand[key] = str(value)
+        if key in brand_settings and brand_settings.get(key) is not None:
+            brand[key] = str(brand_settings.get(key))
 
     logo_path = brand.get("logo_path", "")
     if logo_path:

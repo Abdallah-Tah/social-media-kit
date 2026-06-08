@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pitch_agent import MODEL_VERSION_LABEL, brand_template, chart_blocks
+from pitch_agent import MODEL_VERSION_LABEL, PITCH_AGENT_CARD_FOOTER, brand_template, chart_blocks
 from pitch_agent.brand_template import DEFAULT_CHART_DIR
 from pitch_agent.chart_themes import load_theme
 from pitch_agent.transparency import get_chart_footer
@@ -20,14 +20,14 @@ DEMO_DATA_NOTE = "Demo data only"
 POSITION_TAGS = ("FWD", "MID", "DEF", "GK")
 
 
-def _load_brand_and_theme() -> tuple[dict, dict]:
+def _load_brand_and_theme(footer: str | None = None) -> tuple[dict, dict]:
     """Load the brand identity and theme palette, with the footer injected.
 
     ``get_chart_footer()`` is the single source of truth for the footer string,
     so every renderer routes through it (keeping all chart types in sync).
     """
     brand = brand_template.load_brand_config()
-    brand["footer"] = get_chart_footer()
+    brand["footer"] = get_chart_footer() if footer is None else footer
     theme = load_theme()
     return brand, theme
 
@@ -192,16 +192,17 @@ def render_fixtures_chart(
         output_path = str(DEFAULT_CHART_DIR / "fixtures.png")
 
     rows = list(fixtures[:limit])
+    footer = get_chart_footer()
     if rows:
         try:
             return brand_template.generate_list_card_html(
                 title, subtitle, _fixtures_to_card_rows(rows), output_path,
-                footer_text=get_chart_footer(),
+                footer_text=footer,
             )
         except Exception as exc:  # noqa: BLE001 - fall back, never crash the pipeline
             print(f"HTML card render failed ({exc}); falling back to matplotlib.")
 
-    brand, theme = _load_brand_and_theme()
+    brand, theme = _load_brand_and_theme(footer)
     fig, ax, layout = brand_template.create_canvas(
         len(rows), brand, theme, title=title, subtitle=subtitle,
     )
@@ -212,26 +213,33 @@ def render_fixtures_chart(
     return brand_template.save_chart(fig, output_path, theme)
 
 
-def _favorite_label(pred: dict[str, Any]) -> str:
-    """Human label for the favored side, e.g. ``Brazil 58%`` or ``Draw 30%``."""
+def _estimate_label(pred: dict[str, Any]) -> str:
+    """Compact card label for the model edge; avoids public certainty language."""
     outcome = pred.get("predicted_outcome", "")
+    p_home = float(pred.get("p_home", 0) or 0)
+    p_draw = float(pred.get("p_draw", 0) or 0)
+    p_away = float(pred.get("p_away", 0) or 0)
+    confidence = max(p_home, p_draw, p_away)
+    if confidence < 0.38:
+        return "Too close"
+    if confidence < 0.46:
+        return "Balanced"
     if outcome == "HOME":
-        return f"{pred.get('home_team_name', 'Home')} {round(pred.get('p_home', 0) * 100)}%"
+        return f"{pred.get('home_team_name', 'Home')} {round(p_home * 100)}%"
     if outcome == "AWAY":
-        return f"{pred.get('away_team_name', 'Away')} {round(pred.get('p_away', 0) * 100)}%"
-    return f"Draw {round(pred.get('p_draw', 0) * 100)}%"
+        return f"{pred.get('away_team_name', 'Away')} {round(p_away * 100)}%"
+    return "Balanced"
 
 
 def _predictions_to_card_rows(predictions: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Map predictions to ``{label, col_a, col_b}``: fixture, favorite %, most
-    likely scoreline."""
+    """Map internal estimate rows to compact public card rows."""
     rows: list[dict[str, Any]] = []
     for p in predictions:
         label = f"{p.get('home_team_name', '')} vs {p.get('away_team_name', '')}".strip(" vs")
         rows.append({
             "label": label or "TBD",
-            "col_a": _favorite_label(p),
-            "col_b": str(p.get("most_likely_score", "")),
+            "col_a": _estimate_label(p),
+            "col_b": str(p.get("most_likely_score", "")).replace("-", "–"),
         })
     return rows
 
@@ -241,20 +249,19 @@ def render_prediction_chart(
     output_path: str | None = None,
     limit: int = 10,
     title: str = "World Cup Match Predictions",
-    subtitle: str = "Data-based estimates • Poisson model • football-data.org",
+    subtitle: str = "Educational data model • Public football data • BuildWithAbdallah",
 ) -> str:
-    """Render a branded card of match predictions (favorite % + likely score).
+    """Render a branded card of educational match predictions (model edge + predicted score).
 
     Uses the shared HTML card template; falls back to matplotlib if Playwright is
     unavailable, so it never crashes the pipeline. The footer carries the
-    data-based-estimate / not-affiliated disclaimer.
+    required educational-prediction / not-affiliated disclaimer.
     """
-    from pitch_agent.predict import PREDICTION_DISCLAIMER
 
     if output_path is None:
-        output_path = str(DEFAULT_CHART_DIR / "predictions.png")
+        output_path = str(DEFAULT_CHART_DIR / "match_predictions.png")
 
-    footer = f"BuildWithAbdallah.com | {PREDICTION_DISCLAIMER}"
+    footer = PITCH_AGENT_CARD_FOOTER
     rows = list(predictions[:limit])
     if rows:
         try:
@@ -334,15 +341,13 @@ def render_group_projection_chart(
     group_label: str,
     output_path: str | None = None,
     title: str | None = None,
-    subtitle: str = "Data-based estimates • 10k simulations • football-data.org",
+    subtitle: str = "Educational data model • 10k simulations • Public football data",
 ) -> str:
     """Render a branded card of a group's advance/win probabilities."""
-    from pitch_agent.predict import PREDICTION_DISCLAIMER
-
     if output_path is None:
         output_path = str(DEFAULT_CHART_DIR / "group_projection.png")
-    title = title or f"{group_label}: Who Advances?"
-    footer = f"BuildWithAbdallah.com | {PREDICTION_DISCLAIMER}"
+    title = title or f"{group_label}: Match Outlook"
+    footer = PITCH_AGENT_CARD_FOOTER
     rows = _projection_to_card_rows(projection)
     if rows:
         try:

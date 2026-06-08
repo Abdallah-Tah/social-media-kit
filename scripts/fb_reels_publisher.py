@@ -13,6 +13,7 @@ import sys
 import time
 import argparse
 import requests
+from pathlib import Path
 
 GRAPH = "https://graph.facebook.com/v21.0"
 RUPLOAD = "https://rupload.facebook.com/video-upload/v21.0"
@@ -112,7 +113,8 @@ def main():
     ap.add_argument("--delete", help="Delete a video_id instead of publishing")
     args = ap.parse_args()
     try:
-        sys.path.insert(0, os.path.expanduser("~/social-media-kit"))
+        root = Path(os.environ.get("SMKIT_ROOT", Path(__file__).resolve().parents[1]))
+        sys.path.insert(0, str(root))
         from agent.config import load_env; load_env()
     except Exception:
         pass

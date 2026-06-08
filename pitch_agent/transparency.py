@@ -8,6 +8,7 @@ from pitch_agent import (
     FORM_INDEX_PUBLIC_EXPLANATION,
     MODEL_VERSION,
     MODEL_VERSION_LABEL,
+    PITCH_AGENT_CARD_FOOTER,
     TRADEMARK_DISCLAIMER,
 )
 
@@ -20,12 +21,11 @@ def get_disclaimer() -> str:
 def get_chart_footer() -> str:
     """Return the chart footer string with the required disclaimer.
 
-    Sourced from the brand config so it carries the parent brand, e.g.
-    ``The Pitch Agent by BuildWithAbdallah | Independent analytics | Not
-    affiliated with FIFA``.
+    Sourced from the brand config when available, with the required public
+    Pitch Agent footer as the safe fallback.
     """
     from pitch_agent.config import load_brand
-    return load_brand().get("footer", "")
+    return load_brand().get("footer", PITCH_AGENT_CARD_FOOTER) or PITCH_AGENT_CARD_FOOTER
 
 
 def get_methodology() -> str:
@@ -40,8 +40,9 @@ def get_methodology() -> str:
         "",
         "What it uses: goals, assists, minutes played, cards, clean sheet impact, "
         "and team result.",
-        "What it does not do: it is not betting, it is not a prediction, and it is "
-        "not affiliated with FIFA.",
+        "What it does not do: it does not provide betting advice, odds, gambling "
+        "picks, or certainty claims. Match predictions and outlooks are "
+        "educational model outputs from public data for learning and analytics only.",
         f"Current version: {MODEL_VERSION_LABEL} ({MODEL_VERSION}). This version is "
         "frozen so scores stay comparable day to day.",
         "Planned upgrade: Form Index v2.0 will add richer performance stats once a "

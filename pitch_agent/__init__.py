@@ -18,6 +18,25 @@ FORM_INDEX_PUBLIC_EXPLANATION = (
 )
 
 TRADEMARK_DISCLAIMER = (
-    "The Pitch Agent is an independent analytics project and is not affiliated "
-    "with FIFA, FIFA World Cup, or any official tournament organizer."
+    "The Pitch Agent is an independent analytics project by BuildWithAbdallah "
+    "and is not affiliated with FIFA, the FIFA World Cup, or any official "
+    "tournament organizer."
+)
+
+PITCH_AGENT_CARD_FOOTER = (
+    "BuildWithAbdallah.com | Educational predictions | Not betting advice | "
+    "Not affiliated with FIFA"
+)
+
+PITCH_AGENT_ESTIMATE_FOOTER = (
+    "BuildWithAbdallah.com | Data-based estimates | Not betting advice | "
+    "Not affiliated with FIFA"
+)
+
+PITCH_AGENT_CAPTION_DISCLAIMER = (
+    "The Pitch Agent is an independent educational analytics project by "
+    "BuildWithAbdallah. These predictions are generated from public data for "
+    "learning, experimentation, and portfolio demonstration. They are not "
+    "betting advice, not guarantees, and not affiliated with FIFA, the FIFA "
+    "World Cup, or any official tournament organizer."
 )

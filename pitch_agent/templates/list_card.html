@@ -168,21 +168,21 @@
       letter-spacing: -2.8px;
       text-transform: uppercase;
       color: var(--navy);
-      /* Allow up to two lines; never truncate the title. */
+      /* Allow up to three lines; keep the full title visible when possible. */
       white-space: normal;
       overflow: visible;
       text-overflow: unset;
-      display: -webkit-box;
-      -webkit-box-orient: vertical;
-      -webkit-line-clamp: 2;
+      overflow-wrap: anywhere;
+      display: block;
     }
 
     /* Long titles (> ~28 chars): shrink the type and widen the box so the
        full text still fits on two lines instead of being cut off. */
     .title.long-title {
-      font-size: 62px;
-      max-width: 1100px;
-      letter-spacing: -2px;
+      font-size: 58px;
+      max-width: 1180px;
+      letter-spacing: -1.6px;
+      line-height: 1.04;
     }
 
     .meta {
@@ -256,9 +256,11 @@
       font-size: 32px;
       font-weight: 680;
       color: var(--text);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      overflow: visible;
+      text-overflow: unset;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      line-height: 1.12;
       flex: 1 1 auto;
       min-width: 0;
     }
@@ -268,8 +270,8 @@
       display: flex;
       align-items: center;
       justify-content: flex-end;
-      gap: 32px;
-      flex-shrink: 0;
+      gap: 20px;
+      flex: 0 0 auto;
     }
 
     .values.count-0 { display: none; }
@@ -278,11 +280,11 @@
       font-size: 26px;
       color: var(--muted);
       text-align: right;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      overflow: visible;
+      text-overflow: unset;
       white-space: nowrap;
-      min-width: 80px;
-      max-width: 200px;
+      min-width: 64px;
+      max-width: 260px;
     }
 
     .value.accent {
@@ -332,9 +334,10 @@
       position: absolute;
       left: 0;
       right: 0;
-      bottom: 32px;
+      bottom: 24px;
+      padding: 0 90px;
       text-align: center;
-      font-size: 20px;
+      font-size: 18px;
       font-style: italic;
       color: var(--navy);
       letter-spacing: -.2px;
@@ -362,8 +365,8 @@
      *
      * footerText:
      *   "BuildWithAbdallah.com"                        — normal posts
-     *   "BuildWithAbdallah.com | Independent analytics | Not affiliated with FIFA"
-     *                                                  — World Cup / football posts
+     *   "BuildWithAbdallah.com | Educational predictions | Not betting advice | Not affiliated with FIFA"
+     *                                                  — Pitch Agent / World Cup posts
      *   ""                                             — hide footer
      */
     window.BWA_POST = {

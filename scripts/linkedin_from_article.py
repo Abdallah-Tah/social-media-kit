@@ -15,11 +15,13 @@ import argparse
 import tempfile
 import urllib.request
 import requests
+from pathlib import Path
 
-sys.path.insert(0, os.path.expanduser("~/social-media-kit"))
+ROOT = Path(os.environ.get("SMKIT_ROOT", Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(ROOT))
 from agent.config import load_env
 load_env()
-sys.path.insert(0, os.path.join(os.path.expanduser("~/social-media-kit"), "scripts"))
+sys.path.insert(0, str(ROOT / "scripts"))
 import linkedin_org_poster as L
 
 BASE = os.environ.get("BLOG_API_URL", "https://buildwithabdallah.com/api/v1").rstrip("/")

@@ -138,7 +138,7 @@ def render_card(fixtures, out_path, title="Upcoming World Cup Matches"):
 
     # Footer
     footer_y = H - 60
-    draw.text((60, footer_y), "The Pitch Agent by BuildWithAbdallah | Independent analytics | Not affiliated with FIFA",
+    draw.text((60, footer_y), "BuildWithAbdallah.com | Educational predictions | Not betting advice | Not affiliated with FIFA",
               fill=BRAND_TEXT, font=font_small)
 
     # Bottom-right blue accent

@@ -19,12 +19,11 @@ from pathlib import Path
 
 import requests
 
-sys.path.insert(0, os.path.expanduser("~/social-media-kit"))
+ROOT = Path(os.environ.get("SMKIT_ROOT", Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(ROOT))
 from agent.config import load_env
 
 load_env()
-
-ROOT = Path(os.path.expanduser("~/social-media-kit"))
 BASE = os.environ.get("BLOG_API_URL", "https://buildwithabdallah.com/api/v1").rstrip("/")
 SITE = os.environ.get("BWA_SITE_URL", "https://buildwithabdallah.com").rstrip("/")
 OWNER = os.environ.get("GITHUB_REPO_OWNER", "Abdallah-Tah")

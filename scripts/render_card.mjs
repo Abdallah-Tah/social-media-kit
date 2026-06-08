@@ -31,8 +31,8 @@ if (!existsSync(inHtml)) {
   process.exit(1);
 }
 
-const width = parseInt(wArg || "1080", 10);
-const height = parseInt(hArg || "1080", 10);
+const width = parseInt(wArg || "1600", 10);
+const height = parseInt(hArg || "1000", 10);
 
 const { chromium } = loadPlaywright();
 const browser = await chromium.launch({
@@ -42,7 +42,7 @@ const browser = await chromium.launch({
 try {
   const page = await browser.newPage({
     viewport: { width, height },
-    deviceScaleFactor: 2, // 2x for retina-quality export
+    deviceScaleFactor: 2, // 1600x1000@2x normal mode for sharp PNG text
   });
   await page.goto("file://" + path.resolve(inHtml), { waitUntil: "networkidle" });
   await page.waitForTimeout(400); // Let web fonts settle

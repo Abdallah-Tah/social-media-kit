@@ -20,6 +20,7 @@ import os
 import sys
 import argparse
 import requests
+from pathlib import Path
 
 ORG_URN_DEFAULT = "urn:li:organization:119694084"
 LI_API = "https://api.linkedin.com/v2"
@@ -160,7 +161,8 @@ def main():
     args = ap.parse_args()
     # Load kit secrets if not already in env.
     try:
-        sys.path.insert(0, os.path.expanduser("~/social-media-kit"))
+        root = Path(os.environ.get("SMKIT_ROOT", Path(__file__).resolve().parents[1]))
+        sys.path.insert(0, str(root))
         from agent.config import load_env
         load_env()
     except Exception:

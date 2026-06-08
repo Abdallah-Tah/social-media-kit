@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import textwrap
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -120,11 +121,21 @@ def _y_from_bottom(ax: Any, inches: float) -> float:
 
 
 def truncate(text: str, max_chars: int) -> str:
-    """Deterministically truncate text with an ellipsis when too long."""
+    """Last-resort text shortening for fallback matplotlib cards."""
     text = str(text or "")
     if max_chars <= 1 or len(text) <= max_chars:
         return text
     return text[: max_chars - 1].rstrip() + "…"
+
+
+def wrap_text(text: str, width: int, max_lines: int) -> str:
+    """Word-wrap text before truncating, so fallback cards avoid hard cutoffs."""
+    lines = textwrap.wrap(str(text or ""), width=max(width, 8))
+    if len(lines) <= max_lines:
+        return "\n".join(lines)
+    kept = lines[:max_lines]
+    kept[-1] = truncate(kept[-1], max(width - 1, 8))
+    return "\n".join(kept)
 
 
 # ── Template primitives (spec signatures) ────────────────────────────────────
@@ -213,15 +224,17 @@ def draw_title_block(ax: Any, title: str, subtitle: str, theme: dict[str, Any]) 
 
     if title:
         ax.text(
-            MARGIN_LEFT, _y_from_top(ax, TITLE_IN), truncate(title, 60),
+            MARGIN_LEFT, _y_from_top(ax, TITLE_IN), wrap_text(title, 34, 2),
             transform=ax.transAxes, ha="left", va="top",
             fontsize=FS_TITLE, fontweight="bold", color=primary, zorder=5,
+            linespacing=1.05,
         )
     if subtitle:
         ax.text(
-            MARGIN_LEFT, _y_from_top(ax, SUBTITLE_IN), truncate(subtitle, 80),
+            MARGIN_LEFT, _y_from_top(ax, SUBTITLE_IN), wrap_text(subtitle, 58, 2),
             transform=ax.transAxes, ha="left", va="top",
             fontsize=FS_SUBTITLE, color=secondary, zorder=5,
+            linespacing=1.1,
         )
     divider_y = _y_from_top(ax, DIVIDER_IN)
     ax.plot(

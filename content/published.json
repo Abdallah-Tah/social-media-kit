@@ -35,7 +35,7 @@
       "linkedin"
     ],
     "steps": 9,
-    "summary": "Researched and wrote a comprehensive tutorial on \"Build Your First MCP Server — Connect AI to Real Data\". Article covers MCP architecture, building a working server with resources/tools, database and API integrations, security best practices, and deployment options. Published successfully to blog (with cover image) and Facebook (with cover image). LinkedIn post failed due to API credential/configuration error (403 ACCESS_DENIED on author field). Article saved at: /home/abdaltm86/social-media-kit/content/drafts/2026-06-03_build-your-first-mcp-server-connect-ai-to-real-data.md",
+    "summary": "Researched and wrote a comprehensive tutorial on \"Build Your First MCP Server — Connect AI to Real Data\". Article covers MCP architecture, building a working server with resources/tools, database and API integrations, security best practices, and deployment options. Published successfully to blog (with cover image) and Facebook (with cover image). LinkedIn post failed due to API credential/configuration error (403 ACCESS_DENIED on author field). Article saved at: <repo>/content/drafts/2026-06-03_build-your-first-mcp-server-connect-ai-to-real-data.md",
     "date": "2026-06-03T17:54:34.311358+00:00"
   },
   {
@@ -267,7 +267,7 @@
       "telegram"
     ],
     "steps": 6,
-    "summary": "Created a draft tutorial on the Scheduler List package for Laravel. The article provides a comprehensive guide on setting up and using the package's web dashboard to manage scheduled tasks. Sources included Laravel News. Draft saved and cover image generated. Notified Telegram for review. Draft path: /home/abdaltm86/social-media-kit/content/drafts/2026-06-05_laravel-scheduler-list-tutorial.md.",
+    "summary": "Created a draft tutorial on the Scheduler List package for Laravel. The article provides a comprehensive guide on setting up and using the package's web dashboard to manage scheduled tasks. Sources included Laravel News. Draft saved and cover image generated. Notified Telegram for review. Draft path: <repo>/content/drafts/2026-06-05_laravel-scheduler-list-tutorial.md.",
     "date": "2026-06-05T20:43:34.859550+00:00"
   },
   {

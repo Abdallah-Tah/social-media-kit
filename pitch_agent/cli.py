@@ -101,7 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ── predict ──────────────────────────────────────────────────────────
     p_pred = sub.add_parser("predict",
-                            help="Predict upcoming match outcomes (data-based estimate)")
+                            help="Generate educational match predictions (data-based model outlook)")
     p_pred.add_argument("--competition", default=None, help="Competition ID filter")
     p_pred.add_argument("--limit", type=int, default=10, help="Number of fixtures")
     p_pred.add_argument("--neutral", action="store_true",
@@ -109,13 +109,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_pred.add_argument("--render", action="store_true", help="Render a prediction card PNG")
     p_pred.add_argument("--output", "-o", default=None, help="Output PNG path (with --render)")
     p_pred.add_argument("--save", action="store_true",
-                        help="Save predictions to the DB for later accuracy scoring")
+                        help="Save model predictions to the DB for later accuracy scoring")
     p_pred.add_argument("--db", default="pitch_agent.db", help="Database path")
     p_pred.set_defaults(func=cmd_predict)
 
     # ── predict-accuracy ─────────────────────────────────────────────────
     p_acc = sub.add_parser("predict-accuracy",
-                           help="Score saved predictions against real results")
+                           help="Score saved model predictions against real results")
     p_acc.add_argument("--render", action="store_true", help="Render a scorecard PNG")
     p_acc.add_argument("--output", "-o", default=None, help="Output PNG path (with --render)")
     p_acc.add_argument("--db", default="pitch_agent.db", help="Database path")
@@ -425,7 +425,7 @@ def cmd_predict(args: argparse.Namespace) -> int:
         print("No upcoming fixtures to predict. Run `sync-data` first.")
         return 1
 
-    print(f"\n🔮 Match Predictions ({len(predictions)})\n")
+    print(f"\n🔮 World Cup Match Predictions ({len(predictions)})\n")
     print(f"{'Match':<34} {'Home%':>6} {'Draw%':>6} {'Away%':>6}  {'Score':>6}")
     print("-" * 64)
     for p in predictions:
@@ -484,7 +484,7 @@ def cmd_predict_accuracy(args: argparse.Namespace) -> int:
             f"({summary['accuracy']*100:.0f}%) • Poisson model",
             rows,
             args.output or "artifacts/pitch_agent/charts/prediction_accuracy.png",
-            footer_text=f"BuildWithAbdallah.com | {PREDICTION_DISCLAIMER}",
+            footer_text="BuildWithAbdallah.com | Educational predictions | Not betting advice | Not affiliated with FIFA",
         )
         print(f"🖼️  Scorecard card: {out}")
 

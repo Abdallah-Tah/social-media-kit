@@ -4,10 +4,22 @@
 # notifies Telegram with exactly what happened.
 set -euo pipefail
 
-KIT="${KIT:-/home/abdaltm86/social-media-kit}"
-SMKIT="${SMKIT:-/home/abdaltm86/.local/bin/smkit}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KIT="${KIT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+if [[ -z "${SMKIT:-}" ]]; then
+  if command -v smkit >/dev/null 2>&1; then
+    SMKIT="$(command -v smkit)"
+  elif [[ -x "$HOME/.local/bin/smkit" ]]; then
+    SMKIT="$HOME/.local/bin/smkit"
+  else
+    echo "ERROR: smkit not found. Set SMKIT=/path/to/smkit or add it to PATH." >&2
+    exit 1
+  fi
+fi
 
 cd "$KIT"
+export KIT
 
 echo "===== $(date '+%Y-%m-%d %H:%M:%S') publish run start ====="
 
@@ -23,7 +35,7 @@ export TELEGRAM_MESSAGE_THREAD_ID="${TELEGRAM_MESSAGE_THREAD_ID:-14119}"
 latest_id() {
   python3 - <<'PY'
 import os, sys, requests
-sys.path.insert(0, "/home/abdaltm86/social-media-kit")
+sys.path.insert(0, os.environ.get("KIT", os.getcwd()))
 from agent.config import load_env
 load_env()
 base = os.environ.get("BLOG_API_URL", "https://buildwithabdallah.com/api/v1").rstrip("/")
@@ -45,7 +57,7 @@ PY
 latest_info() {
   python3 - <<'PY'
 import os, sys, requests
-sys.path.insert(0, "/home/abdaltm86/social-media-kit")
+sys.path.insert(0, os.environ.get("KIT", os.getcwd()))
 from agent.config import load_env
 load_env()
 base = os.environ.get("BLOG_API_URL", "https://buildwithabdallah.com/api/v1").rstrip("/")
@@ -157,7 +169,7 @@ BEFORE="$(latest_id)"
   --yes | tee "$OUT"
 
 if ! grep -q "Saved draft to" "$OUT"; then
-  MSG="Publish run failed quality gate: the agent finished without saving a draft. No public publish happened. Check /home/abdaltm86/logs/smkit-cron.log for the failed run."
+  MSG="Publish run failed quality gate: the agent finished without saving a draft. No public publish happened. Check the configured cron log for the failed run."
   echo "$MSG"
   notify_telegram "$MSG"
   exit 1

@@ -1,4 +1,4 @@
-"""Match outcome predictions — a transparent, data-based Poisson model.
+"""Match outcome estimates — a transparent, data-based Poisson model.
 
 The Pitch Agent estimates win/draw/loss probabilities for upcoming fixtures from
 the goals teams have actually scored and conceded so far. The model is a simple,
@@ -14,7 +14,7 @@ explainable Poisson goals model — no betting odds, no black box:
 Everything here is a *data-based estimate*, not betting advice. See
 :data:`PREDICTION_DISCLAIMER`.
 
-Predictions are stored in the ``predictions`` table so their accuracy can be
+Model estimates are stored in the ``predictions`` table so their accuracy can be
 scored against real results later (:func:`score_predictions`,
 :func:`accuracy_summary`) — the honesty layer that makes the estimates worth
 trusting.
@@ -41,8 +41,8 @@ MAX_GOALS = 10
 FINISHED_STATUSES = {"FINISHED", "AWARDED"}
 
 PREDICTION_DISCLAIMER = (
-    "Data-based estimate, not betting advice. Independent analytics, "
-    "not affiliated with FIFA."
+    "Educational predictions generated from public data, not betting advice "
+    "and not guarantees. Independent analytics, not affiliated with FIFA."
 )
 
 

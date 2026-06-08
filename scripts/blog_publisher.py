@@ -11,6 +11,15 @@ import argparse
 import re
 import requests
 
+PLACEHOLDER_MARKERS = (
+    "[add setup steps here]",
+    "[first step]",
+    "[add content here",
+    "[add your analysis here]",
+    "[feature]",
+    "[value]",
+)
+
 BLOG_API_URL = os.environ.get("BLOG_API_URL", "")
 BLOG_API_TOKEN = os.environ.get("BLOG_API_TOKEN", "")
 SECRETS_PATH = os.environ.get(
@@ -55,6 +64,10 @@ def publish_article(title, slug, content, excerpt="", category_id=None,
 
     # Strip front matter if present
     body = strip_front_matter(content) if content.startswith("---") else content
+    lowered_body = body.lower()
+    if publish and any(marker in lowered_body for marker in PLACEHOLDER_MARKERS):
+        print("❌ Refusing to publish article with unfinished placeholder text.")
+        return None
 
     platform = (os.environ.get("BLOG_PLATFORM", "") or "generic").lower()
     fields = {
