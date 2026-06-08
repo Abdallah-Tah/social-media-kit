@@ -40,3 +40,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Generated ChatGPT images (stray exports)
+ChatGPT Image*.png
