@@ -286,14 +286,17 @@ def generate_content(
 
     from pitch_agent.validation import validate_pitch_agent_post
     validation_errors = validate_pitch_agent_post(
-        title=str(pillar).replace("_", " ").title(),
+        title=_public_validation_title(pillar),
         caption=str(result["content"]),
         rows=data if isinstance(data, list) else [],
-        footer_text="BuildWithAbdallah.com" if pillar not in FIXTURE_PILLARS else None,
+        footer_text=_public_validation_footer(pillar),
         require_rows=pillar in FIXTURE_PILLARS,
     )
     result["validation_errors"] = validation_errors
     if validation_errors:
+        msg = "Pitch Agent validation failed: " + "; ".join(validation_errors)
+        if not dry_run or strict_telegram:
+            raise ValueError(msg)
         print("Pitch Agent validation warnings: " + "; ".join(validation_errors))
 
     if send_telegram_review:
@@ -327,6 +330,25 @@ def generate_content(
     conn.close()
 
     return result
+
+
+def _public_validation_title(pillar: str) -> str:
+    """Return the public title used for validation, not the internal enum name."""
+    titles = {
+        "match_prediction": "World Cup Match Predictions",
+        "matchday_preview": "Upcoming World Cup Matches",
+        "real_data_connected": "The Pitch Agent Real Data Connected",
+        "form_index_update": "Daily Form Index Update",
+        "position_leaderboard": "Position Leaderboard",
+        "player_spotlight": "Player Spotlight",
+        "post_match_grades": "Post-Match Grades",
+    }
+    return titles.get(pillar, str(pillar).replace("_", " ").title())
+
+
+def _public_validation_footer(pillar: str) -> str:
+    """Return the public footer/disclaimer expected for this content type."""
+    return None if pillar in FIXTURE_PILLARS else "BuildWithAbdallah.com"
 
 
 def _fetch_pillar_data(

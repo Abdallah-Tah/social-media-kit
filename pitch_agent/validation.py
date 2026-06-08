@@ -6,6 +6,7 @@ These checks are dependency-free so they can run on Raspberry Pi/server jobs.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,7 @@ PLACEHOLDER_TERMS = (
 # Do not include generic "prediction" / "predicted" here. Public educational
 # prediction wording is allowed when paired with the required disclaimers.
 FORBIDDEN_PUBLIC_TERMS = (
+    "betting",
     "betting advice",
     "odds",
     "gamble",
@@ -37,11 +39,13 @@ FORBIDDEN_PUBLIC_TERMS = (
     "risk-free",
     "profit from betting",
     "profit from predictions",
+    "bet",
     "guaranteed win",
     "sure win",
-    " lock ",
+    "lock",
     "betting pick",
     "gambling pick",
+    "pick",
 )
 
 CERTAINTY_TERMS = (
@@ -78,16 +82,36 @@ SAFE_PREDICTION_PHRASES = (
 )
 
 
+def _contains_forbidden_term(text: str, term: str) -> bool:
+    """Return True when *term* appears as a full word/phrase.
+
+    This avoids noisy substring matches: ``pick`` does not match ``picking`` or
+    ``pickle``, while multi-word phrases such as ``bet on`` still match.
+    """
+    term = term.strip().lower()
+    if not term:
+        return False
+    pattern = r"(?<!\w)" + re.escape(term) + r"(?!\w)"
+    return re.search(pattern, text) is not None
+
+
 def _without_allowed_phrases(text: str) -> str:
     lowered = f" {text.lower()} "
     for phrase in ALLOWED_DISCLAIMER_PHRASES + SAFE_PREDICTION_PHRASES:
-        lowered = lowered.replace(phrase, "")
+        lowered = re.sub(
+            r"(?<!\w)" + re.escape(phrase) + r"(?!\w)",
+            " ",
+            lowered,
+        )
     return lowered
 
 
 def _is_prediction_content(title: str, caption: str) -> bool:
     lowered = f" {title.lower()}\n{caption.lower()} "
-    return any(word in lowered for word in (" prediction", " predictions", " predicted", "model estimate", "data-based estimate"))
+    return any(
+        _contains_forbidden_term(lowered, word)
+        for word in ("prediction", "predictions", "predicted", "model estimate", "data-based estimate")
+    )
 
 
 def validate_pitch_agent_post(
@@ -129,10 +153,10 @@ def validate_pitch_agent_post(
     combined = f"{title}\n{caption}\n{footer}"
     lowered = _without_allowed_phrases(combined)
     for term in FORBIDDEN_PUBLIC_TERMS:
-        if term in lowered:
+        if _contains_forbidden_term(lowered, term):
             errors.append(f"forbidden public wording: {term.strip()}")
     for term in CERTAINTY_TERMS:
-        if term in lowered:
+        if _contains_forbidden_term(lowered, term):
             errors.append(f"certainty wording is not allowed: {term}")
     for term in PLACEHOLDER_TERMS:
         if term in combined.lower():

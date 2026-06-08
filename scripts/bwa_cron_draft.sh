@@ -6,7 +6,17 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KIT="${KIT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-SMKIT="${SMKIT:-smkit}"
+
+if [[ -z "${SMKIT:-}" ]]; then
+  if command -v smkit >/dev/null 2>&1; then
+    SMKIT="$(command -v smkit)"
+  elif [[ -x "$HOME/.local/bin/smkit" ]]; then
+    SMKIT="$HOME/.local/bin/smkit"
+  else
+    echo "ERROR: smkit not found. Set SMKIT=/path/to/smkit or add it to PATH." >&2
+    exit 1
+  fi
+fi
 
 cd "$KIT"
 export KIT

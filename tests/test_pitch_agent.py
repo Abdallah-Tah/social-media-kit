@@ -2641,3 +2641,66 @@ def test_prediction_validation_requires_long_disclaimer():
         footer_text=PITCH_AGENT_CARD_FOOTER,
     )
     assert any("long Pitch Agent prediction disclaimer" in e for e in errors)
+
+
+def test_prediction_validation_substring_safety_and_allowed_phrases():
+    """Forbidden words use word/phrase boundaries, not noisy substrings."""
+    from pitch_agent import PITCH_AGENT_CAPTION_DISCLAIMER, PITCH_AGENT_CARD_FOOTER
+    from pitch_agent.validation import validate_pitch_agent_post
+
+    base = f"\n\n{PITCH_AGENT_CAPTION_DISCLAIMER}"
+    safe_cases = [
+        "World Cup Match Predictions",
+        "AI Match Predictions",
+        "These are data-based predictions for educational analytics.",
+        "Predicted score: 2–1",
+        "Brazil are picking up form, and pickle is just a word here.",
+    ]
+    for text in safe_cases:
+        errors = validate_pitch_agent_post(
+            title="World Cup Match Predictions",
+            caption=text + base,
+            footer_text=PITCH_AGENT_CARD_FOOTER,
+        )
+        assert errors == [], text
+
+
+def test_prediction_validation_blocks_forbidden_phrases_with_boundaries():
+    """Standalone gambling/certainty phrases fail, including multi-word phrases."""
+    from pitch_agent import PITCH_AGENT_CAPTION_DISCLAIMER, PITCH_AGENT_CARD_FOOTER
+    from pitch_agent.validation import validate_pitch_agent_post
+
+    base = f"\n\n{PITCH_AGENT_CAPTION_DISCLAIMER}"
+    forbidden = {
+        "This is betting advice.": "betting",
+        "Bet on Brazil.": "bet on",
+        "This is a gambling pick.": "gambling pick",
+        "Brazil is a guaranteed win.": "guaranteed win",
+        "Sure win for Brazil.": "sure win",
+        "Lock of the day.": "lock",
+        "Risk-free profit.": "risk-free",
+        "The odds are strong.": "odds",
+    }
+    for text, expected in forbidden.items():
+        errors = validate_pitch_agent_post(
+            title="World Cup Match Predictions",
+            caption=text + base,
+            footer_text=PITCH_AGENT_CARD_FOOTER,
+        )
+        assert any(expected in e for e in errors), (text, errors)
+
+
+def test_pitch_agent_validation_raises_for_strict_review(tmp_path):
+    """Strict review should not send invalid Pitch Agent content onward."""
+    from pitch_agent.content import generate_content
+
+    missing_db = str(tmp_path / "missing.db")
+    with pytest.raises(ValueError, match="Pitch Agent validation failed"):
+        generate_content(
+            "matchday_preview",
+            mode="fan_mode",
+            db_path=missing_db,
+            dry_run=True,
+            send_telegram_review=False,
+            strict_telegram=True,
+        )
