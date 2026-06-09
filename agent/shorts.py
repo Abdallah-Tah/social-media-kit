@@ -108,6 +108,11 @@ def plan_short(article: Article, out_path: str | Path | None = None) -> dict[str
     plan["scenes"] = _normalise_scenes(plan)
     plan["captions"] = _short_lines(plan.get("captions") or [], limit=8, max_chars=58)
     plan["voiceover"] = _clean_text(plan.get("voiceover") or _voiceover_from_scenes(plan), 900)
+    # Ensure voiceover covers all scenes — if it's suspiciously short, rebuild it
+    scene_count = len(plan.get("scenes", []))
+    total_duration = sum(s.get("duration_seconds", 4) for s in plan.get("scenes", []))
+    if len(plan["voiceover"]) < scene_count * 40 or len(plan["voiceover"]) < total_duration * 8:
+        plan["voiceover"] = _voiceover_from_scenes(plan)
     plan["cta"] = _clean_text(plan.get("cta") or "Read the full tutorial at buildwithabdallah.com", 120)
     plan["publish_metadata"] = _normalise_metadata(plan, article)
     issues = validate_plan(plan)
@@ -384,10 +389,23 @@ def _normalise_scenes(plan: dict[str, Any]) -> list[dict[str, Any]]:
         if scene["kind"] == "title_card":
             if scene.get("before_code") and scene.get("after_code"):
                 scene["kind"] = "before_after"
-            elif scene.get("code"):
+            elif scene.get("code") or scene.get("before_code") or scene.get("after_code"):
                 scene["kind"] = "code_card"
             elif scene.get("commands"):
                 scene["kind"] = "terminal_window"
+        # code_card template only has {{code}}; merge before/after into code
+        if scene["kind"] == "code_card" and not scene.get("code"):
+            parts = []
+            if scene.get("before_code"):
+                parts.append("// BEFORE")
+                bc = scene["before_code"]
+                parts.extend(bc if isinstance(bc, list) else str(bc).splitlines())
+            if scene.get("after_code"):
+                parts.append("// AFTER")
+                ac = scene["after_code"]
+                parts.extend(ac if isinstance(ac, list) else str(ac).splitlines())
+            if parts:
+                scene["code"] = parts
         scene["title"] = _clean_text(scene.get("title") or "", 70)
         scene["caption"] = _clean_text(scene.get("caption") or scene.get("takeaway") or "", 86)
         scene["duration_seconds"] = max(2.0, min(float(scene.get("duration_seconds") or 4.0), 8.0))
@@ -455,16 +473,18 @@ def _assemble_video(concat_file: Path, out_video: Path, voice_path: Path | None)
         "ffmpeg", "-y",
         "-f", "concat", "-safe", "0", "-i", str(concat_file),
     ]
-    if voice_path and voice_path.exists():
-        cmd += ["-i", str(voice_path), "-shortest"]
+    has_voice = voice_path and voice_path.exists()
+    if has_voice:
+        # Loop voiceover audio to fill the full video duration
+        cmd += ["-stream_loop", "-1", "-i", str(voice_path)]
     cmd += [
         "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2",
         "-r", "30",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
     ]
-    if voice_path and voice_path.exists():
-        cmd += ["-c:a", "aac", "-b:a", "128k"]
+    if has_voice:
+        cmd += ["-c:a", "aac", "-b:a", "128k", "-shortest"]
     cmd += [str(out_video)]
     res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=180)
     if res.returncode != 0:
