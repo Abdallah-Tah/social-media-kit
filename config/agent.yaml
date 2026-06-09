@@ -1,7 +1,7 @@
 # Social Media Agent — orchestrator settings
 # The wizard (`smkit wizard`) can write this for you.
 
-# Which brain drives the routine: anthropic | openai | ollama
+# Which brain drives the routine: anthropic | openai | nvidia | ollama
 provider: ollama
 
 # Max tool-using steps before the agent must finish (safety bound).
@@ -23,6 +23,14 @@ openai:
   model: gpt-4o
   base_url: https://api.openai.com/v1   # or an OpenRouter / compatible URL
   max_tokens: 8192   # room for a full, code-rich tutorial in one response
+  temperature: 0.4
+
+nvidia:
+  # NVIDIA NIM uses the OpenAI-compatible Chat Completions API.
+  # Set NVIDIA_API_KEY (or NGC_API_KEY) in config/secrets.env.
+  model: openai/gpt-oss-120b
+  base_url: https://integrate.api.nvidia.com/v1
+  max_tokens: 8192
   temperature: 0.4
 
 ollama:

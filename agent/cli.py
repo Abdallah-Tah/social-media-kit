@@ -18,6 +18,8 @@ from .config import AgentConfig, list_profiles, load_env, load_profile
 from .orchestrator import run_agent
 from .prompts import build_goal
 
+LLM_PROVIDERS = ["anthropic", "openai", "nvidia", "ollama"]
+
 # ── Pretty (but dependency-free) console output ─────────────────────────
 ICONS = {
     "thinking": "🤔",
@@ -143,6 +145,8 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         print(f"Base URL : {config.base_url}  (no API key required)")
         print("LLM key  : n/a (local)\n")
     else:
+        if config.base_url:
+            print(f"Base URL : {config.base_url}")
         print(f"LLM key  : {'✅ set' if config.api_key else '❌ MISSING'}\n")
 
     checks = {
@@ -181,8 +185,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     # ── Secret health: catch truncated copy-pastes (e.g. a UI '…' elision) ──
     all_keys = {k for keys in checks.values() for k in keys}
     all_keys |= {
-        "BWA_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "FAL_KEY",
-        "SLACK_BOT_TOKEN", "MASTODON_ACCESS_TOKEN", "LINKEDIN_ACCESS_TOKEN",
+        "BWA_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY",
+        "NVIDIA_API_KEY", "NGC_API_KEY", "FAL_KEY", "SLACK_BOT_TOKEN",
+        "MASTODON_ACCESS_TOKEN", "LINKEDIN_ACCESS_TOKEN",
     }
     warnings = []
     for key in sorted(all_keys):
@@ -368,7 +373,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Shared run options reused by `run` and `queue`.
     def add_run_opts(p: argparse.ArgumentParser) -> None:
         p.add_argument("--profile", "-p", default="default", help="Brand profile name")
-        p.add_argument("--provider", choices=["anthropic", "openai", "ollama"],
+        p.add_argument("--provider", choices=LLM_PROVIDERS,
                        help="Override the LLM provider")
         p.add_argument("--model", help="Override the model id")
         p.add_argument("--max-steps", type=int, help="Max agent steps")
@@ -392,7 +397,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_queue.set_defaults(func=cmd_queue)
 
     p_doctor = sub.add_parser("doctor", help="Check configuration and credentials")
-    p_doctor.add_argument("--provider", choices=["anthropic", "openai", "ollama"])
+    p_doctor.add_argument("--provider", choices=LLM_PROVIDERS)
     p_doctor.set_defaults(func=cmd_doctor)
 
     p_profiles = sub.add_parser("profiles", help="List brand profiles")
@@ -407,7 +412,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_learn.add_argument("url", help="Your site/blog URL to learn the brand voice from")
     p_learn.add_argument("--profile", "-p", default="default", help="Profile name to write")
     p_learn.add_argument("--platforms", help="Comma-separated channels for the profile")
-    p_learn.add_argument("--provider", choices=["anthropic", "openai", "ollama"])
+    p_learn.add_argument("--provider", choices=LLM_PROVIDERS)
     p_learn.add_argument("--model", help="Override the model id")
     p_learn.set_defaults(func=cmd_learn)
 
@@ -416,7 +421,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_rep.add_argument("source", help="A URL or a local file (article, transcript, notes)")
     p_rep.add_argument("--profile", "-p", default="default")
-    p_rep.add_argument("--provider", choices=["anthropic", "openai", "ollama"])
+    p_rep.add_argument("--provider", choices=LLM_PROVIDERS)
     p_rep.add_argument("--model")
     p_rep.add_argument("--max-steps", type=int, default=40)
     p_rep.add_argument("--dry-run", action="store_true", help="Preview, publish nothing")

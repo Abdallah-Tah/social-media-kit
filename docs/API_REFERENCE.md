@@ -23,7 +23,7 @@ your OpenClaw / Claude Code skills root so the agent uses it every session.
 | `--topic`, `-t` | Topic to research, write, and publish |
 | `--goal`, `-g` | Explicit free-form goal (instead of `--topic`) |
 | `--profile`, `-p` | Brand profile name (default `default`) |
-| `--provider` | `anthropic` \| `openai` \| `ollama` (overrides agent.yaml) |
+| `--provider` | `anthropic` \| `openai` \| `nvidia` \| `ollama` (overrides agent.yaml) |
 | `--model` | Override the model id |
 | `--dry-run` | Simulate publishing (nothing goes live) |
 | `--yes`, `-y` | Skip the live-mode confirmation |

@@ -39,26 +39,45 @@ def _font(size, bold=True):
 def tts(text, out_path, voice=None):
     """OpenAI TTS -> mp3. Returns out_path or None."""
     key = os.environ.get("OPENAI_API_KEY", "")
-    if not key:
-        print("❌ OPENAI_API_KEY not set — no voiceover")
-        return None
+    if key:
+        try:
+            r = requests.post(
+                f"{os.environ.get('OPENAI_BASE_URL','https://api.openai.com/v1')}/audio/speech",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={"model": TTS_MODEL, "voice": voice or TTS_VOICE,
+                      "input": text, "response_format": "mp3"},
+                timeout=120,
+            )
+            if r.ok:
+                with open(out_path, "wb") as f:
+                    f.write(r.content)
+                return out_path
+            print(f"❌ TTS error ({r.status_code}): {r.text[:200]}")
+        except requests.RequestException as e:
+            print(f"❌ TTS request failed: {e}")
+    else:
+        print("❌ OPENAI_API_KEY not set — trying edge-tts fallback")
+
+    edge_voice = os.environ.get("EDGE_TTS_VOICE", "en-US-GuyNeural")
     try:
-        r = requests.post(
-            f"{os.environ.get('OPENAI_BASE_URL','https://api.openai.com/v1')}/audio/speech",
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json={"model": TTS_MODEL, "voice": voice or TTS_VOICE,
-                  "input": text, "response_format": "mp3"},
+        res = subprocess.run(
+            [
+                "edge-tts",
+                "--voice", edge_voice,
+                "--text", text,
+                "--write-media", out_path,
+            ],
+            capture_output=True,
+            text=True,
             timeout=120,
         )
-        if not r.ok:
-            print(f"❌ TTS error ({r.status_code}): {r.text[:200]}")
-            return None
-        with open(out_path, "wb") as f:
-            f.write(r.content)
-        return out_path
-    except requests.RequestException as e:
-        print(f"❌ TTS request failed: {e}")
-        return None
+        if res.returncode == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            print(f"✅ Voiceover generated via edge-tts ({edge_voice})")
+            return out_path
+        print(f"❌ edge-tts failed: {(res.stderr or res.stdout)[-300:]}")
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"❌ edge-tts request failed: {e}")
+    return None
 
 
 def _duration(path):
@@ -121,6 +140,9 @@ def make_reel(title, script, captions, cover, out_path, voice=None, music=None):
     # 1) Voiceover
     voice_mp3 = os.path.join(work, "vo.mp3")
     have_vo = tts(script, voice_mp3, voice=voice) is not None
+    if not have_vo:
+        print("❌ voiceover unavailable — refusing to build a silent reel")
+        return None
     dur = max(_duration(voice_mp3) + 0.8, 6.0) if have_vo else 18.0
     dur = min(dur, 90.0)
 

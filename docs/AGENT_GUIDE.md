@@ -26,7 +26,7 @@ The loop is bounded by `max_steps` (default 20) as a safety stop.
 agent/
 ├── cli.py            # smkit entrypoint (run / queue / wizard / doctor / profiles)
 ├── orchestrator.py   # the agentic tool-use loop
-├── llm.py            # provider-agnostic LLM client (anthropic / openai / ollama)
+├── llm.py            # provider-agnostic LLM client (anthropic / openai / nvidia / ollama)
 ├── tools.py          # tool schemas + dispatch → scripts/ (the "hands")
 ├── prompts.py        # routine + brand profile → system prompt
 ├── config.py         # secrets loader, agent.yaml, brand profiles
@@ -50,9 +50,10 @@ is exactly the tool-use loop Claude Code uses.
 `config/agent.yaml`:
 
 ```yaml
-provider: anthropic   # anthropic | openai | ollama
+provider: anthropic   # anthropic | openai | nvidia | ollama
 anthropic: { model: claude-sonnet-4-6 }
 openai:    { model: gpt-4o, base_url: https://api.openai.com/v1 }
+nvidia:   { model: openai/gpt-oss-120b, base_url: https://integrate.api.nvidia.com/v1 }
 ollama:    { model: llama3.1, base_url: http://localhost:11434/v1 }
 ```
 
@@ -62,6 +63,9 @@ Override per-run: `--provider ollama --model qwen2.5`.
   writing, `claude-sonnet-4-6` for speed/cost.
 - **openai** needs `OPENAI_API_KEY`; point `base_url` at OpenRouter or any
   compatible endpoint to use other models.
+- **nvidia** needs `NVIDIA_API_KEY` or `NGC_API_KEY`; it uses NVIDIA NIM's
+  OpenAI-compatible endpoint at `https://integrate.api.nvidia.com/v1` unless
+  you override `NVIDIA_BASE_URL` or `base_url`.
 - **ollama** needs nothing for local use. **Pick a model that supports tool
   calling** (e.g. `llama3.1`, `qwen2.5`, `mistral-nemo`, `kimi-k2.6`). Small or
   pure "thinking" models (e.g. `gemma3:4b`) will echo tool code as text instead

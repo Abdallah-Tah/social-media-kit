@@ -43,6 +43,35 @@ ORIGIN = BASE.split("/api/")[0] if "/api/" in BASE else BASE
 MIN_WORDS = int(os.environ.get("ENFORCE_MIN_WORDS", "1100"))
 MIN_CODE = int(os.environ.get("ENFORCE_MIN_CODE", "4"))
 
+REQUIRED_TUTORIAL_SECTIONS = [
+    "## What You'll Build",
+    "## Why This Matters",
+    "## Architecture Overview",
+    "## Step-by-Step Implementation",
+    "## Common Mistakes",
+    "## How I Would Use This",
+    "## Lessons Learned",
+    "## Next Steps",
+]
+
+FORBIDDEN_CONTENT_PHRASES = [
+    "revolutionary",
+    "game-changing",
+    "cutting-edge",
+    "transformative",
+    "industry-leading",
+    "next-generation",
+    "groundbreaking",
+    "unprecedented",
+    "world-class",
+    "future-proof",
+    "time will tell",
+    "stay tuned",
+    "the future looks bright",
+    "this changes everything",
+    "exciting times ahead",
+]
+
 
 def _h(json_ct=False):
     h = {"Authorization": f"Bearer {os.environ.get('BLOG_API_TOKEN','')}", "Accept": "application/json"}
@@ -73,11 +102,29 @@ def _chat(messages, max_tokens=8000, temperature=0.5):
 
 _VOICE = (
     "You are a senior developer writing a complete, hands-on tutorial for the Build With "
-    "Abdallah blog. Clear, direct English. Real, complete, copy-pasteable code in fenced "
-    "code blocks with language labels (actual commands and full files, never prose "
-    "descriptions of code). No hype words (dive into, unlock, seamlessly, robust, game "
-    "changer, revolutionary). Minimal emojis. No invented benchmarks."
+    "Abdallah blog. Sound like an experienced software engineer sharing practical knowledge "
+    "with other developers, not AI content, marketing copy, a corporate blog, or a documentation "
+    "summary. Clear, simple English is better than native-sounding English. Prioritize clarity, "
+    "accuracy, practical value, tradeoffs, limitations, and real-world experience. Real, complete, "
+    "copy-pasteable code in fenced code blocks with language labels (actual commands and full files, "
+    "never prose descriptions of code). Never use hype words like revolutionary, game-changing, "
+    "cutting-edge, transformative, industry-leading, next-generation, groundbreaking, unprecedented, "
+    "world-class, or future-proof. Never end with generic lines like Time will tell, Stay tuned, "
+    "The future looks bright, This changes everything, or Exciting times ahead. Minimal emojis. "
+    "No invented benchmarks."
 )
+
+
+def tutorial_quality_issues(body):
+    issues = []
+    low = (body or "").lower()
+    for section in REQUIRED_TUTORIAL_SECTIONS:
+        if section.lower() not in low:
+            issues.append(f"missing section: {section}")
+    for phrase in FORBIDDEN_CONTENT_PHRASES:
+        if phrase in low:
+            issues.append(f"forbidden phrase: {phrase}")
+    return issues
 
 
 def write_article(title):
@@ -90,10 +137,12 @@ def write_article(title):
         {"role": "system", "content": _VOICE},
         {"role": "user", "content": (
             f"Write the FIRST HALF of a tutorial titled \"{title}\". Start with '# {title}'. "
-            "Include: a focused intro (what this is and why it matters now), ## Prerequisites "
-            "(with real install commands), ## Project Structure (a directory tree), and the "
-            "first three numbered ## Step sections — each building one real working project "
-            "with COMPLETE code blocks and a short explanation under each. Around 850 words. "
+            "Use these required sections first: ## What You'll Build (show the final outcome), "
+            "## Why This Matters (problem, when to use it, who benefits), ## Architecture Overview "
+            "(simple architecture explanation; use a text diagram when useful), and "
+            "## Step-by-Step Implementation. In the implementation section, include the first "
+            "three numbered steps, each building one real working project with COMPLETE code blocks "
+            "and a short explanation under each. Around 900 words. "
             "Do NOT write a conclusion yet. Output ONLY markdown."
         )},
     ])
@@ -102,10 +151,13 @@ def write_article(title):
         {"role": "user", "content": (
             "Continue this tutorial seamlessly (do not repeat the intro or earlier steps). "
             "Here is the first half:\n\n" + part_a + "\n\n---\n\n"
-            "Now write the SECOND HALF: the remaining two or three numbered ## Step sections "
-            "(with complete code), a ## Complete Working Example (the full final files), a "
-            "## Common Errors and Fixes section (real errors and concrete fixes), a "
-            "## Conclusion, and a ## Sources section with real URLs. Around 750 words. "
+            "Now write the SECOND HALF: finish ## Step-by-Step Implementation with the remaining "
+            "two or three numbered steps and complete code, then include ## Common Mistakes "
+            "(real mistakes such as queue workers not running, cache invalidation, or environment "
+            "configuration when relevant), ## How I Would Use This (when I would use it, when I would "
+            "avoid it, production, cost, and maintenance considerations), ## Lessons Learned "
+            "(tradeoffs, unexpected issues, real-world considerations), ## Next Steps (practical "
+            "follow-up learning paths), and ## Sources with real URLs. Around 850 words. "
             "Output ONLY markdown, with no article title line."
         )},
     ])
@@ -132,18 +184,23 @@ def main():
     patch = {}
 
     # 1) Body depth
-    if words < MIN_WORDS or code < MIN_CODE:
-        print(f"  body below floor (<{MIN_WORDS}w or <{MIN_CODE} code blocks) → regenerating (gpt-4o)")
+    issues = tutorial_quality_issues(body)
+    if words < MIN_WORDS or code < MIN_CODE or issues:
+        if issues:
+            print("  quality issues: " + "; ".join(issues[:8]))
+        print(f"  body below standard (<{MIN_WORDS}w, <{MIN_CODE} code blocks, or missing content standard) → regenerating (gpt-4o)")
         try:
             nb = write_article(title)
             nw, nc = len(nb.split()), nb.count("```") // 2
+            nissues = tutorial_quality_issues(nb)
             # Accept the regen if it is a clear improvement: at least ~850 words,
             # enough code blocks, and not shorter than the original.
-            if nw >= 850 and nc >= MIN_CODE and nw >= words:
+            if nw >= 850 and nc >= MIN_CODE and nw >= words and not nissues:
                 patch["body"] = nb
                 print(f"   → regenerated: {nw}w {nc}cb")
             else:
-                print(f"   → regen weak ({nw}w {nc}cb); keeping original")
+                extra = f"; issues: {', '.join(nissues[:5])}" if nissues else ""
+                print(f"   → regen weak ({nw}w {nc}cb{extra}); keeping original")
         except Exception as e:
             print(f"   → regen failed: {e}")
 

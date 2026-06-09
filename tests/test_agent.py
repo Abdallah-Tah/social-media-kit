@@ -65,6 +65,11 @@ def test_ollama_needs_no_key():
     assert c.base_url.endswith(":11434/v1")
 
 
+def test_nvidia_uses_nim_default_base_url():
+    c = LLMClient(provider="nvidia", model="m", api_key="k")
+    assert c.base_url == "https://integrate.api.nvidia.com/v1"
+
+
 def test_unknown_provider_raises():
     from agent.llm import LLMError
     with pytest.raises(LLMError):
@@ -89,6 +94,17 @@ def test_bwa_anthropic_key_alias_is_preferred(monkeypatch):
     config = AgentConfig.load(provider="anthropic")
 
     assert config.api_key == "bwa-key"
+
+
+def test_nvidia_key_and_base_url_are_scoped(monkeypatch):
+    monkeypatch.setenv("NVIDIA_API_KEY", "nv-key")
+    monkeypatch.setenv("NVIDIA_BASE_URL", "https://nvidia.example/v1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://openai.example/v1")
+
+    config = AgentConfig.load(provider="nvidia")
+
+    assert config.api_key == "nv-key"
+    assert "openai.example" not in (config.base_url or "")
 
 
 # ── ToolBox: security + limits ───────────────────────────────────────────

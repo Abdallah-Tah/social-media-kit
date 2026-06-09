@@ -15,6 +15,9 @@ BANNED = [
     "seamlessly", "seamless", "game changer", "game-changer", "packed with features",
     "transform your workflow", "robust", "revolutionize", "revolutionary",
     "supercharge", "harness", "take your", "to the next level", "cutting-edge",
+    "transformative", "industry-leading", "next-generation", "groundbreaking",
+    "unprecedented", "world-class", "future-proof", "time will tell", "stay tuned",
+    "the future looks bright", "this changes everything", "exciting times ahead",
 ]
 
 
@@ -44,13 +47,14 @@ def make_social_copy(title, body, url, model="gpt-4o-mini"):
         "Write a short social media post for Abdallah, a full-stack developer. English is his second "
         "language, so write in SIMPLE, natural, human English. It should sound like a developer sharing "
         "something useful — not corporate, not an ad, not AI-generated, no big claims.\n\n"
-        "Follow this EXACT structure:\n"
-        "1) One opening line: I published a new tutorial about <topic>.\n"
-        "2) Blank line, then one line: The goal is to show how to <specific outcome>.\n"
-        "3) Blank line, then: In the tutorial, I cover:\n followed by 3 to 5 short bullets (each starts with '- ') "
-        "describing what the tutorial actually builds or explains.\n"
-        "4) Blank line, then: Read it here:\n" + url + "\n"
-        "5) Blank line, then 3 to 5 relevant hashtags on one line, including #BuildWithAbdallah.\n\n"
+        "Social posts must NOT be article summaries or table-of-contents listings. Never list section "
+        "headings like Project Structure, Section 1, Install X, Configure Y. People do not click for headings.\n\n"
+        "Follow this structure:\n"
+        "1) Hook: a practical problem, insight, lesson, or observation.\n"
+        "2) What the article covers: briefly explain the value, not the table of contents.\n"
+        "3) Why it matters: explain practical value for real projects.\n"
+        "4) Link:\n" + url + "\n"
+        "5) 3 to 5 relevant hashtags on one line, including #BuildWithAbdallah.\n\n"
         f"NEVER use these phrases: {', '.join(BANNED)}. No emojis except at most one. Keep it short. "
         "Be specific and concrete. No markdown formatting (no ** or backticks).\n\n"
         f"ARTICLE TITLE: {title}\n"
@@ -71,13 +75,54 @@ def make_social_copy(title, body, url, model="gpt-4o-mini"):
                 text = _strip_md(r.json()["choices"][0]["message"]["content"])
                 # final guard: drop any banned phrase that slipped through
                 low = text.lower()
-                if not any(b in low for b in ("unlock the power", "game changer", "packed with features",
-                                              "transform your workflow", "dive into")):
+                if not any(b in low for b in BANNED):
                     return text
         except Exception as e:
             print(f"⚠️ social copy gen failed ({e}); using template.")
     # Simple deterministic fallback in the same style.
-    bullets = "\n".join(f"- {t.lower()}" for t in (topics or ["the main steps"])[:5])
-    return (f"I published a new tutorial about {title}.\n\n"
-            f"In the tutorial, I cover:\n{bullets}\n\n"
+    value = (topics[0].lower() if topics else "build the feature without guessing through the setup")
+    return (f"Many developers can follow a tutorial, but the hard part is knowing when the pattern is worth using.\n\n"
+            f"This article shows how to {value} in a practical project.\n\n"
+            "The useful part is understanding the tradeoffs before this reaches production.\n\n"
             f"Read it here:\n{url}\n\n#coding #webdev #BuildWithAbdallah")
+
+
+def make_news_social_copy(title, body, url, model="gpt-4o-mini"):
+    """Return a short news-analysis social post with the site link."""
+    prompt = (
+        "Write a short social media post for Abdallah, a full-stack developer. English is his second "
+        "language, so write in SIMPLE, natural, human English. This is developer news analysis, not a "
+        "tutorial. No hype, no ad tone, no AI-polish.\n\n"
+        "Social posts must NOT be article summaries or table-of-contents listings.\n\n"
+        "Follow this structure:\n"
+        "1) Hook: a practical problem, insight, lesson, or observation.\n"
+        "2) What the article covers: briefly explain the value, not the table of contents.\n"
+        "3) Why it matters: explain practical value for real projects.\n"
+        "4) Link:\n" + url + "\n"
+        "5) 3 to 5 relevant hashtags on one line, including #BuildWithAbdallah.\n\n"
+        f"NEVER use these phrases: {', '.join(BANNED)}. No markdown formatting. No clickbait.\n\n"
+        f"ARTICLE TITLE: {title}\n"
+        f"ARTICLE BODY EXCERPT: {(body or '')[:1200]}\n\n"
+        "Output ONLY the post text."
+    )
+    key = os.environ.get("OPENAI_API_KEY", "")
+    if key:
+        try:
+            r = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={"model": model, "messages": [{"role": "user", "content": prompt}],
+                      "temperature": 0.45, "max_tokens": 420},
+                timeout=60,
+            )
+            if r.ok:
+                text = _strip_md(r.json()["choices"][0]["message"]["content"])
+                low = text.lower()
+                if not any(b in low for b in BANNED):
+                    return text
+        except Exception as e:
+            print(f"⚠️ news social copy gen failed ({e}); using template.")
+    return (f"New developer tools are useful only when they solve a real problem in a real project.\n\n"
+            f"This article breaks down {title} and what it could mean for builders.\n\n"
+            "The main question is what I would test first before trusting it in production.\n\n"
+            f"Read it here:\n{url}\n\n#SoftwareDevelopment #TechNews #BuildWithAbdallah")

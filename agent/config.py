@@ -105,6 +105,7 @@ class AgentConfig:
     DEFAULT_MODELS = {
         "anthropic": "claude-sonnet-4-6",
         "openai": "gpt-4o",
+        "nvidia": "openai/gpt-oss-120b",
         "ollama": "llama3.1",
     }
 
@@ -143,6 +144,7 @@ class AgentConfig:
         env_base_urls = {
             "anthropic": os.environ.get("ANTHROPIC_BASE_URL"),
             "openai": os.environ.get("OPENAI_BASE_URL"),
+            "nvidia": os.environ.get("NVIDIA_BASE_URL") or os.environ.get("NIM_BASE_URL"),
             "ollama": os.environ.get("OLLAMA_BASE_URL"),
         }
         base_url = prov_settings.get("base_url") or env_base_urls.get(prov)
@@ -165,6 +167,7 @@ def _provider_api_key(provider: str, prov_settings: dict) -> str:
     env_names = {
         "anthropic": ["BWA_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
         "openai": ["OPENAI_API_KEY", "OPENROUTER_API_KEY"],
+        "nvidia": ["NVIDIA_API_KEY", "NGC_API_KEY"],
         "ollama": ["OLLAMA_API_KEY"],  # optional; Ollama needs none
     }.get(provider, [])
     for name in env_names:

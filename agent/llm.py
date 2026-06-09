@@ -1,10 +1,11 @@
 """Provider-agnostic LLM client with tool-calling support.
 
-Speaks to three backends over plain HTTP (no SDK dependency):
+Speaks to four backends over plain HTTP (no SDK dependency):
 
 * ``anthropic`` — the Claude Messages API
 * ``openai``    — any OpenAI-compatible Chat Completions endpoint
                   (OpenAI, OpenRouter, Together, local servers, …)
+* ``nvidia``    — NVIDIA NIM's OpenAI-compatible Chat Completions endpoint
 * ``ollama``    — a local Ollama server (OpenAI-compatible at /v1),
                   so buyers can run the agent fully offline with no API key
 
@@ -60,6 +61,7 @@ class LLMClient:
 
     ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
     ANTHROPIC_VERSION = "2023-06-01"
+    NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
     def __init__(
         self,
@@ -79,16 +81,24 @@ class LLMClient:
         self.temperature = temperature
         self.max_retries = max_retries
 
-        if self.provider not in ("anthropic", "openai", "ollama"):
+        if self.provider not in ("anthropic", "openai", "nvidia", "ollama"):
             raise LLMError(
                 f"Unknown provider '{provider}'. "
-                "Use 'anthropic', 'openai', or 'ollama'."
+                "Use 'anthropic', 'openai', 'nvidia', or 'ollama'."
             )
 
         # Ollama is a local OpenAI-compatible server that needs no API key.
         if self.provider == "ollama":
             self.base_url = (base_url or "http://localhost:11434/v1").rstrip("/")
             self.api_key = api_key or "ollama"  # placeholder; not validated
+        elif self.provider == "nvidia":
+            self.base_url = (base_url or self.NVIDIA_BASE_URL).rstrip("/")
+            self.api_key = api_key
+            if not self.api_key:
+                raise LLMError(
+                    "No API key set for provider 'nvidia'. "
+                    "Set NVIDIA_API_KEY or NGC_API_KEY in config/secrets.env."
+                )
         else:
             self.base_url = (base_url or "https://api.openai.com/v1").rstrip("/")
             self.api_key = api_key
@@ -108,7 +118,7 @@ class LLMClient:
         """Send one turn and return a normalized response."""
         if self.provider == "anthropic":
             return self._complete_anthropic(system, messages, tools or [])
-        # openai + ollama share the Chat Completions wire format.
+        # openai + nvidia + ollama share the Chat Completions wire format.
         return self._complete_openai(system, messages, tools or [])
 
     # ── Anthropic ───────────────────────────────────────────────────────

@@ -180,15 +180,37 @@ if [ -n "$AFTER" ] && [ "$AFTER" != "$BEFORE" ]; then
     || { LI="⚠️ LinkedIn failed"; echo "linkedin failed"; }
 
   REEL="✅ Reel"
-  python3 "$KIT/scripts/reel_from_article.py" --latest --publish \
-    || { REEL="⚠️ Reel failed"; echo "reel failed"; }
+  REEL_OUT="$(python3 "$KIT/scripts/reel_from_article.py" --latest --publish 2>&1)" \
+    || { REEL="⚠️ Reel failed"; echo "$REEL_OUT"; echo "reel failed"; }
+  [ -z "${REEL_OUT:-}" ] || echo "$REEL_OUT"
+
+  YT="✅ YouTube"
+  if [ "$REEL" = "✅ Reel" ]; then
+    REEL_PATH="$KIT/content/assets/reel_${SLUG:0:40}.mp4"
+    YT_TITLE="${TITLE:0:82} #Shorts"
+    YT_DESC="${TITLE}
+${URL}
+
+#Shorts #BuildWithAbdallah"
+    python3 "$KIT/scripts/youtube_shorts_publisher.py" upload \
+      --video "$REEL_PATH" \
+      --title "$YT_TITLE" \
+      --description "$YT_DESC" \
+      --privacy public \
+      --tags "BuildWithAbdallah,Programming,Tutorial,Shorts" \
+      --category-id 28 \
+      || { YT="⚠️ YouTube failed"; echo "youtube failed"; }
+  else
+    YT="⚠️ YouTube skipped"
+  fi
 
   notify_telegram "Post-publish automation complete:
 ${TITLE}
 ${URL}
 ${GH}${GH_URL:+: ${GH_URL}}
 ${LI}
-${REEL}"
+${REEL}
+${YT}"
 else
   echo "No new article detected after run; skipping GitHub, LinkedIn, and Reel."
 fi

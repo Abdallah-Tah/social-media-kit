@@ -44,7 +44,7 @@ Most "social media tools" are dumb schedulers — *you* still write everything. 
 
 You need **one working LLM** — the agent uses it to research and write. Pick any:
 
-- A **Claude** (`BWA_ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEY`) or **OpenAI** (`OPENAI_API_KEY`) key, **or**
+- A **Claude** (`BWA_ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEY`), **OpenAI** (`OPENAI_API_KEY`), or **NVIDIA NIM** (`NVIDIA_API_KEY`) key, **or**
 - **Ollama Cloud** — set `OLLAMA_BASE_URL` + `OLLAMA_API_KEY` and use a `:cloud` model, **or**
 - **Local Ollama** — free/offline, but the model needs enough RAM (an 8B model wants ~8 GB; small boxes/Raspberry Pi should use Ollama Cloud or a tiny model).
 
@@ -131,6 +131,7 @@ Set it in `config/agent.yaml` or per-run with `--provider`.
 |----------|----------|-----|
 | `anthropic` | Highest-quality writing | `BWA_ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEY` |
 | `openai` | OpenAI / OpenRouter / compatible | `OPENAI_API_KEY` (+ `OPENAI_BASE_URL`) |
+| `nvidia` | NVIDIA NIM hosted models | `NVIDIA_API_KEY` or `NGC_API_KEY` (+ `NVIDIA_BASE_URL`) |
 | `ollama` (local) | Free & offline; needs RAM for the model | none — runs at `localhost:11434` |
 | `ollama` (cloud) | No local RAM; cheap hosted models | `OLLAMA_API_KEY` + `OLLAMA_BASE_URL=https://ollama.com/v1`, use a `:cloud` model |
 

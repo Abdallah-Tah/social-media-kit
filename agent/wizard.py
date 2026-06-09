@@ -21,11 +21,13 @@ from .config import CONFIG_DIR, PROFILES_DIR, SECRETS_CANDIDATES
 PROVIDER_KEYS = {
     "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
+    "nvidia": "NVIDIA_API_KEY",
     "ollama": None,  # no key needed
 }
 DEFAULT_MODELS = {
     "anthropic": "claude-sonnet-4-6",
     "openai": "gpt-4o",
+    "nvidia": "openai/gpt-oss-120b",
     "ollama": "llama3.1",
 }
 ALL_CHANNELS = [
@@ -56,9 +58,14 @@ def run_wizard() -> int:
 
     # ── Provider ────────────────────────────────────────────────────────
     print("\n1) Which LLM provider should drive the agent?")
-    print("   [1] anthropic (Claude)   [2] openai / openrouter   [3] ollama (local)")
-    choice = _ask("Choose 1/2/3", "1")
-    provider = {"1": "anthropic", "2": "openai", "3": "ollama"}.get(choice, "anthropic")
+    print("   [1] anthropic (Claude)   [2] openai / openrouter   [3] nvidia NIM   [4] ollama")
+    choice = _ask("Choose 1/2/3/4", "1")
+    provider = {
+        "1": "anthropic",
+        "2": "openai",
+        "3": "nvidia",
+        "4": "ollama",
+    }.get(choice, "anthropic")
     model = _ask("Model id", DEFAULT_MODELS[provider])
 
     agent_yaml = {"provider": provider, "max_steps": 20, "dry_run": False,
@@ -68,6 +75,9 @@ def run_wizard() -> int:
         agent_yaml[provider]["base_url"] = base
     elif provider == "openai":
         base = _ask("API base URL (blank = OpenAI)", "https://api.openai.com/v1")
+        agent_yaml[provider]["base_url"] = base
+    elif provider == "nvidia":
+        base = _ask("NVIDIA NIM base URL", "https://integrate.api.nvidia.com/v1")
         agent_yaml[provider]["base_url"] = base
 
     # ── Secrets ─────────────────────────────────────────────────────────
