@@ -45,7 +45,7 @@ try {
     deviceScaleFactor: 2, // 2x for retina-quality export
   });
   await page.goto("file://" + path.resolve(inHtml), { waitUntil: "networkidle" });
-  await page.waitForTimeout(400); // Let web fonts settle
+  await page.waitForTimeout(1200); // Let web fonts settle (Google Fonts needs extra time)
   await page.screenshot({ path: path.resolve(outPng) });
   console.log(`Rendered ${width}x${height}@2x -> ${outPng}`);
 } finally {

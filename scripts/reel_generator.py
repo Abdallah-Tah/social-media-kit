@@ -20,7 +20,7 @@ import requests
 
 W, H = 1080, 1920
 FPS = 30
-TTS_MODEL = os.environ.get("OPENAI_TTS_MODEL", "tts-1")
+TTS_MODEL = os.environ.get("OPENAI_TTS_MODEL", "tts-1-hd")
 TTS_VOICE = os.environ.get("OPENAI_TTS_VOICE", "onyx")
 
 
