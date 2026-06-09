@@ -151,10 +151,11 @@ def render_short(plan_path: str | Path, out_video: str | Path | None = None) -> 
         _render_png(html_path, png_path)
         scene_paths.append((png_path, float(scene.get("duration_seconds", 4.0))))
 
-    concat_file = out_dir / "ffmpeg_images.txt"
-    concat_file.write_text(_concat_file(scene_paths), encoding="utf-8")
     voice_path = _voiceover_audio(plan, out_dir)
-    _assemble_video(concat_file, out_video, voice_path)
+    _assemble_video(scene_paths, out_video, voice_path)
+    captions = plan.get("captions") or []
+    durations = [d for _, d in scene_paths]
+    _burn_captions(out_video, out_video, captions, durations)
     meta = {
         "video": str(out_video),
         "scenes": [str(p) for p, _ in scene_paths],
@@ -315,20 +316,38 @@ def _llm_plan(article: Article) -> dict[str, Any] | None:
 
 
 def _planner_prompt(article: Article) -> str:
-    return (
-        "Create a technical YouTube Short plan for Build With Abdallah. "
-        "Return STRICT JSON only. The Short must teach one concrete developer idea, "
-        "not promote the article. Avoid hype words. CTA only at the end.\n\n"
-        f"Allowed short_type values: {', '.join(sorted(ALLOWED_SHORT_TYPES))}\n\n"
-        "Required JSON keys: short_type, hook, main_idea, scenes, voiceover, captions, cta, publish_metadata.\n"
-        "Scene keys: kind, title, caption, duration_seconds, and one of code, commands, before_code/after_code, diagram, takeaway.\n"
-        "Use <= 6 scenes. Keep code/terminal lines short and readable on 1080x1920.\n\n"
-        "CRITICAL: The \"captions\" key must be an array of SHORT SENTENCES or PHRASES, "
-        "one per scene. Each caption must be 5-58 characters. "
-        "Do NOT split text into single characters. "
-        "Example: [\"Set up the project\", \"Add the coroutine\", \"See it run\"]\n\n"
-        f"TITLE: {article.title}\nURL: {article.url}\nARTICLE:\n{article.body[:6000]}"
-    )
+    return f"""You are creating a YouTube Shorts script for the technical developer channel "Build With Abdallah".
+Return STRICT JSON only. The Short must teach ONE concrete, useful developer idea.
+
+RETENTION RULES (YouTube rewards watch-through rate above everything else):
+- Scene 1 MUST open with a bold, curiosity-driven hook in the FIRST 3 SECONDS.
+  Bad:  "Here is one practical idea from {article.title}"
+  Good: "Most developers skip this step — and it costs them hours of debugging."
+  Good: "This one-line change made my API 3x faster. Here's exactly how."
+- The hook must create a knowledge gap — the viewer must feel they NEED to finish watching.
+- Speak conversationally to ONE developer, not a classroom. Use "you", "your", contractions.
+- Pacing: write the voiceover at ~150 words per minute. Use "..." for natural pauses.
+- Do NOT summarise the article. Teach ONE idea the viewer can use TODAY.
+- CTA only at the LAST scene. No promotion before then.
+
+REQUIRED JSON KEYS: short_type, hook, main_idea, scenes, voiceover, captions, cta, publish_metadata.
+Scene keys: kind, title, caption, duration_seconds, plus ONE of: code, commands, before_code+after_code, diagram, takeaway.
+
+CAPTIONS — these are burned on-screen for viewers watching with sound off (most mobile viewers):
+- "captions" must be an array of SHORT phrases, one per scene, 5–52 characters max.
+- Written so a silent viewer understands the whole idea from captions alone.
+- Example: ["Most devs skip this", "Here's the actual fix", "One line. Done.", "Full guide →"]
+
+TECHNICAL CONSTRAINTS:
+- Max 6 scenes. CTA is the last scene only.
+- Code/terminal: max 12 lines, max 72 chars per line.
+- Avoid hype: {', '.join(HYPE_WORDS)}
+- Allowed short_type values: {', '.join(sorted(ALLOWED_SHORT_TYPES))}
+
+ARTICLE TITLE: {article.title}
+URL: {article.url}
+ARTICLE (first 6000 chars):
+{article.body[:6000]}""".strip()
 
 
 def _fallback_plan(article: Article) -> dict[str, Any]:
@@ -468,27 +487,113 @@ def _voiceover_audio(plan: dict[str, Any], out_dir: Path) -> Path | None:
         return None
 
 
-def _assemble_video(concat_file: Path, out_video: Path, voice_path: Path | None) -> None:
-    cmd = [
-        "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0", "-i", str(concat_file),
-    ]
-    has_voice = voice_path and voice_path.exists()
+def _assemble_video(
+    scene_paths: list[tuple[Path, float]], out_video: Path, voice_path: Path | None,
+) -> None:
+    """Assemble scene PNGs into a vertical MP4 with xfade crossfades between scenes."""
+    has_voice = bool(voice_path and voice_path.exists())
+    xfade_dur = 0.3  # seconds per crossfade
+    scale_vf = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2"
+
+    if len(scene_paths) == 1:
+        # Single scene — simple encode, no xfade needed.
+        png, dur = scene_paths[0]
+        cmd = ["ffmpeg", "-y", "-loop", "1", "-t", f"{dur:.2f}", "-i", str(png)]
+        if has_voice:
+            cmd += ["-stream_loop", "-1", "-i", str(voice_path)]
+        cmd += ["-vf", scale_vf, "-r", "30", "-c:v", "libx264", "-pix_fmt", "yuv420p"]
+        if has_voice:
+            cmd += ["-c:a", "aac", "-b:a", "128k", "-shortest"]
+        cmd += [str(out_video)]
+        res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=180)
+        if res.returncode != 0:
+            raise ShortsError("ffmpeg failed:\n" + (res.stderr[-1200:] or res.stdout[-1200:]))
+        return
+
+    # Multiple scenes — build with xfade transitions.
+    # Input flags: one -loop 1 -t <dur> -i <png> per scene.
+    inputs: list[str] = []
+    for png, dur in scene_paths:
+        inputs += ["-loop", "1", "-t", f"{dur:.2f}", "-i", str(png)]
+
+    # Build xfade filter chain.
+    # offset for xfade N is the cumulative duration of scenes 0..N minus the
+    # crossfade overlaps already consumed.
+    fc_parts: list[str] = []
+    cumulative = 0.0
+    prev = "[0:v]"
+    for i in range(1, len(scene_paths)):
+        cumulative += scene_paths[i - 1][1] - xfade_dur
+        out_label = f"[v{i}]" if i < len(scene_paths) - 1 else "[vout]"
+        fc_parts.append(
+            f"{prev}[{i}:v]xfade=transition=fade:duration={xfade_dur}:offset={cumulative:.3f}{out_label}"
+        )
+        prev = out_label
+    filter_complex = ";".join(fc_parts)
+
+    cmd = ["ffmpeg", "-y"] + inputs
     if has_voice:
-        # Loop voiceover audio to fill the full video duration
         cmd += ["-stream_loop", "-1", "-i", str(voice_path)]
+    audio_idx = len(scene_paths)
     cmd += [
-        "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2",
+        "-filter_complex", filter_complex,
+        "-map", "[vout]",
+        "-vf", scale_vf,
         "-r", "30",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
     ]
     if has_voice:
-        cmd += ["-c:a", "aac", "-b:a", "128k", "-shortest"]
+        cmd += ["-map", f"{audio_idx}:a", "-c:a", "aac", "-b:a", "128k", "-shortest"]
     cmd += [str(out_video)]
-    res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=180)
+    res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=300)
     if res.returncode != 0:
         raise ShortsError("ffmpeg failed:\n" + (res.stderr[-1200:] or res.stdout[-1200:]))
+
+
+def _burn_captions(
+    in_video: Path, out_video: Path, captions: list[str], durations: list[float],
+) -> None:
+    """Burn timed caption text into the video with ffmpeg drawtext (non-fatal)."""
+    if not captions or not shutil.which("ffmpeg"):
+        return
+    # Find a fallback font that's likely present on Linux.
+    font_candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+    ]
+    fontfile = next((f for f in font_candidates if Path(f).exists()), "")
+    font_opt = f":fontfile={fontfile}" if fontfile else ""
+
+    filters: list[str] = []
+    t = 0.0
+    for cap, dur in zip(captions, durations):
+        end = t + dur
+        # Escape single quotes and colons for ffmpeg drawtext.
+        safe = cap.replace("\\", "\\\\").replace("'", "’").replace(":", r"\:")
+        filters.append(
+            f"drawtext=text='{safe}'{font_opt}"
+            f":fontsize=54:fontcolor=white@0.95"
+            f":borderw=3:bordercolor=black@0.65"
+            f":x=(w-text_w)/2:y=h-200"
+            f":enable='between(t\\,{t:.2f}\\,{end:.2f})'"
+        )
+        t = end
+
+    tmp = out_video.with_suffix(".cap_tmp.mp4")
+    cmd = [
+        "ffmpeg", "-y", "-i", str(in_video),
+        "-vf", ",".join(filters),
+        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        "-c:a", "copy", str(tmp),
+    ]
+    res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=300)
+    if res.returncode == 0 and tmp.exists():
+        tmp.replace(out_video)
+    else:
+        print(f"caption burn skipped (non-fatal): {res.stderr[-400:]}")
+        tmp.unlink(missing_ok=True)
 
 
 def _concat_file(scene_paths: list[tuple[Path, float]]) -> str:
@@ -655,17 +760,39 @@ def _walk_strings(value: Any) -> list[str]:
 def _highlight_code(lines: Any) -> str:
     if isinstance(lines, str):
         lines = lines.splitlines()
-    keywords = {
-        "function", "return", "class", "def", "import", "from", "if", "else",
-        "for", "while", "await", "async", "public", "private", "const", "let",
-        "var", "use", "namespace", "new", "try", "catch",
+    # Token patterns ordered by priority — earlier patterns win over later ones.
+    _TOKENS = [
+        ("comment", r"(?://[^\n]*|#[^\n]*)"),
+        ("string",  r'(?:"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'|`[^`]*`)'),
+        ("number",  r"\b\d+(?:\.\d+)?\b"),
+        ("keyword", r"\b(?:function|return|class|def|import|from|if|elif|else|"
+                    r"for|while|await|async|public|private|protected|const|let|var|"
+                    r"use|namespace|new|try|catch|finally|yield|lambda|pass|in|is|"
+                    r"not|and|or|True|False|None|null|undefined|true|false)\b"),
+        ("builtin", r"\b(?:print|len|range|type|str|int|list|dict|set|tuple|"
+                    r"map|filter|sorted|enumerate|zip|open|super|self|cls)\b"),
+    ]
+    _COLORS = {
+        "comment": "#6e7681",
+        "string":  "#a5d6ff",
+        "number":  "#f4a261",
+        "keyword": "#ffb86b",
+        "builtin": "#d2a8ff",
     }
+    combined = "|".join(f"(?P<t{i}>{pat})" for i, (_, pat) in enumerate(_TOKENS))
     rendered = []
     for line in _short_code(lines, 12):
-        safe = html.escape(line)
-        for kw in keywords:
-            safe = re.sub(rf"\b{re.escape(kw)}\b", f'<span class="kw">{kw}</span>', safe)
-        rendered.append(f"<div><span class=\"ln\">{len(rendered)+1:02d}</span>{safe}</div>")
+        tokens_found: list[tuple[int, int, str]] = []
+        for m in re.finditer(combined, line):
+            kind_idx = next(i for i, g in enumerate(m.groups()) if g is not None)
+            tokens_found.append((m.start(), m.end(), _TOKENS[kind_idx][0]))
+        result, pos = "", 0
+        for start, end, kind in tokens_found:
+            result += html.escape(line[pos:start])
+            result += f'<span style="color:{_COLORS[kind]}">{html.escape(line[start:end])}</span>'
+            pos = end
+        result += html.escape(line[pos:])
+        rendered.append(f'<div><span class="ln">{len(rendered)+1:02d}</span>{result}</div>')
     return "\n".join(rendered) or "<div><span class=\"ln\">01</span>// practical idea</div>"
 
 
