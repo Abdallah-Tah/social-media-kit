@@ -127,6 +127,17 @@ npm install playwright
 node scripts/render_card.mjs card.html card.png 1080 1080
 ```
 
+### Technical Shorts (HTML → MP4)
+```bash
+smkit shorts plan --article <slug>
+smkit shorts render --plan content/assets/shorts/<slug>/short_plan.json
+smkit shorts preview --video content/assets/shorts/<slug>/<slug>.mp4
+smkit shorts publish --provider youtube --video content/assets/shorts/<slug>/<slug>.mp4 --plan content/assets/shorts/<slug>/short_plan.json
+```
+
+Shorts rendering requires Playwright and ffmpeg. Publishing still waits for
+manual approval after the Telegram preview.
+
 ---
 
 ## Slack

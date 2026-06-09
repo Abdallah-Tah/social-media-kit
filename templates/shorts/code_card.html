@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; width: 1080px; height: 1920px; background: #0b0f14; color: #f4f7fb; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
+    .frame { position: relative; width: 1080px; height: 1920px; padding: 82px 66px; background: #0b0f14; overflow: hidden; }
+    .top { display: flex; justify-content: space-between; color: #9fb0c3; font-size: 30px; }
+    .brand { color: #56d364; font-weight: 800; }
+    h1 { margin: 92px 0 34px; font-size: 58px; line-height: 1.08; letter-spacing: 0; }
+    .caption { margin-bottom: 46px; color: #cbd5e1; font-size: 38px; line-height: 1.24; }
+    .code { background: #111820; border: 3px solid #263443; border-radius: 8px; padding: 38px 28px; font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace; font-size: 33px; line-height: 1.42; color: #e6edf3; box-shadow: inset 0 1px 0 rgba(255,255,255,.05); }
+    .code div { white-space: pre; overflow: hidden; }
+    .ln { display: inline-block; width: 58px; margin-right: 18px; color: #6e7681; user-select: none; }
+    .kw { color: #ffb86b; font-weight: 800; }
+    .takeaway { position: absolute; left: 66px; right: 66px; bottom: 194px; color: #f4f7fb; background: #142018; border-left: 8px solid #56d364; padding: 28px 34px; font-size: 36px; line-height: 1.22; }
+    .wm { position: absolute; right: 52px; bottom: 48px; display: flex; align-items: center; gap: 12px; color: #8b949e; font-size: 26px; }
+    .wm-img { width: 76px; height: 76px; object-fit: contain; }
+    .wm-text { width: 76px; height: 76px; border: 3px solid #56d364; color: #56d364; display: grid; place-items: center; font-weight: 900; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div class="top"><div class="brand">Build With Abdallah</div><div>{{progress}}</div></div>
+    <h1>{{title}}</h1>
+    <div class="caption">{{caption}}</div>
+    <div class="code">{{code}}</div>
+    <div class="takeaway">{{takeaway}}</div>
+    <div class="wm">{{watermark}}</div>
+  </div>
+</body>
+</html>

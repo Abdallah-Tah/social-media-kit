@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; width: 1080px; height: 1920px; background: #0b0f14; color: #f4f7fb; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
+    .frame { position: relative; width: 1080px; height: 1920px; padding: 116px 86px; background: linear-gradient(155deg, #0b0f14 0%, #101820 60%, #201916 100%); overflow: hidden; }
+    .top { display: flex; justify-content: space-between; color: #9fb0c3; font-size: 30px; }
+    .brand { color: #56d364; font-weight: 800; }
+    .main { position: absolute; left: 86px; right: 86px; top: 520px; }
+    h1 { margin: 0 0 48px; font-size: 82px; line-height: 1.04; letter-spacing: 0; }
+    .caption { color: #cbd5e1; font-size: 48px; line-height: 1.22; }
+    .url { position: absolute; left: 86px; right: 86px; bottom: 270px; color: #56d364; font-size: 44px; line-height: 1.18; font-weight: 900; overflow-wrap: anywhere; }
+    .cta { position: absolute; left: 86px; right: 86px; bottom: 410px; color: #f4a261; font-size: 42px; font-weight: 900; }
+    .wm { position: absolute; right: 58px; bottom: 54px; display: flex; align-items: center; gap: 14px; color: #8b949e; font-size: 28px; }
+    .wm-img { width: 82px; height: 82px; object-fit: contain; }
+    .wm-text { width: 82px; height: 82px; border: 3px solid #56d364; color: #56d364; display: grid; place-items: center; font-weight: 900; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div class="top"><div class="brand">Build With Abdallah</div><div>{{progress}}</div></div>
+    <main class="main">
+      <h1>{{title}}</h1>
+      <div class="caption">{{caption}}</div>
+    </main>
+    <div class="cta">{{cta}}</div>
+    <div class="url">{{url}}</div>
+    <div class="wm">{{watermark}}</div>
+  </div>
+</body>
+</html>

@@ -291,3 +291,25 @@ node scripts/render_card.mjs card.html card.png 1640 660
 | `output.png` | Output PNG file |
 | `width` | Width in pixels (default: 1080) |
 | `height` | Height in pixels (default: 1080) |
+
+---
+
+## smkit shorts
+
+Plan, render, preview, and publish practical technical YouTube Shorts from a
+Build With Abdallah article. The renderer uses 1080x1920 HTML templates and
+Playwright screenshots, then ffmpeg builds the MP4.
+
+```bash
+smkit shorts plan --article implementing-coroutine-support-cpp26-visual-studio-2026-0609
+smkit shorts render --plan content/assets/shorts/<slug>/short_plan.json
+smkit shorts preview --video content/assets/shorts/<slug>/<slug>.mp4
+smkit shorts publish --provider youtube --video content/assets/shorts/<slug>/<slug>.mp4 --plan content/assets/shorts/<slug>/short_plan.json
+```
+
+| Command | Description |
+|---------|-------------|
+| `plan` | Generates and validates `short_plan.json` from a slug or Markdown file |
+| `render` | Renders scene PNGs with Playwright and builds a vertical MP4 |
+| `preview` | Sends the MP4 to Telegram for approval |
+| `publish` | Uploads to YouTube Shorts after an approval prompt |

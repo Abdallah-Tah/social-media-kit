@@ -147,6 +147,47 @@ def post_photo(image_path, caption="", chat_id=None, parse_mode=None):
     return None
 
 
+def post_video(video_path, caption="", chat_id=None, parse_mode=None):
+    """Send a local video to a Telegram chat/channel for review."""
+    token = _bot_token()
+    if not token:
+        print("❌ TELEGRAM_BOT_TOKEN not set.")
+        return None
+    target = _chat_id(chat_id)
+    if not target:
+        print("❌ TELEGRAM_CHAT_ID not set.")
+        return None
+
+    payload = {
+        "chat_id": target,
+        "caption": caption[:1024],
+        "supports_streaming": True,
+    }
+    thread_id = _message_thread_id()
+    if thread_id:
+        payload["message_thread_id"] = thread_id
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+
+    try:
+        with open(video_path, "rb") as video_file:
+            resp = requests.post(
+                f"https://api.telegram.org/bot{token}/sendVideo",
+                data=payload,
+                files={"video": video_file},
+                timeout=90,
+            )
+        result = resp.json()
+    except (OSError, requests.RequestException) as e:
+        print(f"❌ Telegram video request failed: {e}")
+        return None
+    if result.get("ok"):
+        print(f"✅ Posted video to Telegram chat {target}")
+        return result
+    print(f"❌ Telegram video error: {result}")
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="Post a message to Telegram")
     parser.add_argument("text", nargs="?", help="Message text")

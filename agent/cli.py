@@ -326,6 +326,70 @@ def cmd_install_skill(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_shorts_plan(args: argparse.Namespace) -> int:
+    from .shorts import SHORTS_DIR, ShortsError, find_article, plan_short
+
+    try:
+        article = find_article(args.article)
+        out = Path(args.out) if args.out else SHORTS_DIR / article.slug / "short_plan.json"
+        plan = plan_short(article, out)
+    except ShortsError as exc:
+        print(f"❌ {exc}")
+        return 1
+    print(f"✅ Short plan written: {out}")
+    print(f"   type: {plan.get('short_type')}")
+    print(f"   hook: {plan.get('hook')}")
+    return 0
+
+
+def cmd_shorts_render(args: argparse.Namespace) -> int:
+    from .shorts import ShortsError, render_short
+
+    try:
+        result = render_short(args.plan, args.out)
+    except ShortsError as exc:
+        print(f"❌ {exc}")
+        return 1
+    print(f"✅ Short rendered: {result['video']}")
+    print(f"   scenes: {len(result['scenes'])}")
+    print(f"   voiceover: {'yes' if result.get('has_voiceover') else 'no'}")
+    return 0
+
+
+def cmd_shorts_preview(args: argparse.Namespace) -> int:
+    from .shorts import ShortsError, preview_short
+
+    try:
+        preview_short(args.video, args.plan)
+    except ShortsError as exc:
+        print(f"❌ {exc}")
+        return 1
+    print("✅ Preview sent to Telegram. Publish only after approval.")
+    return 0
+
+
+def cmd_shorts_publish(args: argparse.Namespace) -> int:
+    from .shorts import ShortsError, publish_short
+
+    if not args.yes:
+        try:
+            ans = input(
+                "Approval gate: confirm this preview was approved for public upload. Continue? [y/N] "
+            ).strip().lower()
+        except EOFError:
+            ans = ""
+        if ans not in ("y", "yes"):
+            print("Aborted. Send a preview first, get approval, then publish.")
+            return 1
+    try:
+        publish_short(args.provider, args.video, args.plan)
+    except ShortsError as exc:
+        print(f"❌ {exc}")
+        return 1
+    print("✅ Short published.")
+    return 0
+
+
 # ── Helpers ─────────────────────────────────────────────────────────────
 def _looks_truncated(value: str) -> str | None:
     """Heuristics for a credential that was truncated when copied."""
@@ -453,6 +517,46 @@ def build_parser() -> argparse.ArgumentParser:
         "--force", action="store_true", help="Replace an existing install"
     )
     p_install.set_defaults(func=cmd_install_skill)
+
+    p_shorts = sub.add_parser(
+        "shorts",
+        help="Plan, render, preview, and publish technical YouTube Shorts",
+    )
+    shorts_sub = p_shorts.add_subparsers(dest="shorts_command", required=True)
+
+    p_short_plan = shorts_sub.add_parser(
+        "plan",
+        help="Generate short_plan.json from an article slug or Markdown file",
+    )
+    p_short_plan.add_argument("--article", required=True, help="Article slug or Markdown path")
+    p_short_plan.add_argument("--out", help="Output plan path")
+    p_short_plan.set_defaults(func=cmd_shorts_plan)
+
+    p_short_render = shorts_sub.add_parser(
+        "render",
+        help="Render scene PNGs with Playwright and build an MP4",
+    )
+    p_short_render.add_argument("--plan", required=True, help="Path to short_plan.json")
+    p_short_render.add_argument("--out", help="Output MP4 path")
+    p_short_render.set_defaults(func=cmd_shorts_render)
+
+    p_short_preview = shorts_sub.add_parser(
+        "preview",
+        help="Send an MP4 preview to Telegram for approval",
+    )
+    p_short_preview.add_argument("--video", required=True, help="Rendered MP4 path")
+    p_short_preview.add_argument("--plan", help="Optional short_plan.json for title metadata")
+    p_short_preview.set_defaults(func=cmd_shorts_preview)
+
+    p_short_publish = shorts_sub.add_parser(
+        "publish",
+        help="Publish an approved Short to YouTube",
+    )
+    p_short_publish.add_argument("--provider", choices=["youtube"], required=True)
+    p_short_publish.add_argument("--video", required=True, help="Rendered MP4 path")
+    p_short_publish.add_argument("--plan", help="Optional short_plan.json for metadata")
+    p_short_publish.add_argument("--yes", "-y", action="store_true", help="Confirm preview approval")
+    p_short_publish.set_defaults(func=cmd_shorts_publish)
 
     return parser
 
