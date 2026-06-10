@@ -43,11 +43,13 @@ def _gemini_key():
 
 
 def _auto_provider():
-    # Free Gemini quota first, then paid FAL/OpenAI, then offline card.
-    if _gemini_key():
-        return "gemini"
+    # FAL first — Gemini's free image quota is routinely exhausted (429), which
+    # just wastes a call before falling through. FAL is reliable, so lead with it
+    # and keep Gemini/OpenAI as fallbacks in the chain. Override with IMAGE_PROVIDER.
     if _fal_key():
         return "fal"
+    if _gemini_key():
+        return "gemini"
     if os.environ.get("OPENAI_API_KEY"):
         return "openai"
     return "card"
