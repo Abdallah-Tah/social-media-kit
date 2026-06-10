@@ -282,7 +282,7 @@ def assemble_video(scene_paths: list[tuple[Path, float]], voice_path: Path | Non
 
     cmd = ["ffmpeg", "-y"] + inputs
     if has_voice:
-        cmd += ["-i", str(voice_path)]
+        cmd += ["-stream_loop", "-1", "-i", str(voice_path)]
     cmd += ["-filter_complex", filter_complex, "-map", "[vout]"]
     if has_voice:
         cmd += ["-map", f"{len(scene_paths)}:a", "-c:a", "aac", "-b:a", "160k", "-shortest"]
