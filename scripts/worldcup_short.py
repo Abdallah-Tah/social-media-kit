@@ -245,11 +245,8 @@ def assemble_video(scene_paths, voice_path, out_video):
 
     cmd = ["ffmpeg", "-y"] + inputs
     if has_voice:
-        cmd += ["-i", str(voice_path)]
+        cmd += ["-stream_loop", "-1", "-i", str(voice_path)]
     cmd += ["-filter_complex", ";".join(fc), "-map", "[vout]"]
-    if has_voice:
-        cmd += ["-map", f"{len(scene_paths)}:a", "-c:a", "aac", "-b:a", "160k", "-shortest"]
-    cmd += ["-r", "30", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(out_video)]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
     if r.returncode != 0:
         raise RuntimeError(f"ffmpeg failed: {r.stderr[-700:]}")
