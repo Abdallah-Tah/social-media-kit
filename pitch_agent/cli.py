@@ -170,6 +170,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_priors.add_argument("--db", default="pitch_agent.db", help="Database path")
     p_priors.set_defaults(func=cmd_load_priors)
 
+    # ── validate-priors ────────────────────────────────────────────────
+    p_validate = sub.add_parser("validate-priors", help="List teams in upcoming fixtures missing a prior")
+    p_validate.add_argument("--db", default="pitch_agent.db", help="Database path")
+    p_validate.set_defaults(func=cmd_validate_priors)
+
     # ── transparency ────────────────────────────────────────────────────
     p_trans = sub.add_parser("transparency",
                               help="Show trademark and affiliation disclaimer")
@@ -553,11 +558,17 @@ def cmd_predict(args: argparse.Namespace) -> int:
     home_elo = home_prior["elo"] if home_prior else None
     away_elo = away_prior["elo"] if away_prior else None
 
-    # Count tournament matches played by home team
+    # Count tournament matches played by each team
     home_matches = count_team_matches(conn, home_team)
+    away_matches = count_team_matches(conn, away_team)
 
-    # Compute blended xG
-    home_xg, away_xg, basis = predict_xg(
+    # Load host nations from config
+    from pitch_agent.config import PitchAgentConfig as _PAC
+    cfg = _PAC.load()
+    host_nations = cfg.host_nations
+
+    # Compute blended xG (per-team)
+    home_xg, away_xg, basis_home, basis_away = predict_xg(
         home_team=home_team,
         away_team=away_team,
         home_avg_fi=home_avg,
@@ -565,6 +576,8 @@ def cmd_predict(args: argparse.Namespace) -> int:
         home_elo=home_elo,
         away_elo=away_elo,
         home_matches=home_matches,
+        away_matches=away_matches,
+        host_nations=host_nations,
     )
 
     outcomes = match_outcome_probs(home_xg, away_xg)
@@ -587,15 +600,24 @@ def cmd_predict(args: argparse.Namespace) -> int:
         "away": outcomes["away_win"],
     }[predicted_outcome]
 
-    # Basis label for display
-    basis_label = {"elo_prior": "pre-tournament Elo", "blended": "Elo+FI blend", "form_index": "Form Index"}[basis]
+    # Basis labels for display
+    basis_label_map = {"elo_prior": "pre-tournament Elo", "blended": "Elo+FI blend", "form_index": "Form Index"}
+    home_basis_label = basis_label_map.get(basis_home, basis_home)
+    away_basis_label = basis_label_map.get(basis_away, basis_away)
+    # Combined basis for DB storage
+    if basis_home == basis_away:
+        basis = basis_home
+    elif "elo_prior" in (basis_home, basis_away):
+        basis = "blended"
+    else:
+        basis = basis_home
 
     print(f"Match: {home_team} vs {away_team}")
     if home_avg is not None and away_avg is not None:
         print(f"Home avg Form Index: {home_avg:.1f}  |  Away avg Form Index: {away_avg:.1f}")
     if home_elo is not None and away_elo is not None:
         print(f"Home Elo: {home_elo:.0f}  |  Away Elo: {away_elo:.0f}")
-    print(f"Home xG: {home_xg:.2f}  |  Away xG: {away_xg:.2f}  (basis: {basis_label})")
+    print(f"Home xG: {home_xg:.2f} ({home_basis_label})  |  Away xG: {away_xg:.2f} ({away_basis_label})")
     print(f"Key factor: {key_factor}")
     print()
     print(f"Outcome probabilities:")
@@ -619,7 +641,8 @@ def cmd_predict(args: argparse.Namespace) -> int:
         "predicted_home": predicted_home,
         "predicted_away": predicted_away,
         "predicted_outcome": predicted_outcome,
-        "basis": basis,
+        "basis_home": basis_home,
+        "basis_away": basis_away,
         "home_win_prob": outcomes["home_win"],
         "draw_prob": outcomes["draw"],
         "away_win_prob": outcomes["away_win"],
@@ -744,6 +767,43 @@ def cmd_load_priors(args: argparse.Namespace) -> int:
     conn.commit()
     conn.close()
     print(f"✓ Loaded {count} team Elo priors from {csv_path.name}")
+    return 0
+
+
+def cmd_validate_priors(args: argparse.Namespace) -> int:
+    """List teams in upcoming fixtures that lack a prior entry."""
+    from pitch_agent.db import get_connection
+
+    conn = get_connection(args.db)
+
+    # Get all distinct team names from upcoming fixtures
+    teams = conn.execute(
+        """SELECT DISTINCT team_name FROM player_match_stats
+        UNION
+        SELECT DISTINCT home_team_name FROM matches
+        UNION
+        SELECT DISTINCT away_team_name FROM matches"""
+    ).fetchall()
+    team_names = {row[0] for row in teams if row[0]}
+
+    # Get all team_ids from priors
+    priors = conn.execute("SELECT team_id, team_name FROM team_priors").fetchall()
+    prior_ids = {row[0] for row in priors}
+    prior_names = {row[1] for row in priors}
+
+    missing = []
+    for name in sorted(team_names):
+        if name not in prior_ids and name not in prior_names:
+            missing.append(name)
+
+    if not missing:
+        print(f"✓ All {len(team_names)} teams have Elo priors.")
+    else:
+        print(f"⚠ {len(missing)} teams missing Elo priors:")
+        for name in missing:
+            print(f"  - {name}")
+
+    conn.close()
     return 0
 
 

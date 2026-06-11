@@ -129,7 +129,8 @@ CREATE TABLE IF NOT EXISTS predictions (
     predicted_home    INTEGER NOT NULL,
     predicted_away    INTEGER NOT NULL,
     predicted_outcome TEXT    NOT NULL DEFAULT 'home',
-    basis             TEXT    NOT NULL DEFAULT 'form_index',
+    basis_home        TEXT    NOT NULL DEFAULT 'form_index',
+    basis_away        TEXT    NOT NULL DEFAULT 'form_index',
     home_win_prob     REAL,
     draw_prob         REAL,
     away_win_prob     REAL,
@@ -228,8 +229,21 @@ def _migrate_predictions_columns(conn: sqlite3.Connection) -> list[str]:
         )
         added.append("predicted_outcome")
     if "basis" not in existing:
+        # Old column name — will be renamed to basis_home in a later step
         conn.execute("ALTER TABLE predictions ADD COLUMN basis TEXT NOT NULL DEFAULT 'form_index'")
         added.append("basis")
+    if "basis_home" not in existing:
+        conn.execute("ALTER TABLE predictions ADD COLUMN basis_home TEXT NOT NULL DEFAULT 'form_index'")
+        # Migrate from old 'basis' column if it exists
+        if "basis" in {row[1] for row in conn.execute("PRAGMA table_info(predictions)")}:
+            conn.execute("UPDATE predictions SET basis_home = basis WHERE basis_home = 'form_index'")
+        added.append("basis_home")
+    if "basis_away" not in existing:
+        conn.execute("ALTER TABLE predictions ADD COLUMN basis_away TEXT NOT NULL DEFAULT 'form_index'")
+        # Migrate from old 'basis' column
+        if "basis" in {row[1] for row in conn.execute("PRAGMA table_info(predictions)")}:
+            conn.execute("UPDATE predictions SET basis_away = basis WHERE basis_away = 'form_index'")
+        added.append("basis_away")
     return added
 
 
@@ -516,12 +530,12 @@ def insert_run(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
 
 _PREDICTIONS_COLUMNS = [
     "match_id", "model_version", "predicted_home", "predicted_away",
-    "predicted_outcome", "basis",
+    "predicted_outcome", "basis_home", "basis_away",
     "home_win_prob", "draw_prob", "away_win_prob", "top_scorelines", "key_factor",
 ]
 _PREDICTIONS_UPDATE_COLUMNS = [
     "predicted_home", "predicted_away",
-    "predicted_outcome", "basis",
+    "predicted_outcome", "basis_home", "basis_away",
     "home_win_prob", "draw_prob", "away_win_prob", "top_scorelines", "key_factor",
 ]
 

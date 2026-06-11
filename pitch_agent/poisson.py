@@ -205,33 +205,43 @@ def prediction_key_factor(
 
 # ── Elo prior → xG ────────────────────────────────────────────────────────
 
-def elo_to_xg(home_elo: float, away_elo: float) -> tuple[float, float]:
+def elo_to_xg(
+    home_elo: float,
+    away_elo: float,
+    home_advantage: bool = False,
+) -> tuple[float, float]:
     """Convert Elo ratings to expected goals using the standard formula.
 
     Uses the Elo expected-score formula (base-10, 400-point scale):
         E_home = 1 / (1 + 10**((away_elo - home_elo) / 400))
 
-    Then maps expected-score differential to xG:
-    - A 200-point Elo gap ≈ 76% expected score ≈ 65/35 outcome split
-    - A 0-point gap → 50/50 → 1.3/1.1 baseline xG
-    - Calibration: home_xG = base * (0.5 + 0.5 * E_home) * home_bonus
-                    away_xG = base * (0.5 + 0.5 * E_away) * away_penalty
+    **Neutral venue by default** (World Cup 2026 is played on neutral
+    grounds unless the home team is a host nation). With
+    ``home_advantage=False``, equal Elo produces symmetric xG.
+
+    When ``home_advantage=True`` (host nation playing at home), a
+    ~0.3 xG boost is applied to the home side.
+
+    Calibration target: a 200-point Elo gap ≈ 65/35 outcome split.
     """
     # Standard Elo expected score
     e_home = 1.0 / (1.0 + 10 ** ((away_elo - home_elo) / 400.0))
     e_away = 1.0 - e_home
 
-    # Map expected score to xG
-    # At 50/50: home=1.3, away=1.1 (baseline)
-    # At 65/35: home=1.9, away=0.7 (strong home favorite)
-    # At 35/65: home=0.7, away=1.9 (strong away favorite)
-    # Home advantage baked in: even at 50/50 Elo, home gets 1.3 vs 1.1
-    home_xg = 0.6 + 2.0 * e_home  # 50%→1.6, 76%→2.1, 35%→1.3
-    away_xg = 0.6 + 2.0 * e_away  # 50%→1.6, 24%→1.1, 65%→1.9
+    # Map expected score to xG — symmetric at neutral venue
+    # At 50/50 Elo: both teams get ~1.2 xG (neutral venue)
+    # At 65/35 Elo: stronger team ~1.7, weaker ~0.7
+    home_xg = 0.4 + 1.6 * e_home  # 50%→1.2, 76%→1.6, 35%→0.96
+    away_xg = 0.4 + 1.6 * e_away  # 50%→1.2, 24%→0.78, 65%→1.44
 
-    # Apply home-field advantage: scale home up, away down slightly
-    home_xg *= 0.95  # adjusts so 50/50 yields ~1.3/1.1
-    away_xg *= 0.85
+    # Home-field advantage: +0.3 xG for home team when host nation at home
+    if home_advantage:
+        home_xg += 0.30
+        away_xg -= 0.05  # slight defensive suppression
+
+    # Floor at 0.3 xG to avoid degenerate predictions
+    home_xg = max(home_xg, 0.3)
+    away_xg = max(away_xg, 0.3)
 
     return round(home_xg, 2), round(away_xg, 2)
 
@@ -244,22 +254,33 @@ def predict_xg(
     home_elo: float | None,
     away_elo: float | None,
     home_matches: int = 0,
-) -> tuple[float, float, str]:
-    """Blend Elo-prior xG and Form-Index xG based on matches played.
+    away_matches: int = 0,
+    host_nations: list[str] | None = None,
+) -> tuple[float, float, str, str]:
+    """Blend Elo-prior xG and Form-Index xG per-team.
 
-    Returns (home_xg, away_xg, basis) where basis is one of:
-    - ``'elo_prior'``: no FI data, pure Elo
-    - ``'blended'``: partial FI data (1-2 matches)
-    - ``'form_index'``: full FI data (3+ matches)
+    Each side blends independently:
+    - Home xG: ``prior_home * (1 - w_home) + fi_home * w_home``
+    - Away xG: ``prior_away * (1 - w_away) + fi_away * w_away``
+    where ``w = min(3, matches) / 3``.
 
-    Blend weight: n = min(3, home_matches)
-    xG = prior_xg * (1 - n/3) + fi_xg * (n/3)
+    Returns ``(home_xg, away_xg, basis_home, basis_away)`` where each
+    basis is ``'elo_prior'``, ``'blended'``, or ``'form_index'``.
+
+    ``host_nations`` controls home advantage in Elo xG. When the home
+    team is a host nation (USA, Mexico, Canada for WC2026), home
+    advantage is applied to ``elo_to_xg``. All other matches are
+    neutral-venue (symmetric xG at equal Elo).
     """
-    # Elo-based xG (fallback if no Elo data, use mid-range prior)
+    if host_nations is None:
+        host_nations = ["USA", "Mexico", "Canada"]
+
+    is_home_advantage = home_team in host_nations and away_team not in host_nations
+
+    # Elo-based xG (fallback if no Elo data: use baseline)
     if home_elo is not None and away_elo is not None:
-        prior_xg = elo_to_xg(home_elo, away_elo)
+        prior_xg = elo_to_xg(home_elo, away_elo, home_advantage=is_home_advantage)
     else:
-        # No Elo either — use baseline
         prior_xg = (_BASE_HOME_XG, _BASE_AWAY_XG)
 
     # FI-based xG
@@ -268,20 +289,72 @@ def predict_xg(
     else:
         fi_xg = None
 
-    # Decide basis
-    if fi_xg is None:
-        # No FI data at all
-        return prior_xg[0], prior_xg[1], "elo_prior"
+    # Per-team blend weights
+    w_home = min(3, home_matches) / 3.0
+    w_away = min(3, away_matches) / 3.0
 
-    n = min(3, home_matches)
-    if n == 0:
-        return prior_xg[0], prior_xg[1], "elo_prior"
-    elif n < 3:
-        # Blend
-        weight = n / 3.0
-        home_xg = prior_xg[0] * (1 - weight) + fi_xg[0] * weight
-        away_xg = prior_xg[1] * (1 - weight) + fi_xg[1] * weight
-        return round(home_xg, 2), round(away_xg, 2), "blended"
+    # Determine basis for each side
+    def _side_basis(fi_val: float | None, n_matches: int, weight: float) -> tuple[float, float, str]:
+        """Return (xg, prior_or_fi_xg, basis) for one side."""
+        if fi_val is None:
+            return prior_xg[0] if weight < 1 else prior_xg[1], "elo_prior"
+        if n_matches == 0:
+            return prior_xg[0], "elo_prior"
+        return fi_val if weight >= 1 else (1 - weight) * prior_xg[0] + weight * fi_val, "blended" if weight < 1 else "form_index"
+
+    # Home side
+    if home_avg_fi is None and away_avg_fi is None:
+        # No FI at all
+        return prior_xg[0], prior_xg[1], "elo_prior", "elo_prior"
+
+    # Calculate per-team xG
+    if home_avg_fi is not None and away_avg_fi is not None:
+        # Full FI available for both sides
+        if home_matches == 0 and away_matches == 0:
+            return prior_xg[0], prior_xg[1], "elo_prior", "elo_prior"
+        # Blend home side
+        if home_matches >= 3:
+            home_xg = fi_xg[0]  # type: ignore[index]
+            basis_home = "form_index"
+        elif home_matches == 0:
+            home_xg = prior_xg[0]
+            basis_home = "elo_prior"
+        else:
+            home_xg = prior_xg[0] * (1 - w_home) + fi_xg[0] * w_home  # type: ignore[index]
+            basis_home = "blended"
+        # Blend away side
+        if away_matches >= 3:
+            away_xg = fi_xg[1]  # type: ignore[index]
+            basis_away = "form_index"
+        elif away_matches == 0:
+            away_xg = prior_xg[1]
+            basis_away = "elo_prior"
+        else:
+            away_xg = prior_xg[1] * (1 - w_away) + fi_xg[1] * w_away  # type: ignore[index]
+            basis_away = "blended"
+    elif home_avg_fi is not None:
+        # Only home has FI
+        if home_matches >= 3:
+            home_xg = form_index_to_xg(home_avg_fi, away_avg_fi or 50)[0]
+            basis_home = "form_index"
+        else:
+            home_xg = prior_xg[0]
+            basis_home = "elo_prior"
+        away_xg = prior_xg[1]
+        basis_away = "elo_prior"
     else:
-        # Full FI
-        return fi_xg[0], fi_xg[1], "form_index"
+        # Only away has FI
+        home_xg = prior_xg[0]
+        basis_home = "elo_prior"
+        if away_matches >= 3:
+            away_xg = form_index_to_xg(home_avg_fi or 50, away_avg_fi)[1]  # type: ignore[arg-type]
+            basis_away = "form_index"
+        else:
+            away_xg = prior_xg[1]
+            basis_away = "elo_prior"
+
+    # Floor at 0.3
+    home_xg = max(home_xg, 0.3)
+    away_xg = max(away_xg, 0.3)
+
+    return round(home_xg, 2), round(away_xg, 2), basis_home, basis_away

@@ -511,9 +511,10 @@ def _generate_matchday_preview(fixtures: list[dict[str, Any]]) -> str:
 def _match_prediction(fixture: dict[str, Any]) -> str | None:
     """Return a one-line Poisson prediction for a fixture, or None.
 
-    Uses blended xG (Elo prior → Form Index) when FI data is available,
-    and pure Elo prior when it isn't. Returns None only if neither source
-    has data. Never falls back to team_result-derived numbers.
+    Uses blended xG (Elo prior → Form Index) per-team when FI data is
+    available, and pure Elo prior when it isn't. Returns None only if
+    neither source has data. Never falls back to team_result-derived
+    numbers.
     """
     from pitch_agent.poisson import (
         form_index_to_xg, top_scorelines, match_outcome_probs,
@@ -560,11 +561,35 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
         home_elo = home_prior["elo"] if home_prior else None
         away_elo = away_prior["elo"] if away_prior else None
 
-        # Count tournament matches
+        # Per-team match counts
         home_matches = count_team_matches(conn, home_team)
+        away_matches = count_team_matches(conn, away_team)
 
-        # Compute blended xG
-        home_xg, away_xg, basis = predict_xg(
+        # Skip if no data at all
+        if home_avg_fi is None and away_avg_fi is None and home_elo is None and away_elo is None:
+            import sys
+            print(
+                f"[pitch_agent] No FI or Elo data for {home_team} vs {away_team} — prediction skipped",
+                file=sys.stderr,
+            )
+            return None
+
+        # Team missing from team_priors at n=0 → warning
+        if home_elo is None and home_avg_fi is None:
+            import sys
+            print(
+                f"[pitch_agent] No Elo prior for {home_team} — using baseline",
+                file=sys.stderr,
+            )
+        if away_elo is None and away_avg_fi is None:
+            import sys
+            print(
+                f"[pitch_agent] No Elo prior for {away_team} — using baseline",
+                file=sys.stderr,
+            )
+
+        # Compute blended xG (per-team)
+        home_xg, away_xg, basis_home, basis_away = predict_xg(
             home_team=home_team,
             away_team=away_team,
             home_avg_fi=home_avg_fi,
@@ -572,16 +597,9 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
             home_elo=home_elo,
             away_elo=away_elo,
             home_matches=home_matches,
+            away_matches=away_matches,
+            host_nations=cfg.host_nations,
         )
-
-        # If pure Elo prior with no FI data and no Elo data, skip
-        if basis == "elo_prior" and home_elo is None and away_elo is None:
-            import sys
-            print(
-                f"[pitch_agent] No FI or Elo data for {home_team} vs {away_team} — prediction skipped",
-                file=sys.stderr,
-            )
-            return None
 
         outcomes = match_outcome_probs(home_xg, away_xg)
         top = top_scorelines(home_xg, away_xg, n=1)
@@ -600,8 +618,16 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
             "away": outcomes["away_win"],
         }[predicted_outcome]
 
+        # Basis label
+        basis_label_map = {"elo_prior": "pre-tournament Elo", "blended": "Elo+FI blend", "form_index": "Form Index"}
+        basis_parts = []
+        if basis_home != "form_index":
+            basis_parts.append(f"home {basis_label_map[basis_home]}")
+        if basis_away != "form_index":
+            basis_parts.append(f"away {basis_label_map[basis_away]}")
+        basis_tag = (" (" + ", ".join(basis_parts) + ")") if basis_parts else ""
+
         most_likely = top[0]
-        basis_tag = " (pre-tournament Elo)" if basis != "form_index" else ""
         pred_str = (
             f"Most likely outcome: {outcome_label} ({outcome_prob*100:.0f}%) "
             f"\u00b7 Most likely score: {most_likely['label']}{basis_tag} — "
