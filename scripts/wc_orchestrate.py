@@ -63,9 +63,13 @@ def build_short(pillar: str, group: str | None, when: str) -> tuple[Path, dict]:
         deck, slug = ws.deck_standings(group or "A")
     elif pillar == "preview":
         deck, slug = ws.deck_preview(when)
+    elif pillar == "recap":
+        deck, slug = ws.deck_recap()
+    elif pillar == "prediction":
+        deck, slug = ws.deck_prediction(when)
     else:
         raise SystemExit(f"Pillar '{pillar}' has no live deck builder yet "
-                         "(standings, preview are wired). Add it in worldcup_short.py.")
+                         "(standings, preview, recap, prediction). Add it in worldcup_short.py.")
     path = ws.build(deck, slug)
     return path, deck
 
