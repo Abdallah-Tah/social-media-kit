@@ -516,19 +516,21 @@ def _assemble_video(
     for png, dur in scene_paths:
         inputs += ["-loop", "1", "-t", f"{dur:.2f}", "-i", str(png)]
 
-    # Build xfade filter chain.
-    # offset for xfade N is the cumulative duration of scenes 0..N minus the
-    # crossfade overlaps already consumed.
+    # Build xfade filter chain with scale embedded.
+    # ffmpeg forbids mixing -filter_complex and -vf for the same stream,
+    # so we apply scale+pad as the final filter after the last xfade.
     fc_parts: list[str] = []
     cumulative = 0.0
     prev = "[0:v]"
     for i in range(1, len(scene_paths)):
         cumulative += scene_paths[i - 1][1] - xfade_dur
-        out_label = f"[v{i}]" if i < len(scene_paths) - 1 else "[vout]"
+        out_label = f"[v{i}]" if i < len(scene_paths) - 1 else "[voutscale]"
         fc_parts.append(
             f"{prev}[{i}:v]xfade=transition=fade:duration={xfade_dur}:offset={cumulative:.3f}{out_label}"
         )
         prev = out_label
+    # Append scale+pad to the final xfade output.
+    fc_parts.append(f"[voutscale]{scale_vf}[vout]")
     filter_complex = ";".join(fc_parts)
 
     cmd = ["ffmpeg", "-y"] + inputs
@@ -538,7 +540,6 @@ def _assemble_video(
     cmd += [
         "-filter_complex", filter_complex,
         "-map", "[vout]",
-        "-vf", scale_vf,
         "-r", "30",
         "-c:v", "libx264",
         "-pix_fmt", "yuv420p",
