@@ -6,6 +6,7 @@ No hard dependency on python-dotenv — we ship a tiny .env parser.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -75,17 +76,29 @@ def _normalise_env_aliases() -> None:
 
 
 def _prefer_openclaw_telegram_secrets() -> None:
-    """Let OpenClaw's Telegram target override workspace Telegram defaults."""
+    """Let OpenClaw's Telegram target override workspace defaults — but only with
+    well-formed values, and never over a token/chat already set in the real env.
+
+    OpenClaw's secrets.env can hold a stale TELEGRAM_TOKEN or a CHAT_ID that is a
+    URL rather than a chat id. Blindly applying those clobbered a valid token the
+    caller (e.g. the cron wrapper) had already exported, causing 401s.
+    """
     if not OPENCLAW_SECRETS_PATH.exists():
         return
     values = _read_env_values(OPENCLAW_SECRETS_PATH)
-    for key in ("TELEGRAM_TOKEN", "CHAT_ID", "TELEGRAM_MESSAGE_THREAD_ID"):
-        if values.get(key):
-            os.environ[key] = values[key]
-    if values.get("TELEGRAM_TOKEN"):
-        os.environ["TELEGRAM_BOT_TOKEN"] = values["TELEGRAM_TOKEN"]
-    if values.get("CHAT_ID"):
-        os.environ["TELEGRAM_CHAT_ID"] = values["CHAT_ID"]
+    token = values.get("TELEGRAM_TOKEN", "")
+    chat = values.get("CHAT_ID", "")
+    thread = values.get("TELEGRAM_MESSAGE_THREAD_ID", "")
+
+    # A real bot token looks like "<digits>:<rest>"; a real chat id is numeric.
+    if re.fullmatch(r"\d{6,}:[\w-]+", token) and not os.environ.get("TELEGRAM_BOT_TOKEN"):
+        os.environ["TELEGRAM_TOKEN"] = token
+        os.environ["TELEGRAM_BOT_TOKEN"] = token
+    if re.fullmatch(r"-?\d+", chat) and not os.environ.get("TELEGRAM_CHAT_ID"):
+        os.environ["CHAT_ID"] = chat
+        os.environ["TELEGRAM_CHAT_ID"] = chat
+    if thread:
+        os.environ.setdefault("TELEGRAM_MESSAGE_THREAD_ID", thread)
 
 
 def _read_env_values(path: Path) -> dict[str, str]:
