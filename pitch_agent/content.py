@@ -261,9 +261,11 @@ def generate_content(
         }
         if ai_result.get("warning"):
             result["ai_rewrite"]["warning"] = ai_result["warning"]
-            print(ai_result["warning"])
+            import sys
+            print(ai_result["warning"], file=sys.stderr)
         if not ai_result["used"]:
-            print("AI rewrite unavailable; using template content.")
+            import sys
+            print("AI rewrite unavailable; using template content.", file=sys.stderr)
         if ai_result["used"]:
             if mode == "builder_mode" and isinstance(content, dict):
                 content["ai_summary"] = ai_result["content"]

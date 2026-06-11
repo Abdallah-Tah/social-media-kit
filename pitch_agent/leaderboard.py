@@ -86,8 +86,8 @@ def get_daily_leaderboard(
     model_version: str = "1.0.0-lite",
 ) -> list[dict[str, Any]]:
     """Return one row per player using that player's best match score."""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    from pitch_agent.db import get_connection
+    conn = get_connection(db_path)
 
     query = """
         WITH ranked_scores AS (
@@ -171,8 +171,8 @@ def get_match_leaderboard(
     list of dict
         Same format as ``get_leaderboard``.
     """
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    from pitch_agent.db import get_connection
+    conn = get_connection(db_path)
 
     query = """
         SELECT
@@ -228,8 +228,8 @@ def get_tournament_leaderboard(
     model_version: str = "1.0.0-lite",
 ) -> list[dict[str, Any]]:
     """Return one row per player from cumulative tournament scores."""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    from pitch_agent.db import get_connection
+    conn = get_connection(db_path)
 
     query = """
         WITH latest_player_meta AS (
@@ -343,21 +343,21 @@ def _attach_match_context(
 def _load_matches(db_path: str) -> dict[str, dict[str, Any]]:
     """Return match metadata keyed by match_id; empty when unavailable."""
     try:
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
+        from pitch_agent.db import get_connection
+        conn = get_connection(db_path)
         rows = conn.execute(
             "SELECT match_id, home_team_name, away_team_name, date, matchday FROM matches"
         ).fetchall()
         conn.close()
-    except sqlite3.OperationalError:
+    except (sqlite3.OperationalError, Exception):
         return {}
     return {r["match_id"]: dict(r) for r in rows}
 
 
 def _load_stats(db_path: str) -> dict[tuple[str, str], dict[str, Any]]:
     """Return scoring inputs keyed by (match_id, player_id) for key reasons."""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    from pitch_agent.db import get_connection
+    conn = get_connection(db_path)
     rows = conn.execute(
         "SELECT match_id, player_id, goals, assists, clean_sheet, "
         "team_result, minutes FROM player_match_stats"
@@ -371,8 +371,8 @@ def _load_score_history(
     model_version: str,
 ) -> dict[str, list[dict[str, Any]]]:
     """Return each player's match scores ordered chronologically."""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    from pitch_agent.db import get_connection
+    conn = get_connection(db_path)
     rows = conn.execute(
         """
         SELECT s.player_id, s.match_id, s.score, p.matchday

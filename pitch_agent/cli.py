@@ -133,6 +133,8 @@ def build_parser() -> argparse.ArgumentParser:
                            help="Print content without recording")
     p_content.add_argument("--use-ai", action="store_true",
                            help="Optionally rewrite template content with Anthropic")
+    p_content.add_argument("--strict-ai", action="store_true",
+                           help="Fail with exit code 1 if AI rewrite is requested but unavailable")
     p_content.add_argument("--send-telegram-review", action="store_true",
                            help="Send visible post and safe metadata to Telegram review")
     p_content.add_argument("--strict-telegram", action="store_true",
@@ -220,6 +222,7 @@ def cmd_sync_data(args: argparse.Namespace) -> int:
                 matches.append(match)
             except Exception as exc:  # noqa: BLE001 — skip one bad row, keep the rest
                 print(f"  (skipped match {match.get('match_id')}: {exc})")
+        conn.commit()
         conn.close()
     if matches:
         print(f"✓ Synced {len(matches)} match metadata records from {args.provider}")
@@ -246,6 +249,7 @@ def cmd_sync_data(args: argparse.Namespace) -> int:
     for record in stats:
         upsert_player_match_stats(conn, record)
         count += 1
+    conn.commit()
     conn.close()
 
     print(f"✓ Synced {count} player-match stat records from {args.provider}")
@@ -312,6 +316,7 @@ def cmd_compute_index(args: argparse.Namespace) -> int:
                 "score_breakdown_json": json.dumps(result["breakdown"]),
             })
             count += 1
+        conn.commit()
         conn.close()
         print(f"✓ Computed Form Index for {count} players in match {args.match}")
 
@@ -439,6 +444,12 @@ def cmd_generate_content(args: argparse.Namespace) -> int:
         and result.get("telegram_review", {}).get("strict_failure")
     ):
         return 1
+    if getattr(args, 'strict_ai', False) and getattr(args, "use_ai", False):
+        ai = result.get("ai_rewrite", {})
+        if ai and not ai.get("used", True) and ai.get("warning"):
+            import sys
+            print(f"Strict-ai: AI rewrite failed: {ai['warning']}", file=sys.stderr)
+            return 1
     return 0
 
 

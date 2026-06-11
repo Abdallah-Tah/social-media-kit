@@ -173,6 +173,7 @@ class FootballDataProvider(DataProvider):
             "stage": match_data.get("stage", ""),
             "data_quality": "basic",
             "data_quality_level": "basic",
+            "minutes_inferred": True,  # Free tier doesn't provide per-player minutes
             "provider_name": "football-data",
         }
 
@@ -209,7 +210,10 @@ class FootballDataProvider(DataProvider):
             is_home = str(lineup.get("team", {}).get("id", "")) == str(home_team.get("id", ""))
             team_result = home_result if is_home else away_result
 
-            # Starting XI
+            # Starting XI — minutes unknown on free tier; mark as -1 (inferred)
+            # so the scoring function can treat it as "unknown" rather than
+            # fabricating 90.  The Form Index applies a 0.90 multiplier for
+            # unknown minutes instead of the full 1.0 for confirmed-90.
             for player in lineup.get("startXI", []):
                 p = player.get("player", player)
                 pid = str(p.get("id", ""))
@@ -224,7 +228,7 @@ class FootballDataProvider(DataProvider):
                     "team_id": team_id,
                     "team_name": team_name,
                     "position": self._map_position(p.get("position", "")),
-                    "minutes": 90,  # Assume full match unless substituted
+                    "minutes": -1,  # Unknown — free tier doesn't provide per-player minutes
                     "goals": scorer_goals.get(pid, 0),
                     "assists": scorer_assists.get(pid, 0),
                     "yellow_cards": 0,  # Not available in free tier per-player
@@ -236,7 +240,7 @@ class FootballDataProvider(DataProvider):
                 self._fill_rich_fields_zero(rec)
                 records.append(rec)
 
-            # Substitutes
+            # Substitutes — minutes unknown; mark as -1 (inferred)
             for sub in lineup.get("substitutes", []):
                 p = sub.get("player", sub)
                 pid = str(p.get("id", ""))
@@ -251,7 +255,7 @@ class FootballDataProvider(DataProvider):
                     "team_id": team_id,
                     "team_name": team_name,
                     "position": self._map_position(p.get("position", "")),
-                    "minutes": 0,  # Bench — didn't play
+                    "minutes": -1,  # Unknown — free tier doesn't provide per-player minutes
                     "goals": scorer_goals.get(pid, 0),
                     "assists": scorer_assists.get(pid, 0),
                     "yellow_cards": 0,
@@ -275,7 +279,7 @@ class FootballDataProvider(DataProvider):
                     "team_id": tid,
                     "team_name": home_team.get("shortName", "") if is_home else away_team.get("shortName", ""),
                     "position": "",
-                    "minutes": 90,
+                    "minutes": -1,  # Unknown — no lineup data
                     "goals": goals,
                     "assists": scorer_assists.get(pid, 0),
                     "yellow_cards": 0,
@@ -307,6 +311,8 @@ class FootballDataProvider(DataProvider):
         ]
         for f in rich_fields:
             rec[f] = 0 if f != "pass_accuracy" and f != "xg" and f != "distance_covered_km" else 0.0
+        # Mark minutes as inferred since the free tier doesn't provide per-player minutes
+        rec["minutes_inferred"] = True
 
     @staticmethod
     def _map_position(fd_position: str) -> str:

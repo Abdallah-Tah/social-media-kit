@@ -8,6 +8,7 @@ Scoring rules:
     yellow cards × -2, red cards × -10, own goals × -5
 
 Minutes adjustment:
+    unknown (-1) → multiplier 0.90  (free-tier providers lack per-player minutes)
     < 15 min  → multiplier 0.50
     15–44 min → multiplier 0.90
     ≥ 45 min  → multiplier 1.00
@@ -41,9 +42,11 @@ OWN_GOAL_PENALTY = -5.0
 # Minutes thresholds
 MINUTES_SHORT = 15
 MINUTES_MEDIUM = 45
+MINUTES_UNKNOWN = -1  # Sentinel: free-tier providers don't have per-player minutes
 MULTIPLIER_SHORT = 0.50
 MULTIPLIER_MEDIUM = 0.90
 MULTIPLIER_FULL = 1.00
+MULTIPLIER_UNKNOWN = 0.90  # Unknown minutes → treat as likely-full-match (0.90)
 GOAL_ASSIST_FLOOR = 0.70
 
 # Position bonus thresholds
@@ -119,7 +122,12 @@ def compute_form_index(stats: dict[str, Any]) -> dict[str, Any]:
     # ── Minutes adjustment ────────────────────────────────────────────
     minutes = safe["minutes"]
 
-    if minutes < MINUTES_SHORT:
+    if minutes == MINUTES_UNKNOWN:
+        # Free-tier providers don't provide per-player minutes.
+        # Use MULTIPLIER_UNKNOWN (0.90) to acknowledge the uncertainty
+        # without the harsh penalty of MULTIPLIER_SHORT.
+        multiplier = MULTIPLIER_UNKNOWN
+    elif minutes < MINUTES_SHORT:
         multiplier = MULTIPLIER_SHORT
     elif minutes < MINUTES_MEDIUM:
         multiplier = MULTIPLIER_MEDIUM
@@ -137,7 +145,7 @@ def compute_form_index(stats: dict[str, Any]) -> dict[str, Any]:
     position = str(safe.get("position", "")).upper()
     position_bonus = 0.0
 
-    # Midfielder bonus: +3 if pass_accuracy ≥ 88 and minutes ≥ 45
+    # Midfielder bonus: +3 if pass_accuracy ≥ 88 and (minutes ≥ 45 or unknown)
     if position == "MID":
         if safe["pass_accuracy"] >= MID_PASS_ACCURACY_THRESHOLD and minutes >= MID_MINUTES_THRESHOLD:
             position_bonus += 3.0
@@ -225,6 +233,9 @@ def compute_all(db_path: str = "pitch_agent.db", model_version: str = MODEL_VERS
         })
         count += 1
 
+    # Commit all form index scores in one batch
+    conn.commit()
+
     tournament_rows = conn.execute(
         """
         SELECT
@@ -249,5 +260,7 @@ def compute_all(db_path: str = "pitch_agent.db", model_version: str = MODEL_VERS
             "matches_played": row["matches_played"],
         })
 
+    # Commit tournament scores in one batch
+    conn.commit()
     conn.close()
     return count

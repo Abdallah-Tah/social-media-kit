@@ -166,6 +166,7 @@ def test_upsert_recomputes_existing_score(tmp_path):
     ).fetchall()
     assert len(rows) == 1
     assert rows[0][0] == 25.0
+    conn.commit()
     conn.close()
 
 
@@ -221,6 +222,7 @@ def test_player_stats_and_tournament_upserts_update_existing_rows(tmp_path):
     assert len(tournament_rows) == 1
     assert tournament_rows[0]["cumulative_score"] == 42.0
     assert tournament_rows[0]["matches_played"] == 2
+    conn.commit()
     conn.close()
 
 
@@ -247,6 +249,7 @@ def test_recompute_does_not_duplicate_rows_or_depend_on_runs(tmp_path):
         "dry_run": 0,
         "status": "completed",
     })
+    conn.commit()
     conn.close()
 
     assert compute_all(db_path) == 1
@@ -259,6 +262,7 @@ def test_recompute_does_not_duplicate_rows_or_depend_on_runs(tmp_path):
     ).fetchall())
     assert counts["scores"] == 1
     assert counts["runs"] == 1
+    conn.commit()
     conn.close()
 
 
@@ -286,6 +290,7 @@ def test_position_leaderboard_filters_correctly(tmp_path):
             "score_breakdown_json": "{}",
         })
 
+    conn.commit()
     results = get_leaderboard(db_path, position="DEF", limit=10)
     assert len(results) == 1
     assert results[0]["position"] == "DEF"
@@ -407,6 +412,7 @@ def test_fan_mode_surprise_highlights_non_forward(tmp_path):
             "model_version": MODEL_VERSION, "score": score,
             "score_breakdown_json": json.dumps({"provider_name": "csv", "final_score": score}),
         })
+    conn.commit()
     conn.close()
 
     result = generate_content(
@@ -840,11 +846,11 @@ def test_generate_content_use_ai_missing_key_falls_back(tmp_path, monkeypatch, c
         dry_run=True,
         use_ai=True,
     )
-    out = capsys.readouterr().out
+    captured = capsys.readouterr()
 
     assert result["ai_rewrite"]["used"] is False
     assert "Daily Form Index Update" in result["content"]
-    assert "AI rewrite unavailable; using template content." in out
+    assert "AI rewrite unavailable; using template content." in captured.err
 
 
 def test_generate_content_use_ai_prefers_bwa_and_safe_fan_prompt(tmp_path, monkeypatch, capsys):
@@ -922,11 +928,11 @@ def test_generate_content_use_ai_rejects_disallowed_fan_output(tmp_path, monkeyp
         dry_run=True,
         use_ai=True,
     )
-    out = capsys.readouterr().out
+    captured = capsys.readouterr()
 
     assert result["ai_rewrite"]["used"] is False
     assert "Daily Form Index Update" in result["content"]
-    assert "disallowed wording" in out
+    assert "disallowed wording" in captured.err
     visible = result["content"].lower()
     for word in ("api", "betting", "odds"):
         assert word not in visible
@@ -1032,6 +1038,7 @@ def _seed_duplicate_player_leaderboard(tmp_path: Path) -> str:
         "cumulative_score": 60.0,
         "matches_played": 1,
     })
+    conn.commit()
     conn.close()
     return db_path
 
@@ -1091,6 +1098,8 @@ def _seed_match_context_db(tmp_path: Path) -> str:
             "model_version": MODEL_VERSION, "score": score,
             "score_breakdown_json": json.dumps({"provider_name": "csv", "final_score": score}),
         })
+    conn.commit()
+    conn.commit()
     conn.close()
     return db_path
 
@@ -1217,6 +1226,7 @@ def test_upsert_match_coerces_null_team_and_scores(tmp_path):
     assert row["away_team_name"] == ""
     assert row["home_score"] == 0
     assert row["matchday"] == 0
+    conn.commit()
     conn.close()
 
 
@@ -1288,6 +1298,7 @@ def _seed_fixtures_db(tmp_path: Path) -> str:
         "date": "2026-06-12", "stage": "GROUP_STAGE", "group": "GROUP_B",
         "status": "TIMED", "provider_name": "football-data",
     })
+    conn.commit()
     conn.close()
     return db_path
 
@@ -1972,6 +1983,7 @@ def test_score_breakdown_uses_provider_available_fields_after_db_roundtrip(tmp_p
         "provider_name": "csv",
         "data_quality_level": "basic",
     })
+    conn.commit()
     conn.close()
 
     assert compute_all(db_path) == 1
@@ -1980,6 +1992,7 @@ def test_score_breakdown_uses_provider_available_fields_after_db_roundtrip(tmp_p
         "SELECT score_breakdown_json FROM form_index_scores"
     ).fetchone()[0]
     breakdown = json.loads(breakdown_json)
+    conn.close()
     for key in (
         "fields_present", "fields_absent", "provider_name",
         "data_quality_level", "model_version", "base",
@@ -2013,6 +2026,7 @@ def test_fan_and_builder_mode_wording_separation(tmp_path):
         "provider_name": "csv",
         "data_quality_level": "basic",
     })
+    conn.commit()
     conn.close()
     compute_all(db_path)
 
@@ -2185,9 +2199,9 @@ def test_full_pipeline(tmp_path):
         })
         count += 1
     assert count > 0, "Should have computed some scores"
+    conn.commit()
+    conn.close()
 
     # Leaderboard
     results = get_leaderboard(db_path, limit=5)
     assert len(results) > 0, "Leaderboard should have results"
-
-    conn.close()

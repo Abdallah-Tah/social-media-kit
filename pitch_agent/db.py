@@ -226,7 +226,10 @@ _TOURNAMENT_UPDATE_COLUMNS = ["cumulative_score", "matches_played"]
 
 
 def upsert_player_match_stats(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
-    """Insert or update a player-match stats row."""
+    """Insert or update a player-match stats row.
+
+    Note: does NOT commit — the caller should batch inserts and commit once.
+    """
     # Ensure all columns have a value (default to 0 or empty string)
     row = _normalise_stats_record(record)
 
@@ -248,7 +251,7 @@ def upsert_player_match_stats(conn: sqlite3.Connection, record: dict[str, Any]) 
         f"ON CONFLICT(match_id, player_id) DO UPDATE SET {update_sets}"
     )
     conn.execute(sql, vals)
-    conn.commit()
+    # Caller is responsible for committing the transaction.
 
 
 def _normalise_stats_record(record: dict[str, Any]) -> dict[str, Any]:
@@ -289,7 +292,10 @@ def _normalise_stats_record(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def upsert_match(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
-    """Insert or update a match metadata row (label, date, score)."""
+    """Insert or update a match metadata row (label, date, score).
+
+    Note: does NOT commit — the caller should batch inserts and commit once.
+    """
     # The CSV column is "group"; map it to the reserved-word-safe "group_name".
     source = dict(record)
     if "group_name" not in source and "group" in source:
@@ -322,11 +328,14 @@ def upsert_match(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
         f"ON CONFLICT(match_id) DO UPDATE SET {update_sets}"
     )
     conn.execute(sql, vals)
-    conn.commit()
+    # Caller is responsible for committing the transaction.
 
 
 def upsert_form_index(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
-    """Insert or update a form-index score row."""
+    """Insert or update a form-index score row.
+
+    Note: does NOT commit — the caller should batch inserts and commit once.
+    """
     cols = []
     vals = []
     for col in _SCORES_COLUMNS:
@@ -347,11 +356,14 @@ def upsert_form_index(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
         f"ON CONFLICT(match_id, player_id, model_version) DO UPDATE SET {update_sets}"
     )
     conn.execute(sql, vals)
-    conn.commit()
+    # Caller is responsible for committing the transaction.
 
 
 def upsert_tournament_form_index(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
-    """Insert or update a cumulative tournament form-index row."""
+    """Insert or update a cumulative tournament form-index row.
+
+    Note: does NOT commit — the caller should batch inserts and commit once.
+    """
     cols = []
     vals = []
     for col in _TOURNAMENT_COLUMNS:
@@ -369,7 +381,7 @@ def upsert_tournament_form_index(conn: sqlite3.Connection, record: dict[str, Any
         f"ON CONFLICT(tournament_id, player_id, model_version) DO UPDATE SET {update_sets}"
     )
     conn.execute(sql, vals)
-    conn.commit()
+    # Caller is responsible for committing the transaction.
 
 
 def insert_run(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
