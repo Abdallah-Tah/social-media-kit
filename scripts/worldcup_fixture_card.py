@@ -84,7 +84,7 @@ def format_fixture(match):
 
 
 # ── Card Rendering ──────────────────────────────────────────────
-def render_card(fixtures, out_path, title="Upcoming World Cup Fixtures"):
+def render_card(fixtures, out_path, title="Upcoming World Cup Matches"):
     """Render a branded fixture card using Pillow."""
     # Canvas size (landscape, ~16:9)
     W, H = 1920, 1080
@@ -112,7 +112,7 @@ def render_card(fixtures, out_path, title="Upcoming World Cup Fixtures"):
 
     # Title
     draw.text((60, 200), title, fill=BRAND_DARK, font=font_title)
-    draw.text((60, 280), "World Cup 2026 • Fixture data • football-data.org", fill=BRAND_TEXT, font=font_sub)
+    draw.text((60, 280), "World Cup 2026 • Match data • football-data.org", fill=BRAND_TEXT, font=font_sub)
 
     # Fixture list
     y = 360
@@ -121,7 +121,7 @@ def render_card(fixtures, out_path, title="Upcoming World Cup Fixtures"):
     x_date = 1400
 
     # Column headers
-    draw.text((x_match, y), "Fixture", fill=BRAND_BLUE, font=font_item)
+    draw.text((x_match, y), "Match", fill=BRAND_BLUE, font=font_item)
     draw.text((x_group, y), "Group", fill=BRAND_BLUE, font=font_item)
     draw.text((x_date, y), "Date", fill=BRAND_BLUE, font=font_item)
     y += 50
@@ -155,7 +155,7 @@ def main():
     parser.add_argument("--days", type=int, default=14, help="Days ahead to fetch")
     parser.add_argument("--api-key", default=os.environ.get("FOOTBALL_DATA_API_KEY", ""),
                         help="football-data.org API key")
-    parser.add_argument("--title", default="Upcoming World Cup Fixtures", help="Card title")
+    parser.add_argument("--title", default="Upcoming World Cup Matches", help="Card title")
     args = parser.parse_args()
 
     print("Fetching fixtures...", file=sys.stderr)

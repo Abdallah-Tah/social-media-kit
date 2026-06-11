@@ -471,7 +471,7 @@ def _generate_matchday_preview(fixtures: list[dict[str, Any]]) -> str:
     """Build a short, prediction-free preview of the next few fixtures."""
     if not fixtures:
         return (
-            "No upcoming fixtures available yet.\n\n"
+            "No upcoming matches yet.\n\n"
             "Follow The Pitch Agent for Form Index updates once matches are played.\n\n"
             f"{TRADEMARK_DISCLAIMER}"
         )
