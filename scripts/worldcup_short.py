@@ -66,7 +66,8 @@ def _logo_data_uri() -> str | None:
 _LOGO_URI = _logo_data_uri()
 WATERMARK = (f'<img class="wm-img" src="{_LOGO_URI}">' if _LOGO_URI
              else '<span class="wm-text">BWA</span>')
-LOGO_IMG = (f'<img src="{_LOGO_URI}">' if _LOGO_URI else "")
+LOGO_IMG = (f'<img class="logo-mark" src="{_LOGO_URI}">' if _LOGO_URI
+            else '<div class="logo-fallback">A</div>')
 
 
 def _flag_data_uri(url: str) -> str:
@@ -265,6 +266,8 @@ def render_scene(scene: dict, index: int, out_dir: Path) -> Path:
         if key in scene:
             html_src = html_src.replace("{{" + key + "}}", scene[key])
     html_src = html_src.replace("{{watermark}}", WATERMARK)
+    if "subtitle" in scene:
+        html_src = html_src.replace("{{subtitle_meta}}", _meta_html(scene["subtitle"]))
     # pitch_card.html: header logo + raw HTML content slot.
     html_src = html_src.replace("{{logo}}", LOGO_IMG)
     if "content" in scene:
@@ -379,6 +382,99 @@ def build(deck: dict, slug: str) -> Path:
     return out_video
 
 
+
+def _meta_html(subtitle: str) -> str:
+    """Split a '·'-separated subtitle into meta spans with blue dot separators."""
+    parts = [s.strip() for s in (subtitle or "").split("·") if s.strip()]
+    return '<span class="mdot"></span>'.join(f"<span>{html.escape(s)}</span>" for s in parts)
+
+
+# ── Feed cards (horizontal 1200x628, same pitch-card brand family) ───────
+
+def render_feed_card(title: str, subtitle: str, content_html: str, out_png: Path) -> Path:
+    """Render a LinkedIn/Facebook feed card from pitch_card_wide.html."""
+    html_src = (TEMPLATES_DIR / "pitch_card_wide.html").read_text()
+    html_src = (html_src.replace("{{title}}", title)
+                        .replace("{{subtitle_meta}}", _meta_html(subtitle))
+                        .replace("{{content}}", content_html)
+                        .replace("{{logo}}", LOGO_IMG))
+    out_png = Path(out_png)
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    html_path = out_png.with_suffix(".html")
+    html_path.write_text(html_src)
+    r = subprocess.run(
+        ["node", str(SCRIPTS_DIR / "render_card.mjs"), str(html_path), str(out_png), "1200", "628"],
+        capture_output=True, text=True, timeout=90,
+    )
+    if r.returncode != 0 or not out_png.exists():
+        raise RuntimeError(f"feed card render failed: {r.stderr[-300:]}")
+    return out_png
+
+
+def feed_card_preview(when: str = "today", out_png: str | Path | None = None) -> Path:
+    """Matchday Pack feed card: one row per match — teams, group, model call,
+    win probability, kickoff."""
+    import worldcup26_data as wc
+    import datetime as dt
+    day = dt.date.today() if when == "today" else dt.date.today() + dt.timedelta(days=1)
+    matches = sorted(wc.today_matches(day), key=lambda x: x["date"])
+    if not matches:
+        raise SystemExit(f"No matches found for {day}")
+    t = wc.teams()
+    rows = []
+    for m in matches[:5]:
+        pred = _predict_match(m["home_team"], m["away_team"], m["group"])
+        fav_prob = max(pred["home_prob"], pred["away_prob"])
+        kickoff = m["date"].split(" ")[-1] if " " in m["date"] else ""
+        try:
+            hflag = f'<img class="flag" src="{_flag_data_uri(t[m["home_id"]]["flag"])}">'
+            aflag = f'<img class="flag" src="{_flag_data_uri(t[m["away_id"]]["flag"])}">'
+        except Exception:
+            hflag = aflag = ""
+        rows.append(
+            f'<div class="row"><span class="dot"></span>{hflag}'
+            f'<span class="label">{html.escape(m["home_team"])} vs {html.escape(m["away_team"])}</span>{aflag}'
+            f'<span class="grp">Group {m["group"]}</span>'
+            f'<span class="tag">Model: {pred["score"].replace("-", "–")} {html.escape(pred["winner"])}</span>'
+            f'<span class="pct">{fav_prob}%</span>'
+            f'<span class="meta2">{kickoff}</span></div>'
+        )
+    title = ("World Cup 2026 Kicks Off Today"
+             if when == "today" and str(matches[0]["matchday"]) == "1"
+             else f"Matchday {matches[0]['matchday']} Preview")
+    out = Path(out_png) if out_png else SHORTS_DIR.parent / "feed" / f"wc-preview-{day.isoformat()}.png"
+    return render_feed_card(
+        title,
+        f"{day.strftime('%B %d, %Y')} · model call + win probability for every game",
+        f'<div class="rows">{"".join(rows)}</div>',
+        out,
+    )
+
+
+def feed_card_standings(group_letter: str, out_png: str | Path | None = None) -> Path:
+    """Group standings feed card in the same brand family."""
+    import worldcup26_data as wc
+    blocks = wc.standings(group_letter)
+    if not blocks:
+        raise SystemExit(f"No standings for group {group_letter}")
+    block = blocks[0]
+    rows = "".join(
+        f'<div class="row"><span class="dot"></span>'
+        f'<span class="label">{r["position"]}. {html.escape(r["team"])}</span>'
+        f'<span class="tag">{r["points"]} pts</span>'
+        f'<span class="grp">P{r["played"]}</span>'
+        f'<span class="meta2">GD {r["goal_difference"]:+d}</span></div>'
+        for r in block["table"]
+    )
+    out = Path(out_png) if out_png else SHORTS_DIR.parent / "feed" / f"wc-standings-{group_letter.lower()}.png"
+    return render_feed_card(
+        f"{block['group']} Standings",
+        "2026 World Cup · latest table",
+        f'<div class="rows">{rows}</div>',
+        out,
+    )
+
+
 # ── Live-data deck builders (worldcup26.ir) ──────────────────────────────
 
 def deck_standings(group_letter: str) -> tuple[dict, str]:
@@ -402,7 +498,7 @@ def deck_standings(group_letter: str) -> tuple[dict, str]:
         f'<div class="row"><span class="dot"></span>'
         f'<span class="label">{r["position"]}. {html.escape(r["team"])}</span>'
         f'<span class="tag">{r["points"]} pts</span>'
-        f'<span class="meta">P{r["played"]} · GD {r["goal_difference"]:+d}</span></div>'
+        f'<span class="meta2">P{r["played"]} · GD {r["goal_difference"]:+d}</span></div>'
         for r in rows
     ) + ('<div class="row" style="border-bottom:none"><span class="dot"></span>'
          '<span class="label">Follow for every group, every day</span></div></div>')
@@ -454,7 +550,7 @@ def deck_preview(when: str = "today") -> tuple[dict, str]:
             f'</div>'
             f'<div class="rows" style="margin-top:54px">'
             f'<div class="row"><span class="dot"></span><span class="label">Group {m["group"]} · Matchday {m["matchday"]}</span>'
-            f'<span class="meta">{kickoff}</span></div>'
+            f'<span class="meta2">{kickoff}</span></div>'
             f'<div class="row"><span class="dot"></span><span class="label">Model call</span>'
             f'<span class="tag">{pred["score"].replace("-", "–")} · {pred["winner"]}</span></div>'
             f'<div class="row"><span class="dot"></span><span class="label">{pred["winner"]} win probability</span>'
@@ -560,7 +656,7 @@ def deck_prediction(when: str = "today") -> tuple[dict, str]:
         f'</div>'
         f'<div class="rows" style="margin-top:60px">'
         f'<div class="row"><span class="dot"></span><span class="label">Group {m["group"]} · Matchday {m["matchday"]}</span>'
-        f'<span class="meta">{day.strftime("%b %d")}</span></div>'
+        f'<span class="meta2">{day.strftime("%b %d")}</span></div>'
         + "".join(f'<div class="row"><span class="dot"></span><span class="label">{html.escape(s)}</span></div>'
                   for s in pred["stats"][:3])
         + '</div>'
@@ -611,9 +707,17 @@ def main():
     ap.add_argument("--recap", nargs="?", const="latest", metavar="MATCH_ID",
                     help="Build a full-time recap short (latest finished match, or a match id)")
     ap.add_argument("--prediction", choices=["today", "tomorrow"], help="Build a prediction short")
+    ap.add_argument("--feed-preview", choices=["today", "tomorrow"],
+                    help="Render a 1200x628 matchday feed card (LinkedIn/FB)")
+    ap.add_argument("--feed-standings", metavar="GROUP",
+                    help="Render a 1200x628 standings feed card (LinkedIn/FB)")
     ap.add_argument("--list", action="store_true", help="List static decks")
     args = ap.parse_args()
 
+    if args.feed_preview:
+        print(f"🖼  {feed_card_preview(args.feed_preview)}"); return
+    if args.feed_standings:
+        print(f"🖼  {feed_card_standings(args.feed_standings)}"); return
     if args.standings:
         deck, slug = deck_standings(args.standings)
         build(deck, slug); return
