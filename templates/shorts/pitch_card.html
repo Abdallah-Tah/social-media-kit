@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; width: 1080px; height: 1920px; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #0B1F44; }
+    .frame { position: relative; width: 1080px; height: 1920px; padding: 96px 78px 150px; overflow: hidden;
+             background: linear-gradient(180deg, #fdfeff 0%, #f2f6fc 100%); }
+    /* Navy corner ribbons (match the brand card) */
+    .rib-tr { position: absolute; top: 0; right: 0; width: 360px; height: 300px; }
+    .rib-bl { position: absolute; bottom: 0; left: 0; width: 360px; height: 300px; transform: rotate(180deg); }
+    /* Dot grids */
+    .dots { position: absolute; width: 132px; opacity: .55; fill: #1D6CF2; }
+    .dots-tl { top: 84px; left: 60px; }
+    .dots-br { bottom: 170px; right: 64px; }
+    /* Giant faint A watermark */
+    .bigA { position: absolute; top: 46%; left: 50%; transform: translate(-50%, -50%); font-family: Sora, Inter, sans-serif;
+            font-weight: 800; font-size: 980px; line-height: 1; color: #1D6CF2; opacity: .07; z-index: 0; }
+    /* Header lockup */
+    .hdr { position: relative; display: flex; align-items: center; gap: 26px; z-index: 2; }
+    .hdr img { width: 118px; height: 118px; object-fit: contain; }
+    .hdr-name { font-size: 52px; font-weight: 800; color: #0B1F44; }
+    .hdr-name b { color: #1D6CF2; }
+    .hdr-tag { margin-top: 8px; font-size: 21px; font-weight: 700; letter-spacing: 5px; color: #41506b; }
+    .hdr-rule { height: 5px; background: #0B1F44; margin: 34px 0 0; width: 270px; }
+    /* Title block */
+    h1 { position: relative; z-index: 2; margin: 64px 0 0; font-family: Sora, Inter, sans-serif; font-weight: 800;
+         font-size: 88px; line-height: 1.05; letter-spacing: -2px; color: #0B1F44; }
+    .subtitle { position: relative; z-index: 2; margin-top: 22px; font-size: 36px; color: #5b6b85; font-weight: 600; }
+    .divider { position: relative; z-index: 2; height: 3px; background: #d9e1ec; margin: 44px 0 0; }
+    /* Flexible content slot */
+    .content { position: relative; z-index: 2; margin-top: 54px; }
+    /* Footer */
+    .footer { position: absolute; z-index: 2; left: 78px; right: 78px; bottom: 64px; text-align: center;
+              font-size: 26px; font-style: italic; color: #6B7280; border-top: 3px solid #d9e1ec; padding-top: 26px; }
+    .progress { position: absolute; top: 64px; right: 56px; z-index: 3; font-size: 30px; font-weight: 800; color: #ffffff; }
+
+    /* ── Reusable content pieces ── */
+    .rows { display: flex; flex-direction: column; }
+    .row { display: flex; align-items: center; gap: 26px; padding: 30px 6px; border-bottom: 2px solid #e4eaf3; }
+    .row .dot { width: 14px; height: 14px; border-radius: 50%; background: #1D6CF2; flex: 0 0 14px; }
+    .row .label { font-size: 40px; font-weight: 800; color: #0B1F44; flex: 1; }
+    .row .tag { font-size: 30px; font-weight: 800; color: #1D6CF2; }
+    .row .meta { font-size: 30px; font-weight: 600; color: #6B7280; width: 200px; text-align: right; }
+    /* Match-up */
+    .vs-wrap { display: flex; align-items: center; justify-content: space-between; margin-top: 30px; }
+    .vs-team { width: 380px; text-align: center; }
+    .vs-team img { width: 280px; height: 187px; object-fit: cover; border-radius: 18px; box-shadow: 0 14px 40px rgba(11,31,68,.18); }
+    .vs-team .nm { margin-top: 26px; font-family: Sora, Inter, sans-serif; font-size: 46px; font-weight: 800; color: #0B1F44; }
+    .vs-mid { font-family: Sora, Inter, sans-serif; font-size: 64px; font-weight: 800; color: #1D6CF2; }
+    /* Big scoreline */
+    .score-big { text-align: center; font-family: Sora, Inter, sans-serif; font-weight: 800; font-size: 230px;
+                 letter-spacing: -6px; color: #0B1F44; line-height: 1; margin: 26px 0 10px; }
+    .score-label { text-align: center; font-size: 34px; font-weight: 700; color: #5b6b85; letter-spacing: 4px; }
+    /* Probability bars */
+    .bars { margin-top: 56px; display: flex; flex-direction: column; gap: 30px; }
+    .bar-row { display: flex; align-items: center; gap: 24px; }
+    .bar-row .who { width: 270px; font-size: 34px; font-weight: 800; color: #0B1F44; }
+    .bar-row .track { flex: 1; height: 34px; background: #e4eaf3; border-radius: 17px; overflow: hidden; }
+    .bar-row .fill { height: 100%; border-radius: 17px; background: linear-gradient(90deg, #1D6CF2, #2563eb); }
+    .bar-row .pct { width: 120px; text-align: right; font-size: 34px; font-weight: 800; color: #1D6CF2; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <svg class="rib-tr" viewBox="0 0 360 300"><path d="M360 0 H120 L360 240 Z" fill="#0B1F44"/><path d="M360 0 H210 L360 150 Z" fill="#1D6CF2" opacity=".85"/></svg>
+    <svg class="rib-bl" viewBox="0 0 360 300"><path d="M360 0 H120 L360 240 Z" fill="#0B1F44"/><path d="M360 0 H210 L360 150 Z" fill="#1D6CF2" opacity=".85"/></svg>
+    <svg class="dots dots-tl" viewBox="0 0 110 74"><g>
+      <circle cx="7" cy="7" r="5"/><circle cx="29" cy="7" r="5"/><circle cx="51" cy="7" r="5"/><circle cx="73" cy="7" r="5"/><circle cx="95" cy="7" r="5"/>
+      <circle cx="7" cy="29" r="5"/><circle cx="29" cy="29" r="5"/><circle cx="51" cy="29" r="5"/><circle cx="73" cy="29" r="5"/><circle cx="95" cy="29" r="5"/>
+      <circle cx="7" cy="51" r="5"/><circle cx="29" cy="51" r="5"/><circle cx="51" cy="51" r="5"/><circle cx="73" cy="51" r="5"/><circle cx="95" cy="51" r="5"/>
+    </g></svg>
+    <svg class="dots dots-br" viewBox="0 0 110 74"><g>
+      <circle cx="7" cy="7" r="5"/><circle cx="29" cy="7" r="5"/><circle cx="51" cy="7" r="5"/><circle cx="73" cy="7" r="5"/><circle cx="95" cy="7" r="5"/>
+      <circle cx="7" cy="29" r="5"/><circle cx="29" cy="29" r="5"/><circle cx="51" cy="29" r="5"/><circle cx="73" cy="29" r="5"/><circle cx="95" cy="29" r="5"/>
+      <circle cx="7" cy="51" r="5"/><circle cx="29" cy="51" r="5"/><circle cx="51" cy="51" r="5"/><circle cx="73" cy="51" r="5"/><circle cx="95" cy="51" r="5"/>
+    </g></svg>
+    <div class="bigA">A</div>
+    <div class="progress">{{progress}}</div>
+    <div class="hdr">
+      {{logo}}
+      <div>
+        <div class="hdr-name">Build With <b>Abdallah</b></div>
+        <div class="hdr-tag">SOFTWARE • AUTOMATION • APIS • SOLUTIONS</div>
+      </div>
+    </div>
+    <div class="hdr-rule"></div>
+    <h1>{{title}}</h1>
+    <div class="subtitle">{{subtitle}}</div>
+    <div class="divider"></div>
+    <div class="content">{{content}}</div>
+    <div class="footer">The Pitch Agent by BuildWithAbdallah | Independent analytics | Not affiliated with FIFA</div>
+  </div>
+</body>
+</html>
