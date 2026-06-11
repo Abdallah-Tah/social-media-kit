@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
 """Tier-1 World Cup Shorts generator — 100% original branded graphics.
 
-Renders a deck of branded cards (no match footage → no Content ID risk) into a
-vertical 1080x1920 MP4 with an edge-tts voiceover. Same Playwright + ffmpeg
-engine as the Shorts Visual Agent.
+Renders a deck of Build With Abdallah branded cards into a vertical 1080x1920
+MP4 with an edge-tts voiceover. Same Playwright + ffmpeg engine as the Shorts
+Visual Agent.
 
-Content is static/data-driven (API-free). Edit the DECKS below or pass your own.
+CONTENT SAFETY (enforced by design):
+  * 100% original branded graphics — text + data cards only.
+  * NO match footage, NO downloaded YouTube/TikTok clips, NO FIFA footage,
+    NO reposted highlights → nothing to trigger Content ID.
+  * NO betting / gambling / sportsbook / odds / wagering language.
+  * Positioned as independent football analytics from Build With Abdallah,
+    not affiliated with FIFA or any tournament organiser.
+
 Run:   /usr/bin/python3 scripts/worldcup_short.py --deck group-a
 List:  /usr/bin/python3 scripts/worldcup_short.py --list
-Output is review-only — never auto-posted. Send to YouTube/TikTok manually.
+Output is review-only — never auto-posted.
 """
 
 import argparse
@@ -25,7 +32,7 @@ TEMPLATES_DIR = ROOT / "templates" / "shorts"
 SCRIPTS_DIR = ROOT / "scripts"
 LOGO_SRC = ROOT / "content" / "assets" / "brand" / "bwa-youtube-watermark.png"
 
-VOICE = "en-US-GuyNeural"
+VOICE = "en-US-AriaNeural"
 
 
 def _watermark_html() -> str:
