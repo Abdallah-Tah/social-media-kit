@@ -35,14 +35,8 @@ LOGO_SRC = ROOT / "content" / "assets" / "brand" / "bwa-youtube-watermark.png"
 VOICE = "en-US-AriaNeural"
 
 
-def _watermark_html() -> str:
-    """Use the real BWA logo as the corner watermark instead of a text badge.
-
-    The tracked logo has a white background; make the surrounding white
-    transparent (corner flood-fill keeps the logo interior) and embed it as a
-    base64 data-URI so the Playwright render needs no external file. Falls back
-    to the blue "BWA" text badge if the logo or Pillow is unavailable.
-    """
+def _logo_data_uri() -> str | None:
+    """Transparent BWA logo as a base64 data-URI (white bg flood-filled away)."""
     try:
         from PIL import Image
         from collections import deque
@@ -64,13 +58,134 @@ def _watermark_html() -> str:
         from io import BytesIO
         buf = BytesIO()
         img.save(buf, "PNG")
-        b64 = base64.b64encode(buf.getvalue()).decode()
-        return f'<img class="wm-img" src="data:image/png;base64,{b64}">'
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
     except Exception:
-        return '<span class="wm-text">BWA</span>'
+        return None
 
 
-WATERMARK = _watermark_html()
+_LOGO_URI = _logo_data_uri()
+WATERMARK = (f'<img class="wm-img" src="{_LOGO_URI}">' if _LOGO_URI
+             else '<span class="wm-text">BWA</span>')
+LOGO_IMG = (f'<img src="{_LOGO_URI}">' if _LOGO_URI else "")
+
+
+def _flag_data_uri(url: str) -> str:
+    """Download a flagcdn flag (w320 for crispness) and return a data-URI."""
+    import requests
+    big = url.replace("/w80/", "/w320/")
+    r = requests.get(big, timeout=15)
+    r.raise_for_status()
+    return "data:image/png;base64," + base64.b64encode(r.content).decode()
+
+
+def _load_secrets_env() -> None:
+    for f in (ROOT / "config" / "secrets.env",
+              Path.home() / ".config" / "social-media-kit" / "secrets.env"):
+        if not f.exists():
+            continue
+        for line in f.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                import os
+                os.environ.setdefault(k.strip(), v.strip().strip('"'))
+
+
+# Pitch Agent model ratings (Elo-like, our own scale — not official rankings).
+# Unknown teams default to 1700. Tune freely as the tournament unfolds.
+TEAM_RATINGS = {
+    "Argentina": 2100, "Spain": 2080, "France": 2060, "England": 2040,
+    "Brazil": 2010, "Portugal": 2000, "Netherlands": 1980, "Belgium": 1960,
+    "Germany": 1950, "Croatia": 1930, "Morocco": 1920, "Italy": 1910,
+    "Colombia": 1900, "Uruguay": 1890, "USA": 1870, "United States": 1870,
+    "Mexico": 1860, "Senegal": 1850, "Japan": 1840, "Switzerland": 1830,
+    "Denmark": 1820, "Iran": 1810, "South Korea": 1800, "Ecuador": 1800,
+    "Austria": 1790, "Australia": 1760, "Norway": 1750, "Turkey": 1750,
+    "Canada": 1740, "Czech Republic": 1700, "Bosnia-H.": 1700, "Panama": 1700,
+    "Egypt": 1700, "Algeria": 1690, "Scotland": 1680, "Paraguay": 1670,
+    "Tunisia": 1660, "Ivory Coast": 1650, "South Africa": 1640, "Ghana": 1640,
+    "Qatar": 1620, "Uzbekistan": 1600, "Saudi Arabia": 1590, "Jordan": 1560,
+    "New Zealand": 1530, "Cape Verde": 1520, "Curacao": 1500, "Curaçao": 1500,
+    "Haiti": 1480,
+}
+
+
+def _ratings_prediction(home: str, away: str, group: str) -> dict:
+    """Deterministic Elo-style prediction from TEAM_RATINGS (no API needed)."""
+    ra, rb = TEAM_RATINGS.get(home, 1700), TEAM_RATINGS.get(away, 1700)
+    e = 1.0 / (1.0 + 10 ** (-(ra - rb) / 400.0))          # home win expectancy
+    draw = max(0.12, 0.30 - abs(e - 0.5) * 0.40)
+    hp = round(e * (1 - draw) * 100)
+    dp = round(draw * 100)
+    ap = 100 - hp - dp
+    diff = abs(ra - rb)
+    if diff < 60:
+        score, winner = "1-1", (home if ra >= rb else away)
+    elif diff < 150:
+        score = "2-1"
+        winner = home if ra > rb else away
+    elif diff < 300:
+        score = "2-0"
+        winner = home if ra > rb else away
+    else:
+        score = "3-0"
+        winner = home if ra > rb else away
+    if score != "1-1" and winner == away:
+        score = score[::-1]  # mirror for an away win (e.g. 2-1 → 1-2)
+    fav, dog = (home, away) if ra >= rb else (away, home)
+    return {
+        "winner": winner, "score": score,
+        "home_prob": hp, "draw_prob": dp, "away_prob": ap,
+        "stats": [
+            f"{fav} rate higher in our model",
+            f"{dog} need a fast start to upset it",
+            f"First points in Group {group} on the line",
+        ],
+        "vo": (f"Our ratings model makes {fav} the favourite at {max(hp, ap)} percent, "
+               f"with the draw at {dp}. Most likely scoreline: {score.replace('-', ' ')}."
+               if score != "1-1" else
+               f"Our ratings model has this nearly level — {hp} percent {home}, "
+               f"{ap} percent {away}. A draw is firmly in play."),
+    }
+
+
+def _predict_match(home: str, away: str, group: str) -> dict:
+    """Ask Claude for an analysis-based prediction (winner, score, probs, stats).
+
+    Falls back to a neutral too-close-to-call prediction without a key.
+    Analytics language only — no betting/odds framing.
+    """
+    import os
+    import requests as rq
+    _load_secrets_env()
+    key = os.environ.get("BWA_ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+    fallback = _ratings_prediction(home, away, group)
+    if not key:
+        return fallback
+    try:
+        resp = rq.post("https://api.anthropic.com/v1/messages", headers={
+            "x-api-key": key, "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }, json={
+            "model": "claude-3-5-haiku-latest", "max_tokens": 500,
+            "messages": [{"role": "user", "content":
+                f"You are an independent football analytics model. Predict {home} vs {away} "
+                f"(2026 World Cup, Group {group}). Reply ONLY JSON: "
+                '{"winner": str, "score": "N-N", "home_prob": int, "draw_prob": int, '
+                '"away_prob": int (sum 100), "stats": [3 short factual analysis bullets, '
+                'max 8 words each], "vo": "2-sentence spoken summary, analytics tone, '
+                'no betting language"}'}],
+        }, timeout=60)
+        txt = resp.json()["content"][0]["text"].strip()
+        txt = txt[txt.index("{"):txt.rindex("}") + 1]
+        pred = json.loads(txt)
+        for k in ("winner", "score", "home_prob", "draw_prob", "away_prob", "stats", "vo"):
+            if k not in pred:
+                return fallback
+        return pred
+    except Exception as e:
+        print(f"⚠️  prediction model unavailable ({e}); using neutral fallback")
+        return fallback
 
 
 # ── Content decks ────────────────────────────────────────────────────────
@@ -229,10 +344,14 @@ def render_scene(scene: dict, index: int, out_dir: Path) -> Path:
     """Render one scene HTML to a 1080x1920 PNG via render_card.mjs."""
     html_src = (TEMPLATES_DIR / scene["template"]).read_text()
 
-    for key in ("title", "caption", "main_idea", "takeaway", "cta", "url", "progress"):
+    for key in ("title", "caption", "main_idea", "takeaway", "cta", "url", "progress", "subtitle"):
         if key in scene:
             html_src = html_src.replace("{{" + key + "}}", scene[key])
     html_src = html_src.replace("{{watermark}}", WATERMARK)
+    # pitch_card.html: header logo + raw HTML content slot.
+    html_src = html_src.replace("{{logo}}", LOGO_IMG)
+    if "content" in scene:
+        html_src = html_src.replace("{{content}}", scene["content"])
 
     if scene["template"] == "code_card.html":
         lines = scene["code"].split("\n")
@@ -279,15 +398,24 @@ def assemble_video(scene_paths, voice_path, out_video):
                 "pad=1080:1920:(ow-iw)/2:(oh-ih)/2")
     inputs = []
     for png, dur in scene_paths:
-        inputs += ["-loop", "1", "-t", f"{dur:.2f}", "-i", str(png)]
+        # -framerate 30 matches zoompan's 30fps output so durations are kept.
+        inputs += ["-framerate", "30", "-loop", "1", "-t", f"{dur:.2f}", "-i", str(png)]
 
-    fc, cum, prev = [], 0.0, "[0:v]"
-    for i in range(1, len(scene_paths)):
-        cum += scene_paths[i - 1][1] - xfade
-        lbl = f"[v{i}]" if i < len(scene_paths) - 1 else "[voutscale]"
-        fc.append(f"{prev}[{i}:v]xfade=transition=fade:duration={xfade}:offset={cum:.3f}{lbl}")
-        prev = lbl
-    fc.append(f"[voutscale]{scale_vf}[vout]")
+    # Per-scene: scale to frame, then a slow ken-burns zoom so cards aren't
+    # static slides. Then crossfade the moving scenes together.
+    kb = ("zoompan=z='min(zoom+0.0006,1.10)':d=1:"
+          "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30")
+    fc = [f"[{i}:v]{scale_vf},{kb}[s{i}]" for i in range(len(scene_paths))]
+
+    if len(scene_paths) == 1:
+        fc.append("[s0]null[vout]")
+    else:
+        cum, prev = 0.0, "[s0]"
+        for i in range(1, len(scene_paths)):
+            cum += scene_paths[i - 1][1] - xfade
+            lbl = f"[v{i}]" if i < len(scene_paths) - 1 else "[vout]"
+            fc.append(f"{prev}[s{i}]xfade=transition=fade:duration={xfade}:offset={cum:.3f}{lbl}")
+            prev = lbl
 
     cmd = ["ffmpeg", "-y"] + inputs
     if has_voice:
@@ -444,26 +572,71 @@ def deck_recap(match_id: str | None = None) -> tuple[dict, str]:
 
 
 def deck_prediction(when: str = "today") -> tuple[dict, str]:
-    """Build an engagement-first prediction deck for the next match (opinion)."""
+    """Prediction deck on the professional pitch card: match-up with flags,
+    model prediction (winner + scoreline + win probabilities), stat bullets."""
     import worldcup26_data as wc
     import datetime as dt
     day = dt.date.today() if when == "today" else dt.date.today() + dt.timedelta(days=1)
-    matches = wc.today_matches(day)
+    matches = sorted(wc.today_matches(day), key=lambda x: x["date"])
     if not matches:
         raise SystemExit(f"No matches found for {day}")
     m = matches[0]
     tie = f"{m['home_team']} vs {m['away_team']}"
+    t = wc.teams()
+    try:
+        hflag = _flag_data_uri(t[m["home_id"]]["flag"])
+        aflag = _flag_data_uri(t[m["away_id"]]["flag"])
+    except Exception:
+        hflag = aflag = ""
+    pred = _predict_match(m["home_team"], m["away_team"], m["group"])
+
+    matchup_html = (
+        f'<div class="vs-wrap">'
+        f'<div class="vs-team"><img src="{hflag}"><div class="nm">{m["home_team"]}</div></div>'
+        f'<div class="vs-mid">VS</div>'
+        f'<div class="vs-team"><img src="{aflag}"><div class="nm">{m["away_team"]}</div></div>'
+        f'</div>'
+        f'<div class="rows" style="margin-top:60px">'
+        f'<div class="row"><span class="dot"></span><span class="label">Group {m["group"]} · Matchday {m["matchday"]}</span>'
+        f'<span class="meta">{day.strftime("%b %d")}</span></div>'
+        + "".join(f'<div class="row"><span class="dot"></span><span class="label">{html.escape(s)}</span></div>'
+                  for s in pred["stats"][:3])
+        + '</div>'
+    )
+    pred_html = (
+        f'<div class="vs-wrap" style="margin-top:0">'
+        f'<div class="vs-team" style="width:220px"><img src="{hflag}" style="width:200px;height:133px"></div>'
+        f'<div class="score-big" style="margin:0;flex:1;white-space:nowrap;font-size:170px">{pred["score"].replace("-", "–")}</div>'
+        f'<div class="vs-team" style="width:220px"><img src="{aflag}" style="width:200px;height:133px"></div>'
+        f'</div>'
+        f'<div class="score-label">OUR MODEL\'S CALL</div>'
+        f'<div class="bars">'
+        f'<div class="bar-row"><span class="who">{m["home_team"][:14]}</span>'
+        f'<span class="track"><span class="fill" style="width:{pred["home_prob"]}%;display:block"></span></span>'
+        f'<span class="pct">{pred["home_prob"]}%</span></div>'
+        f'<div class="bar-row"><span class="who">Draw</span>'
+        f'<span class="track"><span class="fill" style="width:{pred["draw_prob"]}%;display:block;opacity:.55"></span></span>'
+        f'<span class="pct">{pred["draw_prob"]}%</span></div>'
+        f'<div class="bar-row"><span class="who">{m["away_team"][:14]}</span>'
+        f'<span class="track"><span class="fill" style="width:{pred["away_prob"]}%;display:block"></span></span>'
+        f'<span class="pct">{pred["away_prob"]}%</span></div>'
+        f'</div>'
+        f'<div class="rows" style="margin-top:64px"><div class="row" style="border-bottom:none">'
+        f'<span class="dot"></span><span class="label">Agree? Drop your scoreline in the comments</span></div></div>'
+    )
     scenes = [
-        {"template": "title_card.html", "title": f"Prediction 🔮", "caption": f"Group {m['group']} · {day.strftime('%b %d')}",
-         "main_idea": f"{tie}. The big question — who comes out on top?",
-         "progress": "1/2", "duration_seconds": 8},
-        {"template": "cta_card.html", "title": tie, "caption": "Drop your scoreline 👇",
-         "cta": "Who wins? Comment your score", "url": "buildwithabdallah.com",
-         "progress": "2/2", "duration_seconds": 9},
+        {"template": "pitch_card.html", "title": "Match Prediction",
+         "subtitle": f"{tie} · 2026 World Cup", "content": matchup_html,
+         "progress": "1/2", "duration_seconds": 9},
+        {"template": "pitch_card.html", "title": tie,
+         "subtitle": f"Predicted result · {pred['winner']} edge it" if pred["score"] != "1-1"
+                     else f"Predicted result · too close to call",
+         "content": pred_html, "progress": "2/2", "duration_seconds": 12},
     ]
-    vo = (f"Prediction time. {m['home_team']} take on {m['away_team']} in Group {m['group']}. "
-          f"It's set up to be a close one. Who's your pick, and what's your scoreline? "
-          f"Drop it in the comments, and follow Build With Abdallah for every matchday call.")
+    vo = (f"Match prediction. {m['home_team']} against {m['away_team']}, Group {m['group']}, "
+          f"at the 2026 World Cup. {pred['vo']} Our predicted scoreline: "
+          f"{pred['score'].replace('-', ' ')}. Agree? Drop yours in the comments, and follow "
+          f"Build With Abdallah for every matchday.")
     return {"title": f"Prediction: {tie}", "scenes": scenes, "voiceover": vo}, \
         f"prediction-{m['id']}"
 
