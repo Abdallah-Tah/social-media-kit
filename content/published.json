@@ -321,5 +321,31 @@
     "steps": 5,
     "summary": "### Title: Exploring Laravel 10's New Process Facade: A Hands-On Guide\n\n---\n\nLaravel 10 has introduced several exciting features, but one that stands out for developers is the new Process facade. Released in February 2023, this feature simplifies the way we handle external processes within Laravel applications. If you've ever needed to interact with command-line scripts or external processes, this update is a game changer.\n\n#### Why the Process Facade Matters\n\nThe Process facade in Laravel 10 allows developers to run and manage external processes directly from their Laravel applications. This is particularly useful for tasks that require command-line interactions, such as running shell scripts, managing server processes, or executing build tools.\n\nWith the Process facade, you can now handle these tasks more elegantly and with less boilerplate code. It provides a fluent interface to start, monitor, and control external processes, making it easier to integrate such tasks into your Laravel application.\n\n#### Setting Up Laravel 10\n\nBefore we dive into using the Process facade, ensure that your environment is set up with Laravel 10 and PHP 8.1 or higher. If you're upgrading from an earlier version, follow the [Laravel Upgrade Guide](https://laravel.com/docs/10.x/upgrade).\n\n#### Building a Simple Process Manager\n\nLet's build a simple Laravel application that uses the Process facade to interact with the command line. We'll create a route that lists the contents of a directory and returns the output.\n\n##### Step 1: Create a New Laravel Project\n\nFirst, create a new Laravel project:\n\n```bash\ncomposer create-project --prefer-dist laravel/laravel process-manager\ncd process-manager\n```\n\n##### Step 2: Define a Route\n\nOpen `routes/web.php` and define a new route that uses the Process facade:\n\n```php\nuse Illuminate\\Support\\Facades\\Route;\nuse Illuminate\\Support\\Facades\\Process;\n\nRoute::get('/list-directory', function () {\n    $result = Process::run('ls -la');\n\n    if ($result->successful()) {\n        return nl2br($result->output());\n    }\n\n    return $result->errorOutput();\n});\n```\n\n##### Step 3: Test the Route\n\nStart the Laravel development server and test the new route:\n\n```bash\nphp artisan serve\n```\n\nVisit `http://localhost:8000/list-directory` in your browser. You should see the contents of your project directory listed.\n\n#### Understanding the Process Facade\n\nThe Process facade provides several methods to interact with processes:\n\n- **run**: Executes a command and returns a `ProcessResult` object.\n- **successful**: Checks if the process exited successfully.\n- **failed**: Checks if the process failed.\n- **exitCode**: Retrieves the process exit code.\n- **output**: Gets the standard output.\n- **errorOutput**: Gets the error output.\n\n#### Handling Errors\n\nIf a command fails, you can handle it gracefully:\n\n```php\n$result = Process::run('invalid-command');\n\nif ($result->failed()) {\n    return response()->json([\n        'error' => 'Command failed',\n        'details' => $result->errorOutput()\n    ], 500);\n}\n```\n\n#### Advanced Usage\n\nThe Process facade also supports asynchronous processes, process pools, and rich testing features via `fake()`. This makes it a versatile tool for managing complex workflows.\n\n#### Conclusion\n\nThe new Process facade in Laravel 10 makes it easier than ever to work with external processes. Whether you're running simple shell commands or managing complex workflows, this feature provides a powerful and flexible solution.\n\nFor more hands-on engineering content, follow us and explore the full potential of Laravel 10.\n\n#### Sources\n\n- [Laravel 10 Release Notes](https://laravel.com/docs/10.x/releases)\n- [Laravel 10 Features & Updates](https://redberry.international/laravel-10-features-and-updates/)\n\n---\n\nThis tutorial provides a practical introduction to using the Process facade in Laravel 10. If you're looking to integrate command-line interactions into your Laravel applications, this is a feature you won't want to miss.",
     "date": "2026-06-06T02:41:41.250379+00:00"
+  },
+  {
+    "topic": "Loop Engineering: Build Your First Autonomous AI Coding Loop — the 14-step roadmap from prompter to loop designer, including the 4-condition test, five building blocks with memory, maker-checker sub-agent pattern, worktree isolation, comprehension debt, and why most developers don't need one yet",
+    "profile": "BuildWithAbdallah",
+    "provider": "ollama",
+    "channels": [
+      "blog",
+      "facebook",
+      "linkedin"
+    ],
+    "steps": 6,
+    "summary": "The sitemap confirms no existing article on loop engineering. I have sufficient research. Let me now author the comprehensive tutorial.\n\n---\n\n**MODE: hands-on tutorial**\n\nNow I'll write the full tutorial article. This needs to be 1500+ words, with real code, a complete project, and practical guidance.",
+    "date": "2026-06-10T03:58:36.490764+00:00"
+  },
+  {
+    "topic": "Loop Engineering: Build Your First Autonomous AI Coding Loop — the 14-step roadmap from prompter to loop designer",
+    "profile": "BuildWithAbdallah",
+    "provider": "openai",
+    "channels": [
+      "blog",
+      "facebook",
+      "linkedin"
+    ],
+    "steps": 6,
+    "summary": "Created a hands-on tutorial on Loop Engineering, focusing on building autonomous AI coding loops using a 14-step roadmap. Sources included Addy Osmani's blog, MindStudio, and Nick Tune's LinkedIn post. Published to the blog and Facebook successfully. LinkedIn post failed due to revoked access token. Article title: 'Loop Engineering: Build Your First Autonomous AI Coding Loop — the 14-step roadmap from prompter to loop designer'. Draft saved and published where possible.",
+    "date": "2026-06-10T03:59:28.464088+00:00"
   }
 ]
