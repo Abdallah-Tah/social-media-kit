@@ -511,18 +511,24 @@ def _generate_matchday_preview(fixtures: list[dict[str, Any]]) -> str:
 def _match_prediction(fixture: dict[str, Any]) -> str | None:
     """Return a one-line Poisson prediction for a fixture, or None.
 
-    Never falls back to team_result-derived numbers. If Form Index data
-    is unavailable for either team, returns None (no prediction line).
+    Uses blended xG (Elo prior → Form Index) when FI data is available,
+    and pure Elo prior when it isn't. Returns None only if neither source
+    has data. Never falls back to team_result-derived numbers.
     """
-    from pitch_agent.poisson import form_index_to_xg, top_scorelines, match_outcome_probs, prediction_key_factor
+    from pitch_agent.poisson import (
+        form_index_to_xg, top_scorelines, match_outcome_probs,
+        prediction_key_factor, elo_to_xg, predict_xg, resolve_predicted_outcome,
+    )
 
     match_id = fixture.get("match_id") or fixture.get("id") or ""
     home_team = fixture.get("home_team_name", "")
     away_team = fixture.get("away_team_name", "")
+    home_team_id = fixture.get("home_team_id", "") or ""
+    away_team_id = fixture.get("away_team_id", "") or ""
 
-    # Try to get Form Index data from the DB
+    # Try to get data from the DB
     try:
-        from pitch_agent.db import get_connection
+        from pitch_agent.db import get_connection, get_team_prior, count_team_matches
         from pitch_agent.config import PitchAgentConfig
         cfg = PitchAgentConfig.load()
         conn = get_connection(cfg.db_path)
@@ -532,54 +538,79 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
         return None
 
     try:
-        # Get average Form Index for each team in this match
+        # Get average Form Index for each team
         rows = conn.execute(
             """
-            SELECT p.team_id, AVG(s.score) as avg_score
+            SELECT p.team_name, AVG(s.score) as avg_score
             FROM form_index_scores s
             JOIN player_match_stats p ON s.match_id = p.match_id AND s.player_id = p.player_id
             WHERE s.model_version = ? AND (p.team_name = ? OR p.team_name = ?)
-            GROUP BY p.team_id
-            ORDER BY avg_score DESC
-            LIMIT 2
+            GROUP BY p.team_name
             """,
             (MODEL_VERSION, home_team, away_team),
         ).fetchall()
 
-        if len(rows) < 2:
+        fi_map = {row["team_name"]: float(row["avg_score"]) for row in rows}
+        home_avg_fi = fi_map.get(home_team)
+        away_avg_fi = fi_map.get(away_team)
+
+        # Get Elo priors
+        home_prior = get_team_prior(conn, home_team_id) if home_team_id else None
+        away_prior = get_team_prior(conn, away_team_id) if away_team_id else None
+        home_elo = home_prior["elo"] if home_prior else None
+        away_elo = away_prior["elo"] if away_prior else None
+
+        # Count tournament matches
+        home_matches = count_team_matches(conn, home_team)
+
+        # Compute blended xG
+        home_xg, away_xg, basis = predict_xg(
+            home_team=home_team,
+            away_team=away_team,
+            home_avg_fi=home_avg_fi,
+            away_avg_fi=away_avg_fi,
+            home_elo=home_elo,
+            away_elo=away_elo,
+            home_matches=home_matches,
+        )
+
+        # If pure Elo prior with no FI data and no Elo data, skip
+        if basis == "elo_prior" and home_elo is None and away_elo is None:
             import sys
             print(
-                f"[pitch_agent] No Form Index data for {home_team} vs {away_team} — prediction skipped",
+                f"[pitch_agent] No FI or Elo data for {home_team} vs {away_team} — prediction skipped",
                 file=sys.stderr,
             )
             return None
 
-        home_avg = float(rows[0]["avg_score"])
-        away_avg = float(rows[1]["avg_score"])
-
-        # Generate Poisson prediction
-        home_xg, away_xg = form_index_to_xg(home_avg, away_avg)
         outcomes = match_outcome_probs(home_xg, away_xg)
         top = top_scorelines(home_xg, away_xg, n=1)
+
         key_factor = prediction_key_factor(
-            [{"score": home_avg, "goals": 0}],
-            [{"score": away_avg, "goals": 0}],
+            [{"score": home_avg_fi or 50, "goals": 0}],
+            [{"score": away_avg_fi or 50, "goals": 0}],
         )
 
-        # Most likely outcome (argmax of outcome probs)
-        outcome_probs = {"home": outcomes["home_win"], "draw": outcomes["draw"], "away": outcomes["away_win"]}
-        predicted_outcome = max(outcome_probs, key=lambda k: outcome_probs[k])
+        # Most likely outcome (with tie-breaking)
+        predicted_outcome = resolve_predicted_outcome(outcomes, top[0])
         outcome_label = {"home": "Home win", "draw": "Draw", "away": "Away win"}[predicted_outcome]
-        outcome_prob = outcome_probs[predicted_outcome]
+        outcome_prob = {
+            "home": outcomes["home_win"],
+            "draw": outcomes["draw"],
+            "away": outcomes["away_win"],
+        }[predicted_outcome]
 
         most_likely = top[0]
+        basis_tag = " (pre-tournament Elo)" if basis != "form_index" else ""
         pred_str = (
             f"Most likely outcome: {outcome_label} ({outcome_prob*100:.0f}%) "
-            f"\u00b7 Most likely score: {most_likely['label']} — "
+            f"\u00b7 Most likely score: {most_likely['label']}{basis_tag} — "
             f"{key_factor}"
         )
         return pred_str
     except Exception:
+        import sys
+        print(f"[pitch_agent] Prediction error for {home_team} vs {away_team}", file=sys.stderr)
         return None
     finally:
         conn.close()

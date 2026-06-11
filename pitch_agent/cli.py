@@ -163,6 +163,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_accuracy.add_argument("--model-version", default=CURRENT_MODEL_VERSION, help="Model version")
     p_accuracy.set_defaults(func=cmd_accuracy)
 
+    # ── load-priors ───────────────────────────────────────────────────
+    p_priors = sub.add_parser("load-priors", help="Load Elo priors from CSV")
+    p_priors.add_argument("--csv", required=True, help="CSV file with team_id,team_name,elo columns")
+    p_priors.add_argument("--source", default="manual", help="Source label for the Elo data")
+    p_priors.add_argument("--db", default="pitch_agent.db", help="Database path")
+    p_priors.set_defaults(func=cmd_load_priors)
+
     # ── transparency ────────────────────────────────────────────────────
     p_trans = sub.add_parser("transparency",
                               help="Show trademark and affiliation disclaimer")
@@ -491,11 +498,28 @@ def cmd_transparency(args: argparse.Namespace) -> int:
 
 def cmd_predict(args: argparse.Namespace) -> int:
     """Generate a Poisson scoreline prediction for a match."""
-    from pitch_agent.db import get_connection, upsert_prediction
-    from pitch_agent.poisson import form_index_to_xg, top_scorelines, match_outcome_probs, prediction_key_factor
+    from pitch_agent.db import get_connection, upsert_prediction, get_team_prior, count_team_matches
+    from pitch_agent.poisson import (
+        form_index_to_xg, top_scorelines, match_outcome_probs,
+        prediction_key_factor, elo_to_xg, predict_xg, resolve_predicted_outcome,
+    )
     from pitch_agent.leaderboard import get_match_leaderboard
 
     conn = get_connection(args.db)
+
+    match = conn.execute(
+        "SELECT home_team_name, away_team_name, home_team_id, away_team_id FROM matches WHERE match_id = ?",
+        (args.match,),
+    ).fetchone()
+    if not match:
+        print(f"Match {args.match} not found")
+        conn.close()
+        return 1
+
+    home_team = match["home_team_name"]
+    away_team = match["away_team_name"]
+    home_team_id = match.get("home_team_id", "") or ""
+    away_team_id = match.get("away_team_id", "") or ""
 
     # Fetch Form Index scores for both teams in this match
     rows = conn.execute(
@@ -505,54 +529,73 @@ def cmd_predict(args: argparse.Namespace) -> int:
         FROM form_index_scores s
         JOIN player_match_stats p
             ON s.match_id = p.match_id AND s.player_id = p.player_id
-        WHERE s.match_id = ? AND s.model_version = '1.1.0'
+        WHERE s.match_id = ? AND s.model_version = ?
         """,
-        (args.match,),
+        (args.match, CURRENT_MODEL_VERSION),
     ).fetchall()
 
-    if not rows:
-        print(f"No Form Index data found for match {args.match}")
-        conn.close()
-        return 1
-
     # Separate home and away teams
-    match = conn.execute(
-        "SELECT home_team_name, away_team_name FROM matches WHERE match_id = ?",
-        (args.match,),
-    ).fetchone()
-    home_team = match["home_team_name"] if match else "Home"
-    away_team = match["away_team_name"] if match else "Away"
-
-    home_team_id = rows[0]["team_id"] if rows else None
-    home_scores = [dict(r) for r in rows if r["team_id"] == home_team_id]
-    away_scores = [dict(r) for r in rows if r["team_id"] != home_team_id]
+    home_team_db_id = rows[0]["team_id"] if rows else None
+    home_scores = [dict(r) for r in rows if r["team_id"] == home_team_db_id] if home_team_db_id else []
+    away_scores = [dict(r) for r in rows if r["team_id"] != home_team_db_id] if home_team_db_id else []
 
     # If we can't split by team, use all scores as home
     if not away_scores and home_scores:
         away_scores = home_scores[len(home_scores)//2:]
         home_scores = home_scores[:len(home_scores)//2]
 
-    home_avg = sum(r["score"] for r in home_scores) / len(home_scores) if home_scores else 50
-    away_avg = sum(r["score"] for r in away_scores) / len(away_scores) if away_scores else 50
+    home_avg = sum(r["score"] for r in home_scores) / len(home_scores) if home_scores else None
+    away_avg = sum(r["score"] for r in away_scores) / len(away_scores) if away_scores else None
 
-    home_xg, away_xg = form_index_to_xg(home_avg, away_avg)
+    # Fetch Elo priors
+    home_prior = get_team_prior(conn, home_team_id) if home_team_id else None
+    away_prior = get_team_prior(conn, away_team_id) if away_team_id else None
+    home_elo = home_prior["elo"] if home_prior else None
+    away_elo = away_prior["elo"] if away_prior else None
+
+    # Count tournament matches played by home team
+    home_matches = count_team_matches(conn, home_team)
+
+    # Compute blended xG
+    home_xg, away_xg, basis = predict_xg(
+        home_team=home_team,
+        away_team=away_team,
+        home_avg_fi=home_avg,
+        away_avg_fi=away_avg,
+        home_elo=home_elo,
+        away_elo=away_elo,
+        home_matches=home_matches,
+    )
+
     outcomes = match_outcome_probs(home_xg, away_xg)
     top = top_scorelines(home_xg, away_xg, n=args.top)
-    key_factor = prediction_key_factor(home_scores, away_scores)
+    key_factor = prediction_key_factor(
+        home_scores if home_scores else [{"score": home_avg or 50, "goals": 0}],
+        away_scores if away_scores else [{"score": away_avg or 50, "goals": 0}],
+    )
 
     # Most likely scoreline
     predicted_home = top[0]["home_goals"]
     predicted_away = top[0]["away_goals"]
 
-    # Most likely outcome (argmax of outcome probabilities)
-    outcome_probs = {"home": outcomes["home_win"], "draw": outcomes["draw"], "away": outcomes["away_win"]}
-    predicted_outcome = max(outcome_probs, key=lambda k: outcome_probs[k])
+    # Most likely outcome (argmax with tie-breaking)
+    predicted_outcome = resolve_predicted_outcome(outcomes, top[0])
     outcome_label = {"home": "Home win", "draw": "Draw", "away": "Away win"}[predicted_outcome]
-    outcome_prob = outcome_probs[predicted_outcome]
+    outcome_prob = {
+        "home": outcomes["home_win"],
+        "draw": outcomes["draw"],
+        "away": outcomes["away_win"],
+    }[predicted_outcome]
+
+    # Basis label for display
+    basis_label = {"elo_prior": "pre-tournament Elo", "blended": "Elo+FI blend", "form_index": "Form Index"}[basis]
 
     print(f"Match: {home_team} vs {away_team}")
-    print(f"Home avg Form Index: {home_avg:.1f}  |  Away avg Form Index: {away_avg:.1f}")
-    print(f"Home xG: {home_xg:.2f}  |  Away xG: {away_xg:.2f}")
+    if home_avg is not None and away_avg is not None:
+        print(f"Home avg Form Index: {home_avg:.1f}  |  Away avg Form Index: {away_avg:.1f}")
+    if home_elo is not None and away_elo is not None:
+        print(f"Home Elo: {home_elo:.0f}  |  Away Elo: {away_elo:.0f}")
+    print(f"Home xG: {home_xg:.2f}  |  Away xG: {away_xg:.2f}  (basis: {basis_label})")
     print(f"Key factor: {key_factor}")
     print()
     print(f"Outcome probabilities:")
@@ -562,6 +605,8 @@ def cmd_predict(args: argparse.Namespace) -> int:
     print()
     print(f"Most likely outcome: {outcome_label} ({outcome_prob*100:.0f}%)")
     print(f"Most likely score:   {top[0]['label']}")
+    if basis != "form_index":
+        print(f"(pre-tournament Elo)")
     print()
     print(f"Top {args.top} scorelines:")
     for s in top:
@@ -574,6 +619,7 @@ def cmd_predict(args: argparse.Namespace) -> int:
         "predicted_home": predicted_home,
         "predicted_away": predicted_away,
         "predicted_outcome": predicted_outcome,
+        "basis": basis,
         "home_win_prob": outcomes["home_win"],
         "draw_prob": outcomes["draw"],
         "away_win_prob": outcomes["away_win"],
@@ -664,6 +710,40 @@ def cmd_accuracy(args: argparse.Namespace) -> int:
         print("  Exact score: no graded data yet")
     if legacy > 0:
         print(f"  ({legacy} predictions predate exact-score tracking)")
+    return 0
+
+
+def cmd_load_priors(args: argparse.Namespace) -> int:
+    """Load Elo prior ratings from a CSV file into team_priors table."""
+    import csv
+    from pathlib import Path
+    from pitch_agent.db import get_connection, upsert_team_prior
+
+    csv_path = Path(args.csv)
+    if not csv_path.exists():
+        print(f"File not found: {csv_path}")
+        return 1
+
+    conn = get_connection(args.db)
+    count = 0
+    with open(csv_path, newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            team_id = row.get("team_id", "").strip()
+            team_name = row.get("team_name", "").strip()
+            elo = float(row.get("elo", 1500))
+            if not team_id:
+                continue
+            upsert_team_prior(conn, {
+                "team_id": team_id,
+                "team_name": team_name or team_id,
+                "elo": elo,
+                "source": args.source,
+            })
+            count += 1
+    conn.commit()
+    conn.close()
+    print(f"✓ Loaded {count} team Elo priors from {csv_path.name}")
     return 0
 
 

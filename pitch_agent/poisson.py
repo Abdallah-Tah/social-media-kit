@@ -68,6 +68,48 @@ def match_outcome_probs(
     }
 
 
+def resolve_predicted_outcome(
+    outcomes: dict[str, float],
+    top_scoreline: dict[str, Any] | None = None,
+) -> str:
+    """Resolve the predicted outcome from outcome probabilities.
+
+    Uses argmax of (home_win, draw, away_win). When two outcomes
+    have equal probability, the tie is broken by preferring the
+    outcome that contains the most likely scoreline.
+
+    For example, if home_win=0.35 and draw=0.35, but the most
+    likely scoreline is 1-1 (a draw), the predicted outcome is
+    'draw'. If the most likely scoreline is 1-0 (a home win),
+    the predicted outcome is 'home'.
+    """
+    probs = {"home": outcomes["home_win"], "draw": outcomes["draw"], "away": outcomes["away_win"]}
+    max_prob = max(probs.values())
+    # Find all outcomes tied for max
+    tied = [k for k, v in probs.items() if v == max_prob]
+    if len(tied) == 1:
+        return tied[0]
+
+    # Tie-break: prefer the outcome containing the most likely scoreline
+    if top_scoreline is not None:
+        h = top_scoreline.get("home_goals", 0)
+        a = top_scoreline.get("away_goals", 0)
+        if h > a:
+            scoreline_outcome = "home"
+        elif h < a:
+            scoreline_outcome = "away"
+        else:
+            scoreline_outcome = "draw"
+        if scoreline_outcome in tied:
+            return scoreline_outcome
+
+    # Final fallback: prefer home > draw > away (home-field advantage)
+    for pref in ("home", "draw", "away"):
+        if pref in tied:
+            return pref
+    return "home"
+
+
 # ── Form Index → xG mapping ──────────────────────────────────────────────
 # Empirical calibration: a team averaging 70+ Form Index against one averaging
 # 50 should produce ~2.0 xG vs ~0.8.  Linear interpolation between bands.
@@ -159,3 +201,87 @@ def prediction_key_factor(
             f"(goals avg {home_goals:.1f} vs {away_goals:.1f})"
         )
     return f"{leader} +{abs_diff:.0f} Form Index differential"
+
+
+# ── Elo prior → xG ────────────────────────────────────────────────────────
+
+def elo_to_xg(home_elo: float, away_elo: float) -> tuple[float, float]:
+    """Convert Elo ratings to expected goals using the standard formula.
+
+    Uses the Elo expected-score formula (base-10, 400-point scale):
+        E_home = 1 / (1 + 10**((away_elo - home_elo) / 400))
+
+    Then maps expected-score differential to xG:
+    - A 200-point Elo gap ≈ 76% expected score ≈ 65/35 outcome split
+    - A 0-point gap → 50/50 → 1.3/1.1 baseline xG
+    - Calibration: home_xG = base * (0.5 + 0.5 * E_home) * home_bonus
+                    away_xG = base * (0.5 + 0.5 * E_away) * away_penalty
+    """
+    # Standard Elo expected score
+    e_home = 1.0 / (1.0 + 10 ** ((away_elo - home_elo) / 400.0))
+    e_away = 1.0 - e_home
+
+    # Map expected score to xG
+    # At 50/50: home=1.3, away=1.1 (baseline)
+    # At 65/35: home=1.9, away=0.7 (strong home favorite)
+    # At 35/65: home=0.7, away=1.9 (strong away favorite)
+    # Home advantage baked in: even at 50/50 Elo, home gets 1.3 vs 1.1
+    home_xg = 0.6 + 2.0 * e_home  # 50%→1.6, 76%→2.1, 35%→1.3
+    away_xg = 0.6 + 2.0 * e_away  # 50%→1.6, 24%→1.1, 65%→1.9
+
+    # Apply home-field advantage: scale home up, away down slightly
+    home_xg *= 0.95  # adjusts so 50/50 yields ~1.3/1.1
+    away_xg *= 0.85
+
+    return round(home_xg, 2), round(away_xg, 2)
+
+
+def predict_xg(
+    home_team: str,
+    away_team: str,
+    home_avg_fi: float | None,
+    away_avg_fi: float | None,
+    home_elo: float | None,
+    away_elo: float | None,
+    home_matches: int = 0,
+) -> tuple[float, float, str]:
+    """Blend Elo-prior xG and Form-Index xG based on matches played.
+
+    Returns (home_xg, away_xg, basis) where basis is one of:
+    - ``'elo_prior'``: no FI data, pure Elo
+    - ``'blended'``: partial FI data (1-2 matches)
+    - ``'form_index'``: full FI data (3+ matches)
+
+    Blend weight: n = min(3, home_matches)
+    xG = prior_xg * (1 - n/3) + fi_xg * (n/3)
+    """
+    # Elo-based xG (fallback if no Elo data, use mid-range prior)
+    if home_elo is not None and away_elo is not None:
+        prior_xg = elo_to_xg(home_elo, away_elo)
+    else:
+        # No Elo either — use baseline
+        prior_xg = (_BASE_HOME_XG, _BASE_AWAY_XG)
+
+    # FI-based xG
+    if home_avg_fi is not None and away_avg_fi is not None:
+        fi_xg = form_index_to_xg(home_avg_fi, away_avg_fi)
+    else:
+        fi_xg = None
+
+    # Decide basis
+    if fi_xg is None:
+        # No FI data at all
+        return prior_xg[0], prior_xg[1], "elo_prior"
+
+    n = min(3, home_matches)
+    if n == 0:
+        return prior_xg[0], prior_xg[1], "elo_prior"
+    elif n < 3:
+        # Blend
+        weight = n / 3.0
+        home_xg = prior_xg[0] * (1 - weight) + fi_xg[0] * weight
+        away_xg = prior_xg[1] * (1 - weight) + fi_xg[1] * weight
+        return round(home_xg, 2), round(away_xg, 2), "blended"
+    else:
+        # Full FI
+        return fi_xg[0], fi_xg[1], "form_index"

@@ -2781,3 +2781,183 @@ def test_predicted_outcome_differs_from_top_scoreline(tmp_path):
         "Predicted 1-1 vs actual 0-1 — exact score should be wrong"
     )
     conn.close()
+
+
+# ── Elo prior, blend, tie-breaking, basis labeling ──
+
+def test_elo_to_xg_equal_ratings():
+    """Equal Elo ratings should produce near-equal xG with slight home advantage."""
+    from pitch_agent.poisson import elo_to_xg
+    home_xg, away_xg = elo_to_xg(1500, 1500)
+    # Home advantage: home_xg should be slightly higher
+    assert home_xg > away_xg
+    # Both should be in reasonable range
+    assert 0.8 < home_xg < 3.0
+    assert 0.8 < away_xg < 3.0
+
+
+def test_elo_to_xg_200_point_gap():
+    """A 200-point Elo gap should produce a clear favorite."""
+    from pitch_agent.poisson import elo_to_xg, match_outcome_probs
+    home_xg, away_xg = elo_to_xg(1700, 1500)
+    outcomes = match_outcome_probs(home_xg, away_xg)
+    # Home should be favored
+    assert outcomes["home_win"] > outcomes["away_win"]
+    # ~65/35 split or stronger
+    assert outcomes["home_win"] > 0.55
+
+
+def test_predict_xg_pure_elo_prior():
+    """With 0 FI matches, predict_xg returns pure Elo xG with basis='elo_prior'."""
+    from pitch_agent.poisson import predict_xg
+    home_xg, away_xg, basis = predict_xg(
+        home_team="TeamA", away_team="TeamB",
+        home_avg_fi=70.0, away_avg_fi=50.0,
+        home_elo=1700, away_elo=1500,
+        home_matches=0,
+    )
+    assert basis == "elo_prior"
+    # xG should come from Elo, not FI
+    from pitch_agent.poisson import elo_to_xg
+    expected_home, expected_away = elo_to_xg(1700, 1500)
+    assert home_xg == expected_home
+    assert away_xg == expected_away
+
+
+def test_predict_xg_blended():
+    """With 1 FI match (n=1), xG should be a 1/3 blend of FI and Elo."""
+    from pitch_agent.poisson import predict_xg, elo_to_xg, form_index_to_xg
+    home_xg, away_xg, basis = predict_xg(
+        home_team="TeamA", away_team="TeamB",
+        home_avg_fi=70.0, away_avg_fi=50.0,
+        home_elo=1700, away_elo=1500,
+        home_matches=1,
+    )
+    assert basis == "blended"
+    # Weight: fi_xg * 1/3 + prior_xg * 2/3
+    prior_xg = elo_to_xg(1700, 1500)
+    fi_xg = form_index_to_xg(70.0, 50.0)
+    expected_home = prior_xg[0] * (2/3) + fi_xg[0] * (1/3)
+    expected_away = prior_xg[1] * (2/3) + fi_xg[1] * (1/3)
+    assert abs(home_xg - round(expected_home, 2)) < 0.02
+    assert abs(away_xg - round(expected_away, 2)) < 0.02
+
+
+def test_predict_xg_pure_form_index():
+    """With 3+ FI matches, predict_xg returns pure FI xG with basis='form_index'."""
+    from pitch_agent.poisson import predict_xg, form_index_to_xg
+    home_xg, away_xg, basis = predict_xg(
+        home_team="TeamA", away_team="TeamB",
+        home_avg_fi=70.0, away_avg_fi=50.0,
+        home_elo=1700, away_elo=1500,
+        home_matches=3,
+    )
+    assert basis == "form_index"
+    expected_home, expected_away = form_index_to_xg(70.0, 50.0)
+    assert home_xg == expected_home
+    assert away_xg == expected_away
+
+
+def test_predict_xg_no_elo_no_fi():
+    """With no Elo and no FI, returns baseline xG with basis='elo_prior'."""
+    from pitch_agent.poisson import predict_xg, _BASE_HOME_XG, _BASE_AWAY_XG
+    home_xg, away_xg, basis = predict_xg(
+        home_team="TeamA", away_team="TeamB",
+        home_avg_fi=None, away_avg_fi=None,
+        home_elo=None, away_elo=None,
+        home_matches=0,
+    )
+    assert basis == "elo_prior"
+    assert home_xg == _BASE_HOME_XG
+    assert away_xg == _BASE_AWAY_XG
+
+
+def test_resolve_predicted_outcome_clear_winner():
+    """Clear winner should return without tie-breaking."""
+    from pitch_agent.poisson import resolve_predicted_outcome
+    assert resolve_predicted_outcome({"home_win": 0.6, "draw": 0.25, "away_win": 0.15}) == "home"
+    assert resolve_predicted_outcome({"home_win": 0.15, "draw": 0.25, "away_win": 0.60}) == "away"
+    assert resolve_predicted_outcome({"home_win": 0.20, "draw": 0.50, "away_win": 0.30}) == "draw"
+
+
+def test_resolve_predicted_outcome_tie_break_with_scoreline():
+    """When outcomes are tied, prefer the one containing the most likely scoreline."""
+    from pitch_agent.poisson import resolve_predicted_outcome
+    # home_win=0.35, draw=0.35 tied. Top scoreline is 1-1 (draw). → draw
+    result = resolve_predicted_outcome(
+        {"home_win": 0.35, "draw": 0.35, "away_win": 0.30},
+        top_scoreline={"home_goals": 1, "away_goals": 1},
+    )
+    assert result == "draw"
+
+    # home_win=0.35, draw=0.35 tied. Top scoreline is 1-0 (home). → home
+    result = resolve_predicted_outcome(
+        {"home_win": 0.35, "draw": 0.35, "away_win": 0.30},
+        top_scoreline={"home_goals": 1, "away_goals": 0},
+    )
+    assert result == "home"
+
+
+def test_resolve_predicted_outcome_tie_no_scoreline():
+    """When tied and no scoreline, prefer home > draw > away."""
+    from pitch_agent.poisson import resolve_predicted_outcome
+    result = resolve_predicted_outcome(
+        {"home_win": 0.35, "draw": 0.35, "away_win": 0.30},
+        top_scoreline=None,
+    )
+    assert result == "home"  # home-field advantage tiebreak
+
+
+def test_load_priors_cli(tmp_path):
+    """load-priors should insert team Elo ratings from a CSV file."""
+    from pitch_agent.db import init_db, get_team_prior, get_all_team_priors
+    csv_path = tmp_path / "priors.csv"
+    csv_path.write_text("team_id,team_name,elo\nBRA,Brazil,2050\nARG,Argentina,2030\nFRA,France,2010\n")
+
+    db_path = str(tmp_path / "priors_test.db")
+    conn = init_db(db_path)
+
+    # Use the CLI
+    from pitch_agent.cli import cmd_load_priors
+    import argparse
+    args = argparse.Namespace(csv=str(csv_path), source="test", db=db_path)
+    result = cmd_load_priors(args)
+    assert result == 0
+
+    # Verify data
+    bra = get_team_prior(conn, "BRA")
+    assert bra is not None
+    assert bra["team_name"] == "Brazil"
+    assert bra["elo"] == 2050.0
+
+    all_priors = get_all_team_priors(conn)
+    assert len(all_priors) == 3
+    assert all_priors[0]["team_name"] == "Brazil"  # Highest Elo first
+    conn.close()
+
+
+def test_basis_label_in_prediction(tmp_path):
+    """Prediction stored with basis field: elo_prior, blended, or form_index."""
+    from pitch_agent.db import init_db, upsert_prediction, upsert_match
+    db_path = str(tmp_path / "basis_test.db")
+    conn = init_db(db_path)
+
+    upsert_match(conn, {
+        "match_id": "M500", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "TeamA", "away_team_name": "TeamB",
+        "home_score": 2, "away_score": 0, "date": "2026-06-20",
+    })
+    conn.commit()
+    upsert_prediction(conn, {
+        "match_id": "M500", "model_version": MODEL_VERSION,
+        "predicted_home": 2, "predicted_away": 0,
+        "predicted_outcome": "home",
+        "basis": "elo_prior",
+        "home_win_prob": 0.60, "draw_prob": 0.25, "away_win_prob": 0.15,
+        "top_scorelines": [], "key_factor": "",
+    })
+    conn.commit()
+
+    row = conn.execute("SELECT basis FROM predictions WHERE match_id = 'M500'").fetchone()
+    assert row["basis"] == "elo_prior"
+    conn.close()

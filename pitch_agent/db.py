@@ -129,6 +129,7 @@ CREATE TABLE IF NOT EXISTS predictions (
     predicted_home    INTEGER NOT NULL,
     predicted_away    INTEGER NOT NULL,
     predicted_outcome TEXT    NOT NULL DEFAULT 'home',
+    basis             TEXT    NOT NULL DEFAULT 'form_index',
     home_win_prob     REAL,
     draw_prob         REAL,
     away_win_prob     REAL,
@@ -147,6 +148,16 @@ CREATE TABLE IF NOT EXISTS prediction_results (
     exact_score_correct INTEGER,
     graded_at       TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE(prediction_id)
+);
+
+CREATE TABLE IF NOT EXISTS team_priors (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    team_id     TEXT    NOT NULL,
+    team_name   TEXT    NOT NULL DEFAULT '',
+    elo         REAL    NOT NULL DEFAULT 1500.0,
+    source      TEXT    NOT NULL DEFAULT '',
+    loaded_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(team_id)
 );
 
 -- Indexes for common queries
@@ -216,6 +227,9 @@ def _migrate_predictions_columns(conn: sqlite3.Connection) -> list[str]:
             END WHERE predicted_outcome = 'home' AND home_win_prob IS NOT NULL"""
         )
         added.append("predicted_outcome")
+    if "basis" not in existing:
+        conn.execute("ALTER TABLE predictions ADD COLUMN basis TEXT NOT NULL DEFAULT 'form_index'")
+        added.append("basis")
     return added
 
 
@@ -442,6 +456,50 @@ def upsert_tournament_form_index(conn: sqlite3.Connection, record: dict[str, Any
     # Caller is responsible for committing the transaction.
 
 
+# ── Team Priors (Elo) ────────────────────────────────────────────────────
+
+def upsert_team_prior(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
+    """Insert or update an Elo prior for a team."""
+    cols = ["team_id", "team_name", "elo", "source"]
+    vals = [record.get(c, "") for c in cols]
+    # Fix elo type
+    vals[2] = float(record.get("elo", 1500))
+    placeholders = ", ".join("?" for _ in cols)
+    col_names = ", ".join(cols)
+    update_sets = ", ".join(f"{c} = excluded.{c}" for c in cols if c != "team_id")
+    sql = (
+        f"INSERT INTO team_priors ({col_names}) VALUES ({placeholders}) "
+        f"ON CONFLICT(team_id) DO UPDATE SET {update_sets}"
+    )
+    conn.execute(sql, vals)
+
+
+def get_team_prior(conn: sqlite3.Connection, team_id: str) -> dict[str, Any] | None:
+    """Return a single team's prior, or None."""
+    row = conn.execute(
+        "SELECT team_id, team_name, elo, source FROM team_priors WHERE team_id = ?",
+        (team_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_all_team_priors(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Return all team priors."""
+    rows = conn.execute("SELECT team_id, team_name, elo, source FROM team_priors ORDER BY elo DESC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def count_team_matches(conn: sqlite3.Connection, team_name: str) -> int:
+    """Count how many matches a team has played in the current tournament."""
+    result = conn.execute(
+        """SELECT COUNT(DISTINCT s.match_id) FROM form_index_scores s
+        JOIN player_match_stats p ON s.match_id = p.match_id AND s.player_id = p.player_id
+        WHERE p.team_name = ? AND s.model_version = ?""",
+        (team_name, CURRENT_MODEL_VERSION),
+    ).fetchone()
+    return result[0] if result else 0
+
+
 def insert_run(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
     """Insert a run record for deduping publishing/content runs only."""
     cols = ["run_type", "pillar", "provider", "mode", "dry_run", "status"]
@@ -458,12 +516,12 @@ def insert_run(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
 
 _PREDICTIONS_COLUMNS = [
     "match_id", "model_version", "predicted_home", "predicted_away",
-    "predicted_outcome",
+    "predicted_outcome", "basis",
     "home_win_prob", "draw_prob", "away_win_prob", "top_scorelines", "key_factor",
 ]
 _PREDICTIONS_UPDATE_COLUMNS = [
     "predicted_home", "predicted_away",
-    "predicted_outcome",
+    "predicted_outcome", "basis",
     "home_win_prob", "draw_prob", "away_win_prob", "top_scorelines", "key_factor",
 ]
 
