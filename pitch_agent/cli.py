@@ -544,6 +544,12 @@ def cmd_predict(args: argparse.Namespace) -> int:
     predicted_home = top[0]["home_goals"]
     predicted_away = top[0]["away_goals"]
 
+    # Most likely outcome (argmax of outcome probabilities)
+    outcome_probs = {"home": outcomes["home_win"], "draw": outcomes["draw"], "away": outcomes["away_win"]}
+    predicted_outcome = max(outcome_probs, key=lambda k: outcome_probs[k])
+    outcome_label = {"home": "Home win", "draw": "Draw", "away": "Away win"}[predicted_outcome]
+    outcome_prob = outcome_probs[predicted_outcome]
+
     print(f"Match: {home_team} vs {away_team}")
     print(f"Home avg Form Index: {home_avg:.1f}  |  Away avg Form Index: {away_avg:.1f}")
     print(f"Home xG: {home_xg:.2f}  |  Away xG: {away_xg:.2f}")
@@ -553,6 +559,9 @@ def cmd_predict(args: argparse.Namespace) -> int:
     print(f"  Home win: {outcomes['home_win']*100:.1f}%")
     print(f"  Draw:     {outcomes['draw']*100:.1f}%")
     print(f"  Away win: {outcomes['away_win']*100:.1f}%")
+    print()
+    print(f"Most likely outcome: {outcome_label} ({outcome_prob*100:.0f}%)")
+    print(f"Most likely score:   {top[0]['label']}")
     print()
     print(f"Top {args.top} scorelines:")
     for s in top:
@@ -564,6 +573,7 @@ def cmd_predict(args: argparse.Namespace) -> int:
         "model_version": CURRENT_MODEL_VERSION,
         "predicted_home": predicted_home,
         "predicted_away": predicted_away,
+        "predicted_outcome": predicted_outcome,
         "home_win_prob": outcomes["home_win"],
         "draw_prob": outcomes["draw"],
         "away_win_prob": outcomes["away_win"],

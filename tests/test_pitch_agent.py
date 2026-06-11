@@ -2349,6 +2349,7 @@ def test_upsert_prediction_and_grade(tmp_path):
     upsert_prediction(conn, {
         "match_id": "M001", "model_version": "1.1.0",
         "predicted_home": 2, "predicted_away": 0,
+        "predicted_outcome": "home",
         "home_win_prob": 0.63, "draw_prob": 0.20, "away_win_prob": 0.17,
         "top_scorelines": [{"home_goals": 2, "away_goals": 0, "probability": 0.15, "label": "2-0"}],
         "key_factor": "Home +20 Form Index differential",
@@ -2385,6 +2386,7 @@ def test_incorrect_prediction_graded_as_wrong(tmp_path):
     upsert_prediction(conn, {
         "match_id": "M002", "model_version": "1.1.0",
         "predicted_home": 2, "predicted_away": 1,
+        "predicted_outcome": "home",
         "home_win_prob": 0.48, "draw_prob": 0.25, "away_win_prob": 0.27,
         "top_scorelines": [],
         "key_factor": "Home +10 Form Index",
@@ -2416,6 +2418,7 @@ def test_draw_prediction_graded_correctly(tmp_path):
     upsert_prediction(conn, {
         "match_id": "M003", "model_version": "1.1.0",
         "predicted_home": 1, "predicted_away": 1,
+        "predicted_outcome": "draw",
         "home_win_prob": 0.30, "draw_prob": 0.35, "away_win_prob": 0.35,
         "top_scorelines": [],
         "key_factor": "Evenly matched",
@@ -2446,6 +2449,7 @@ def test_exact_score_correct_on_exact_match(tmp_path):
     upsert_prediction(conn, {
         "match_id": "M100", "model_version": MODEL_VERSION,
         "predicted_home": 2, "predicted_away": 0,
+        "predicted_outcome": "home",
         "home_win_prob": 0.63, "draw_prob": 0.20, "away_win_prob": 0.17,
         "top_scorelines": [], "key_factor": "Home +20 FI",
     })
@@ -2472,6 +2476,7 @@ def test_exact_score_correct_on_wrong_score_but_right_outcome(tmp_path):
     upsert_prediction(conn, {
         "match_id": "M101", "model_version": MODEL_VERSION,
         "predicted_home": 2, "predicted_away": 0,
+        "predicted_outcome": "home",
         "home_win_prob": 0.55, "draw_prob": 0.25, "away_win_prob": 0.20,
         "top_scorelines": [], "key_factor": "",
     })
@@ -2501,6 +2506,7 @@ def test_exact_score_correct_null_for_legacy_rows(tmp_path):
     upsert_prediction(conn, {
         "match_id": "M102", "model_version": MODEL_VERSION,
         "predicted_home": 1, "predicted_away": 0,
+        "predicted_outcome": "home",
         "home_win_prob": 0.50, "draw_prob": 0.30, "away_win_prob": 0.20,
         "top_scorelines": [], "key_factor": "",
     })
@@ -2542,6 +2548,7 @@ def test_exact_score_mixed_null_and_graded_rows(tmp_path):
     upsert_prediction(conn, {
         "match_id": "M110", "model_version": MODEL_VERSION,
         "predicted_home": 2, "predicted_away": 1,
+        "predicted_outcome": "home",
         "home_win_prob": 0.55, "draw_prob": 0.25, "away_win_prob": 0.20,
         "top_scorelines": [], "key_factor": "",
     })
@@ -2562,6 +2569,7 @@ def test_exact_score_mixed_null_and_graded_rows(tmp_path):
     upsert_prediction(conn, {
         "match_id": "M111", "model_version": MODEL_VERSION,
         "predicted_home": 3, "predicted_away": 0,
+        "predicted_outcome": "home",
         "home_win_prob": 0.60, "draw_prob": 0.20, "away_win_prob": 0.20,
         "top_scorelines": [], "key_factor": "",
     })
@@ -2578,6 +2586,7 @@ def test_exact_score_mixed_null_and_graded_rows(tmp_path):
     upsert_prediction(conn, {
         "match_id": "M112", "model_version": MODEL_VERSION,
         "predicted_home": 2, "predicted_away": 0,
+        "predicted_outcome": "home",
         "home_win_prob": 0.50, "draw_prob": 0.25, "away_win_prob": 0.25,
         "top_scorelines": [], "key_factor": "",
     })
@@ -2671,6 +2680,7 @@ def test_grade_0_0_draw_prediction(tmp_path):
     upsert_prediction(conn, {
         "match_id": "M200", "model_version": MODEL_VERSION,
         "predicted_home": 0, "predicted_away": 0,
+        "predicted_outcome": "draw",
         "home_win_prob": 0.25, "draw_prob": 0.50, "away_win_prob": 0.25,
         "top_scorelines": [], "key_factor": "",
     })
@@ -2698,6 +2708,7 @@ def test_regrading_does_not_create_duplicate_rows(tmp_path):
     upsert_prediction(conn, {
         "match_id": "M300", "model_version": MODEL_VERSION,
         "predicted_home": 2, "predicted_away": 1,
+        "predicted_outcome": "home",
         "home_win_prob": 0.55, "draw_prob": 0.25, "away_win_prob": 0.20,
         "top_scorelines": [], "key_factor": "",
     })
@@ -2726,4 +2737,47 @@ def test_regrading_does_not_create_duplicate_rows(tmp_path):
     assert stats["exact_gradable"] == 1
     assert stats["exact_correct"] == 1
     assert stats["legacy_count"] == 0
+    conn.close()
+
+
+def test_predicted_outcome_differs_from_top_scoreline(tmp_path):
+    """When top scoreline is a draw but away win probability is highest,
+    predicted_outcome should be 'away' and grading uses predicted_outcome,
+    not the scoreline winner."""
+    db_path = str(tmp_path / "outcome_vs_scoreline.db")
+    conn = init_db(db_path)
+
+    # Actual result: away team wins 0-1
+    upsert_match(conn, {
+        "match_id": "M400", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "TeamA", "away_team_name": "TeamB",
+        "home_score": 0, "away_score": 1, "date": "2026-06-20",
+    })
+    conn.commit()
+
+    # Prediction: top scoreline is 1-1 (draw), but outcome prob favors away
+    # home_win=0.25, draw=0.35, away_win=0.40 → predicted_outcome = "away"
+    upsert_prediction(conn, {
+        "match_id": "M400", "model_version": MODEL_VERSION,
+        "predicted_home": 1, "predicted_away": 1,
+        "predicted_outcome": "away",
+        "home_win_prob": 0.25, "draw_prob": 0.35, "away_win_prob": 0.40,
+        "top_scorelines": [], "key_factor": "",
+    })
+    conn.commit()
+
+    graded = grade_predictions(conn)
+    assert graded == 1
+
+    result = conn.execute(
+        "SELECT correct, exact_score_correct FROM prediction_results"
+    ).fetchone()
+    # predicted_outcome="away" matches actual result (away win) → correct=1
+    assert result["correct"] == 1, (
+        "Predicted outcome 'away' matches actual away win — should be correct"
+    )
+    # predicted score 1-1 vs actual 0-1 → exact_score_correct=0
+    assert result["exact_score_correct"] == 0, (
+        "Predicted 1-1 vs actual 0-1 — exact score should be wrong"
+    )
     conn.close()

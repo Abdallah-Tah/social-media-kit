@@ -128,6 +128,7 @@ CREATE TABLE IF NOT EXISTS predictions (
     model_version     TEXT    NOT NULL DEFAULT '1.1.0',
     predicted_home    INTEGER NOT NULL,
     predicted_away    INTEGER NOT NULL,
+    predicted_outcome TEXT    NOT NULL DEFAULT 'home',
     home_win_prob     REAL,
     draw_prob         REAL,
     away_win_prob     REAL,
@@ -185,6 +186,7 @@ def run_migrations(conn: sqlite3.Connection) -> list[str]:
     conn.executescript(SCHEMA_SQL)
     added = _migrate_matches_columns(conn)
     added += _migrate_prediction_results_columns(conn)
+    added += _migrate_predictions_columns(conn)
     conn.commit()
     return added
 
@@ -196,6 +198,24 @@ def _migrate_prediction_results_columns(conn: sqlite3.Connection) -> list[str]:
     if "exact_score_correct" not in existing:
         conn.execute("ALTER TABLE prediction_results ADD COLUMN exact_score_correct INTEGER")
         added.append("exact_score_correct")
+    return added
+
+
+def _migrate_predictions_columns(conn: sqlite3.Connection) -> list[str]:
+    """Add newer ``predictions`` columns to databases created before they existed."""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(predictions)")}
+    added: list[str] = []
+    if "predicted_outcome" not in existing:
+        conn.execute("ALTER TABLE predictions ADD COLUMN predicted_outcome TEXT NOT NULL DEFAULT 'home'")
+        # Backfill from existing probabilities
+        conn.execute(
+            """UPDATE predictions SET predicted_outcome = CASE
+                WHEN home_win_prob >= draw_prob AND home_win_prob >= away_win_prob THEN 'home'
+                WHEN away_win_prob >= home_win_prob AND away_win_prob >= draw_prob THEN 'away'
+                ELSE 'draw'
+            END WHERE predicted_outcome = 'home' AND home_win_prob IS NOT NULL"""
+        )
+        added.append("predicted_outcome")
     return added
 
 
@@ -438,10 +458,12 @@ def insert_run(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
 
 _PREDICTIONS_COLUMNS = [
     "match_id", "model_version", "predicted_home", "predicted_away",
+    "predicted_outcome",
     "home_win_prob", "draw_prob", "away_win_prob", "top_scorelines", "key_factor",
 ]
 _PREDICTIONS_UPDATE_COLUMNS = [
     "predicted_home", "predicted_away",
+    "predicted_outcome",
     "home_win_prob", "draw_prob", "away_win_prob", "top_scorelines", "key_factor",
 ]
 
@@ -454,7 +476,12 @@ def upsert_prediction(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
     cols, vals = [], []
     for col in _PREDICTIONS_COLUMNS:
         cols.append(col)
-        val = record.get(col, "" if col == "key_factor" or col == "top_scorelines" else 0)
+        if col == "predicted_outcome":
+            val = record.get(col, "home")
+        elif col in ("key_factor", "top_scorelines"):
+            val = record.get(col, "")
+        else:
+            val = record.get(col, 0)
         if col == "top_scorelines" and isinstance(val, list):
             val = json.dumps(val)
         vals.append(val)
@@ -491,12 +518,15 @@ def upsert_prediction_result(conn: sqlite3.Connection, record: dict[str, Any]) -
 def grade_predictions(conn: sqlite3.Connection) -> int:
     """Grade all ungraded predictions where the match result is known.
 
-    Returns the number of predictions graded.
+    Uses ``predicted_outcome`` from the predictions table (the argmax of
+    home_win_prob / draw_prob / away_win_prob) rather than deriving the
+    predicted winner from the top scoreline.
     """
     # Find predictions with finished matches that haven't been graded yet
     rows = conn.execute(
         """
         SELECT p.id, p.match_id, p.predicted_home, p.predicted_away,
+               p.predicted_outcome,
                m.home_score, m.away_score
         FROM predictions p
         JOIN matches m ON p.match_id = m.match_id
@@ -509,12 +539,12 @@ def grade_predictions(conn: sqlite3.Connection) -> int:
 
     graded = 0
     for row in rows:
-        pred_id, match_id, pred_home, pred_away, actual_home, actual_away = row
-        pred_winner = "home" if pred_home > pred_away else ("away" if pred_away > pred_home else "draw")
+        pred_id, match_id, pred_home, pred_away, predicted_outcome, actual_home, actual_away = row
+        # Use predicted_outcome from DB (argmax of outcome probs)
         actual_winner = "home" if (actual_home or 0) > (actual_away or 0) else (
             "away" if (actual_away or 0) > (actual_home or 0) else "draw"
         )
-        correct = 1 if pred_winner == actual_winner else 0
+        correct = 1 if predicted_outcome == actual_winner else 0
         exact_correct = 1 if (pred_home == (actual_home or 0) and pred_away == (actual_away or 0)) else 0
 
         upsert_prediction_result(conn, {

@@ -566,9 +566,16 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
             [{"score": away_avg, "goals": 0}],
         )
 
+        # Most likely outcome (argmax of outcome probs)
+        outcome_probs = {"home": outcomes["home_win"], "draw": outcomes["draw"], "away": outcomes["away_win"]}
+        predicted_outcome = max(outcome_probs, key=lambda k: outcome_probs[k])
+        outcome_label = {"home": "Home win", "draw": "Draw", "away": "Away win"}[predicted_outcome]
+        outcome_prob = outcome_probs[predicted_outcome]
+
         most_likely = top[0]
         pred_str = (
-            f"Predicted {most_likely['label']} ({outcomes['home_win']*100:.0f}% home) — "
+            f"Most likely outcome: {outcome_label} ({outcome_prob*100:.0f}%) "
+            f"\u00b7 Most likely score: {most_likely['label']} — "
             f"{key_factor}"
         )
         return pred_str
