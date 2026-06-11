@@ -76,8 +76,8 @@ CREATE TABLE IF NOT EXISTS matches (
     home_team_name        TEXT    NOT NULL DEFAULT '',
     away_team_id          TEXT    NOT NULL DEFAULT '',
     away_team_name        TEXT    NOT NULL DEFAULT '',
-    home_score            INTEGER NOT NULL DEFAULT 0,
-    away_score            INTEGER NOT NULL DEFAULT 0,
+    home_score            INTEGER DEFAULT NULL,
+    away_score            INTEGER DEFAULT NULL,
     date                  TEXT    NOT NULL DEFAULT '',
     group_name            TEXT    NOT NULL DEFAULT '',
     status                TEXT    NOT NULL DEFAULT '',
@@ -267,6 +267,110 @@ def _migrate_matches_columns(conn: sqlite3.Connection) -> list[str]:
         if column not in existing:
             conn.execute(f"ALTER TABLE matches ADD COLUMN {column} {definition}")
             added.append(column)
+
+    # ── Migration: make home_score/away_score nullable ───────────────
+    # SQLite cannot ALTER COLUMN constraints, so we check if NOT NULL
+    # is still on these columns and recreate the table if so.
+    col_info = conn.execute("PRAGMA table_info(matches)").fetchall()
+    score_nullable = True
+    for row in col_info:
+        name = row[1]
+        notnull = row[3]
+        if name in ("home_score", "away_score") and notnull:
+            score_nullable = False
+            break
+
+    if not score_nullable:
+        # Get column list from old table for safe reconstruction
+        old_cols = [row[1] for row in conn.execute("PRAGMA table_info(matches)").fetchall()]
+
+        # Step 1: Rename old table
+        conn.execute("ALTER TABLE matches RENAME TO matches_old")
+
+        # Step 2: Create new table with nullable scores
+        conn.execute("""
+            CREATE TABLE matches (
+                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                match_id              TEXT    NOT NULL UNIQUE,
+                competition_id        TEXT    NOT NULL DEFAULT '',
+                matchday              INTEGER NOT NULL DEFAULT 0,
+                stage                 TEXT    NOT NULL DEFAULT '',
+                home_team_id          TEXT    NOT NULL DEFAULT '',
+                home_team_name        TEXT    NOT NULL DEFAULT '',
+                away_team_id          TEXT    NOT NULL DEFAULT '',
+                away_team_name        TEXT    NOT NULL DEFAULT '',
+                home_score            INTEGER DEFAULT NULL,
+                away_score            INTEGER DEFAULT NULL,
+                date                  TEXT    NOT NULL DEFAULT '',
+                group_name            TEXT    NOT NULL DEFAULT '',
+                status                TEXT    NOT NULL DEFAULT '',
+                provider_name         TEXT    NOT NULL DEFAULT '',
+                created_at            TEXT    NOT NULL DEFAULT (datetime('now')),
+                updated_at            TEXT    NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+
+        # Step 3: Copy data, converting 0-0 on non-FINISHED → NULL
+        # Build SELECT that maps old columns to new, only transforming scores
+        old_cols_set = set(old_cols)
+        select_exprs = []
+        insert_cols = []
+        new_cols = ["id", "match_id", "competition_id", "matchday", "stage",
+                     "home_team_id", "home_team_name", "away_team_id", "away_team_name",
+                     "home_score", "away_score", "date", "group_name",
+                     "status", "provider_name", "created_at", "updated_at"]
+
+        has_status = "status" in old_cols_set
+        # If old table lacks status/provider_name, they'll get defaults
+        for col in new_cols:
+            insert_cols.append(col)
+            if col not in old_cols_set:
+                # New column not in old table — use default
+                if col == "status":
+                    select_exprs.append("'TIMED'")
+                elif col == "provider_name":
+                    select_exprs.append("''")
+                else:
+                    select_exprs.append(f"NULL")
+            elif col == "home_score":
+                # Convert 0-0 on non-FINISHED to NULL
+                if has_status:
+                    select_exprs.append(
+                        "CASE WHEN status != 'FINISHED' AND home_score = 0 AND away_score = 0 "
+                        "THEN NULL ELSE home_score END"
+                    )
+                else:
+                    # No status column — all 0-0 are unplayed → NULL
+                    select_exprs.append(
+                        "CASE WHEN home_score = 0 AND away_score = 0 "
+                        "THEN NULL ELSE home_score END"
+                    )
+            elif col == "away_score":
+                if has_status:
+                    select_exprs.append(
+                        "CASE WHEN status != 'FINISHED' AND home_score = 0 AND away_score = 0 "
+                        "THEN NULL ELSE away_score END"
+                    )
+                else:
+                    select_exprs.append(
+                        "CASE WHEN home_score = 0 AND away_score = 0 "
+                        "THEN NULL ELSE away_score END"
+                    )
+            else:
+                select_exprs.append(col)
+
+        insert_sql = ", ".join(insert_cols)
+        select_sql = ", ".join(select_exprs)
+        conn.execute(f"INSERT INTO matches ({insert_sql}) SELECT {select_sql} FROM matches_old")
+        conn.execute("DROP TABLE matches_old")
+
+        # Recreate indexes
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(date)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_status ON matches(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_home ON matches(home_team_name)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_matches_away ON matches(away_team_name)")
+        added.append("nullable_scores")
+
     return added
 
 
@@ -387,20 +491,31 @@ def upsert_match(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
     if "group_name" not in source and "group" in source:
         source["group_name"] = source["group"]
 
-    int_cols = {"matchday", "home_score", "away_score"}
+    int_cols = {"matchday"}
+    nullable_int_cols = {"home_score", "away_score"}
     cols, vals = [], []
     for col in _MATCHES_COLUMNS:
         cols.append(col)
         default: Any = 0 if col in int_cols else ""
         val = source.get(col, default)
-        if val is None:
-            # JSON nulls (e.g. TBD knockout teams, unplayed scores) → safe default.
-            val = default
-        if col in int_cols:
-            try:
-                val = int(val) if str(val).strip() != "" else 0
-            except (TypeError, ValueError):
-                val = 0
+        if col in nullable_int_cols:
+            # Scores must be NULL until real results arrive.
+            # Never store 0 as a placeholder — 0-0 is a valid draw.
+            if val is None or val == "":
+                val = None
+            elif val is not None:
+                try:
+                    val = int(val)
+                except (TypeError, ValueError):
+                    val = None
+        else:
+            if val is None:
+                val = default
+            if col in int_cols:
+                try:
+                    val = int(val) if str(val).strip() != "" else 0
+                except (TypeError, ValueError):
+                    val = 0
         vals.append(val)
 
     placeholders = ", ".join("?" for _ in cols)
@@ -594,7 +709,8 @@ def grade_predictions(conn: sqlite3.Connection) -> int:
     home_win_prob / draw_prob / away_win_prob) rather than deriving the
     predicted winner from the top scoreline.
     """
-    # Find predictions with finished matches that haven't been graded yet
+    # Find predictions with finished matches that haven't been graded yet.
+    # Only grade FINISHED matches with non-NULL scores.
     rows = conn.execute(
         """
         SELECT p.id, p.match_id, p.predicted_home, p.predicted_away,
@@ -603,7 +719,8 @@ def grade_predictions(conn: sqlite3.Connection) -> int:
         FROM predictions p
         JOIN matches m ON p.match_id = m.match_id
         LEFT JOIN prediction_results r ON p.id = r.prediction_id
-        WHERE m.home_score IS NOT NULL
+        WHERE m.status = 'FINISHED'
+          AND m.home_score IS NOT NULL
           AND m.away_score IS NOT NULL
           AND r.id IS NULL
         """

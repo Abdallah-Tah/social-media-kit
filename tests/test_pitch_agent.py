@@ -1276,7 +1276,7 @@ def test_upsert_match_coerces_null_team_and_scores(tmp_path):
     ).fetchone()
     assert row["home_team_name"] == ""
     assert row["away_team_name"] == ""
-    assert row["home_score"] == 0
+    assert row["home_score"] is None, "NULL scores must stay NULL, not coerced to 0"
     assert row["matchday"] == 0
     conn.commit()
     conn.close()
@@ -2344,7 +2344,7 @@ def test_upsert_prediction_and_grade(tmp_path):
         "match_id": "M001", "competition_id": "WC", "matchday": 1,
         "home_team_name": "Mexico", "away_team_name": "South Africa",
         "home_score": 2, "away_score": 0, "date": "2026-06-11",
-    })
+        "status": "FINISHED"})
     conn.commit()
 
     # Insert a prediction: Mexico 2-0
@@ -2381,7 +2381,7 @@ def test_incorrect_prediction_graded_as_wrong(tmp_path):
         "match_id": "M002", "competition_id": "WC", "matchday": 1,
         "home_team_name": "TeamA", "away_team_name": "TeamB",
         "home_score": 0, "away_score": 3, "date": "2026-06-12",
-    })
+        "status": "FINISHED"})
     conn.commit()
 
     # Predict home win, but away won
@@ -2414,7 +2414,7 @@ def test_draw_prediction_graded_correctly(tmp_path):
         "match_id": "M003", "competition_id": "WC", "matchday": 1,
         "home_team_name": "TeamA", "away_team_name": "TeamB",
         "home_score": 1, "away_score": 1, "date": "2026-06-13",
-    })
+        "status": "FINISHED"})
     conn.commit()
 
     upsert_prediction(conn, {
@@ -2446,7 +2446,7 @@ def test_exact_score_correct_on_exact_match(tmp_path):
         "match_id": "M100", "competition_id": "WC", "matchday": 1,
         "home_team_name": "Mexico", "away_team_name": "South Africa",
         "home_score": 2, "away_score": 0, "date": "2026-06-11",
-    })
+        "status": "FINISHED"})
     conn.commit()
     upsert_prediction(conn, {
         "match_id": "M100", "model_version": MODEL_VERSION,
@@ -2472,7 +2472,7 @@ def test_exact_score_correct_on_wrong_score_but_right_outcome(tmp_path):
         "match_id": "M101", "competition_id": "WC", "matchday": 1,
         "home_team_name": "TeamA", "away_team_name": "TeamB",
         "home_score": 3, "away_score": 1, "date": "2026-06-12",
-    })
+        "status": "FINISHED"})
     conn.commit()
     # Predicted 2-0 home win; actual 3-1 home win — right outcome, wrong score
     upsert_prediction(conn, {
@@ -2567,7 +2567,7 @@ def test_exact_score_mixed_null_and_graded_rows(tmp_path):
         "match_id": "M111", "competition_id": "WC", "matchday": 1,
         "home_team_name": "TeamC", "away_team_name": "TeamD",
         "home_score": 3, "away_score": 0, "date": "2026-06-15",
-    })
+        "status": "FINISHED"})
     upsert_prediction(conn, {
         "match_id": "M111", "model_version": MODEL_VERSION,
         "predicted_home": 3, "predicted_away": 0,
@@ -2584,7 +2584,7 @@ def test_exact_score_mixed_null_and_graded_rows(tmp_path):
         "match_id": "M112", "competition_id": "WC", "matchday": 1,
         "home_team_name": "TeamE", "away_team_name": "TeamF",
         "home_score": 1, "away_score": 1, "date": "2026-06-16",
-    })
+        "status": "FINISHED"})
     upsert_prediction(conn, {
         "match_id": "M112", "model_version": MODEL_VERSION,
         "predicted_home": 2, "predicted_away": 0,
@@ -2677,7 +2677,7 @@ def test_grade_0_0_draw_prediction(tmp_path):
         "match_id": "M200", "competition_id": "WC", "matchday": 1,
         "home_team_name": "TeamX", "away_team_name": "TeamY",
         "home_score": 0, "away_score": 0, "date": "2026-06-20",
-    })
+        "status": "FINISHED"})
     conn.commit()
     upsert_prediction(conn, {
         "match_id": "M200", "model_version": MODEL_VERSION,
@@ -2705,7 +2705,7 @@ def test_regrading_does_not_create_duplicate_rows(tmp_path):
         "match_id": "M300", "competition_id": "WC", "matchday": 1,
         "home_team_name": "TeamA", "away_team_name": "TeamB",
         "home_score": 2, "away_score": 1, "date": "2026-06-20",
-    })
+        "status": "FINISHED"})
     conn.commit()
     upsert_prediction(conn, {
         "match_id": "M300", "model_version": MODEL_VERSION,
@@ -2754,7 +2754,7 @@ def test_predicted_outcome_differs_from_top_scoreline(tmp_path):
         "match_id": "M400", "competition_id": "WC", "matchday": 1,
         "home_team_name": "TeamA", "away_team_name": "TeamB",
         "home_score": 0, "away_score": 1, "date": "2026-06-20",
-    })
+        "status": "FINISHED"})
     conn.commit()
 
     # Prediction: top scoreline is 1-1 (draw), but outcome prob favors away
@@ -2967,7 +2967,7 @@ def test_basis_label_in_prediction(tmp_path):
         "match_id": "M500", "competition_id": "WC", "matchday": 1,
         "home_team_name": "TeamA", "away_team_name": "TeamB",
         "home_score": 2, "away_score": 0, "date": "2026-06-20",
-    })
+        "status": "FINISHED"})
     conn.commit()
     upsert_prediction(conn, {
         "match_id": "M500", "model_version": MODEL_VERSION,
@@ -3098,3 +3098,74 @@ def test_predict_xg_returns_none_no_data():
         home_matches=0, away_matches=0,
     )
     assert result is None
+
+
+def test_grade_finished_null_scores_no_grade(tmp_path):
+    """A FINISHED match with NULL scores must NOT be graded."""
+    from pitch_agent.db import init_db, upsert_match, upsert_prediction, grade_predictions
+    db_path = str(tmp_path / "finished_null.db")
+    conn = init_db(db_path)
+    # FINISHED match with NULL scores (API hasn't returned scores yet)
+    upsert_match(conn, {
+        "match_id": "M500", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "Mexico", "away_team_name": "South Africa",
+        "home_score": None, "away_score": None,
+        "status": "FINISHED", "date": "2026-06-11",
+    })
+    conn.commit()
+    upsert_prediction(conn, {
+        "match_id": "M500", "model_version": MODEL_VERSION,
+        "predicted_home": 1, "predicted_away": 0,
+        "predicted_outcome": "home",
+        "home_win_prob": 0.50, "draw_prob": 0.25, "away_win_prob": 0.25,
+        "top_scorelines": [], "key_factor": "",
+    })
+    conn.commit()
+    graded = grade_predictions(conn)
+    assert graded == 0, "FINISHED match with NULL scores must not be graded"
+    conn.close()
+
+
+def test_grade_timed_match_no_grade(tmp_path):
+    """A TIMED match (upcoming) must NOT be graded even if scores are somehow set."""
+    from pitch_agent.db import init_db, upsert_match, upsert_prediction, grade_predictions
+    db_path = str(tmp_path / "timed_no_grade.db")
+    conn = init_db(db_path)
+    # TIMED match with 0-0 (should never happen after fix, but guard anyway)
+    upsert_match(conn, {
+        "match_id": "M600", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "TeamA", "away_team_name": "TeamB",
+        "home_score": 0, "away_score": 0,
+        "status": "TIMED", "date": "2026-06-20",
+    })
+    conn.commit()
+    upsert_prediction(conn, {
+        "match_id": "M600", "model_version": MODEL_VERSION,
+        "predicted_home": 1, "predicted_away": 0,
+        "predicted_outcome": "home",
+        "home_win_prob": 0.50, "draw_prob": 0.25, "away_win_prob": 0.25,
+        "top_scorelines": [], "key_factor": "",
+    })
+    conn.commit()
+    graded = grade_predictions(conn)
+    assert graded == 0, "TIMED match must not be graded"
+    conn.close()
+
+
+def test_upsert_match_null_scores(tmp_path):
+    """upsert_match must store NULL for scores, not 0, when source data is None."""
+    from pitch_agent.db import init_db, upsert_match
+    db_path = str(tmp_path / "null_scores.db")
+    conn = init_db(db_path)
+    # Match with no scores (upcoming)
+    upsert_match(conn, {
+        "match_id": "M700", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "TeamA", "away_team_name": "TeamB",
+        "home_score": None, "away_score": None,
+        "status": "TIMED", "date": "2026-06-20",
+    })
+    conn.commit()
+    row = conn.execute("SELECT home_score, away_score FROM matches WHERE match_id = 'M700'").fetchone()
+    assert row["home_score"] is None, f"home_score should be NULL, got {row['home_score']}"
+    assert row["away_score"] is None, f"away_score should be NULL, got {row['away_score']}"
+    conn.close()
