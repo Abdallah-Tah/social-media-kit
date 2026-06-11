@@ -520,9 +520,17 @@ def upsert_match(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
 
     placeholders = ", ".join("?" for _ in cols)
     col_names = ", ".join(cols)
+    # Guard: never overwrite non-NULL scores with NULL on re-sync.
+    # Also never downgrade FINISHED status to TIMED/IN_PLAY on re-sync.
+    non_status_cols = [c for c in _MATCHES_UPDATE_COLUMNS if c != "status"]
     update_sets = ", ".join(
-        f"{c} = excluded.{c}" for c in _MATCHES_UPDATE_COLUMNS
-    ) + ", updated_at = datetime('now')"
+        f"{c} = CASE WHEN excluded.{c} IS NULL AND matches.{c} IS NOT NULL "
+        f"THEN matches.{c} ELSE excluded.{c} END"
+        for c in non_status_cols
+    )
+    update_sets += ", status = CASE WHEN matches.status = 'FINISHED' AND excluded.status != 'FINISHED' "
+    update_sets += "THEN matches.status ELSE excluded.status END"
+    update_sets += ", updated_at = datetime('now')"
 
     sql = (
         f"INSERT INTO matches ({col_names}) VALUES ({placeholders}) "
@@ -794,4 +802,49 @@ def get_prediction_accuracy(
         "exact_pct": row["exact_pct"],
         "exact_gradable": row["exact_gradable"],
         "legacy_count": legacy_count,
+    }
+
+
+def record_match_result(
+    conn: sqlite3.Connection,
+    match_id: str,
+    home_score: int,
+    away_score: int,
+) -> dict[str, Any]:
+    """Set the result for a match and grade any pending predictions.
+
+    Sets ``home_score``, ``away_score``, and ``status = 'FINISHED'``
+    on the match row, then calls :func:`grade_predictions` to grade
+    any ungraded predictions for this match.
+
+    Returns a dict with the match info and the number of predictions graded.
+    Raises ``ValueError`` if the match does not exist.
+    """
+    row = conn.execute(
+        "SELECT match_id, home_team_name, away_team_name, home_score, away_score, status "
+        "FROM matches WHERE match_id = ?",
+        (match_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"Match {match_id} not found")
+
+    conn.execute(
+        "UPDATE matches SET home_score = ?, away_score = ?, status = 'FINISHED', "
+        "updated_at = datetime('now') WHERE match_id = ?",
+        (home_score, away_score, match_id),
+    )
+    conn.commit()
+
+    graded = grade_predictions(conn)
+
+    return {
+        "match_id": match_id,
+        "home_team": row["home_team_name"],
+        "away_team": row["away_team_name"],
+        "home_score": home_score,
+        "away_score": away_score,
+        "previous_status": row["status"],
+        "previous_home_score": row["home_score"],
+        "previous_away_score": row["away_score"],
+        "predictions_graded": graded,
     }

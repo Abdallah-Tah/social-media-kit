@@ -175,6 +175,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_validate.add_argument("--db", default="pitch_agent.db", help="Database path")
     p_validate.set_defaults(func=cmd_validate_priors)
 
+    # ── record-result ────────────────────────────────────────────────
+    p_result = sub.add_parser("record-result", help="Set match result and grade predictions")
+    p_result.add_argument("match_id", help="Match ID (e.g. 537327)")
+    p_result.add_argument("home_score", type=int, help="Home team score")
+    p_result.add_argument("away_score", type=int, help="Away team score")
+    p_result.add_argument("--db", default="pitch_agent.db", help="Database path")
+    p_result.set_defaults(func=cmd_record_result)
+
     # ── transparency ────────────────────────────────────────────────────
     p_trans = sub.add_parser("transparency",
                               help="Show trademark and affiliation disclaimer")
@@ -907,6 +915,26 @@ def _safe_error_message(text: str) -> str:
     redacted = os.environ.get("BWA_ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
     safe = str(text).replace(redacted, "[redacted]") if redacted else str(text)
     return " ".join(safe.split())[:500]
+
+
+def cmd_record_result(args: argparse.Namespace) -> int:
+    """CLI handler for record-result: set match scores and status=FINISHED."""
+    from pitch_agent.db import get_connection, record_match_result
+    db_path = args.db
+    conn = get_connection(db_path)
+    try:
+        result = record_match_result(conn, args.match_id, args.home_score, args.away_score)
+        print(f"✓ Recorded result: {result['home_team']} {result['home_score']}-"
+              f"{result['away_score']} {result['away_team']}")
+        print(f"  Previous: {result['previous_home_score']}-{result['previous_away_score']} "
+              f"({result['previous_status']})")
+        print(f"  Predictions graded: {result['predictions_graded']}")
+        return 0
+    except ValueError as exc:
+        print(f"✗ {exc}", file=sys.stderr)
+        return 1
+    finally:
+        conn.close()
 
 
 def main() -> int:

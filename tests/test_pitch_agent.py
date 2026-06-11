@@ -3169,3 +3169,139 @@ def test_upsert_match_null_scores(tmp_path):
     assert row["home_score"] is None, f"home_score should be NULL, got {row['home_score']}"
     assert row["away_score"] is None, f"away_score should be NULL, got {row['away_score']}"
     conn.close()
+
+
+def test_upsert_match_preserves_non_null_scores_on_resync(tmp_path):
+    """Re-syncing a match with NULL scores must not overwrite existing real scores."""
+    from pitch_agent.db import init_db, upsert_match
+    db_path = str(tmp_path / "preserve_scores.db")
+    conn = init_db(db_path)
+
+    # First sync: real result
+    upsert_match(conn, {
+        "match_id": "M800", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "Mexico", "away_team_name": "South Africa",
+        "home_score": 2, "away_score": 0,
+        "status": "FINISHED", "date": "2026-06-11",
+    })
+    conn.commit()
+
+    # Re-sync: API returns NULL scores (free tier limitation)
+    upsert_match(conn, {
+        "match_id": "M800", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "Mexico", "away_team_name": "South Africa",
+        "home_score": None, "away_score": None,
+        "status": "FINISHED", "date": "2026-06-11",
+    })
+    conn.commit()
+
+    row = conn.execute("SELECT home_score, away_score FROM matches WHERE match_id = 'M800'").fetchone()
+    assert row["home_score"] == 2, f"home_score should be preserved as 2, got {row['home_score']}"
+    assert row["away_score"] == 0, f"away_score should be preserved as 0, got {row['away_score']}"
+    conn.close()
+
+
+def test_record_match_result(tmp_path):
+    """record-result CLI sets scores, status=FINISHED, and grades predictions."""
+    from pitch_agent.db import init_db, upsert_match, upsert_prediction, record_match_result
+    db_path = str(tmp_path / "record_result.db")
+    conn = init_db(db_path)
+
+    # Match with no result yet
+    upsert_match(conn, {
+        "match_id": "M537327", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "Mexico", "away_team_name": "South Africa",
+        "home_score": None, "away_score": None,
+        "status": "FINISHED", "date": "2026-06-11",
+    })
+    conn.commit()
+
+    # Record result
+    result = record_match_result(conn, "M537327", 2, 0)
+    assert result["home_score"] == 2
+    assert result["away_score"] == 0
+    assert result["previous_home_score"] is None
+    assert result["predictions_graded"] == 0  # No predictions yet
+
+    # Verify DB
+    row = conn.execute("SELECT home_score, away_score, status FROM matches WHERE match_id = 'M537327'").fetchone()
+    assert row["home_score"] == 2
+    assert row["away_score"] == 0
+    assert row["status"] == "FINISHED"
+    conn.close()
+
+
+def test_record_result_triggers_grading(tmp_path):
+    """record-result should grade pending predictions for that match."""
+    from pitch_agent.db import init_db, upsert_match, upsert_prediction, record_match_result
+    db_path = str(tmp_path / "record_grade.db")
+    conn = init_db(db_path)
+
+    upsert_match(conn, {
+        "match_id": "M900", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "Brazil", "away_team_name": "Morocco",
+        "home_score": None, "away_score": None,
+        "status": "FINISHED", "date": "2026-06-13",
+    })
+    conn.commit()
+
+    upsert_prediction(conn, {
+        "match_id": "M900", "model_version": MODEL_VERSION,
+        "predicted_home": 3, "predicted_away": 1,
+        "predicted_outcome": "home",
+        "home_win_prob": 0.55, "draw_prob": 0.25, "away_win_prob": 0.20,
+        "top_scorelines": [], "key_factor": "",
+        "basis_home": "elo_prior", "basis_away": "form_index",
+    })
+    conn.commit()
+
+    result = record_match_result(conn, "M900", 3, 1)
+    assert result["predictions_graded"] == 1
+
+    from pitch_agent.db import get_prediction_accuracy
+    acc = get_prediction_accuracy(conn)
+    assert acc["total"] == 1
+    assert acc["correct"] == 1
+    conn.close()
+
+
+def test_record_result_nonexistent_match(tmp_path):
+    """record-result should raise ValueError for a match that doesn't exist."""
+    from pitch_agent.db import init_db, record_match_result
+    db_path = str(tmp_path / "no_match.db")
+    conn = init_db(db_path)
+
+    with pytest.raises(ValueError, match="not found"):
+        record_match_result(conn, "NONEXISTENT", 1, 0)
+    conn.close()
+
+
+def test_upsert_match_preserves_finished_status_on_resync(tmp_path):
+    """Re-syncing a FINISHED match must not downgrade it to TIMED."""
+    from pitch_agent.db import init_db, upsert_match
+    db_path = str(tmp_path / "preserve_status.db")
+    conn = init_db(db_path)
+
+    # First: match is FINISHED with a result
+    upsert_match(conn, {
+        "match_id": "M900", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "Mexico", "away_team_name": "South Africa",
+        "home_score": 2, "away_score": 0,
+        "status": "FINISHED", "date": "2026-06-11",
+    })
+    conn.commit()
+
+    # Re-sync: API sends TIMED status and NULL scores
+    upsert_match(conn, {
+        "match_id": "M900", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "Mexico", "away_team_name": "South Africa",
+        "home_score": None, "away_score": None,
+        "status": "TIMED", "date": "2026-06-11",
+    })
+    conn.commit()
+
+    row = conn.execute("SELECT home_score, away_score, status FROM matches WHERE match_id = 'M900'").fetchone()
+    assert row["home_score"] == 2, f"home_score preserved, got {row['home_score']}"
+    assert row["away_score"] == 0, f"away_score preserved, got {row['away_score']}"
+    assert row["status"] == "FINISHED", f"status should stay FINISHED, got {row['status']}"
+    conn.close()
