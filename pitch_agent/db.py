@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from pitch_agent.config import ALL_FIELDS
+from pitch_agent import MODEL_VERSION as CURRENT_MODEL_VERSION
 
 
 SCHEMA_SQL = """
@@ -501,7 +502,8 @@ def grade_predictions(conn: sqlite3.Connection) -> int:
         JOIN matches m ON p.match_id = m.match_id
         LEFT JOIN prediction_results r ON p.id = r.prediction_id
         WHERE m.home_score IS NOT NULL
-          AND m.home_score != 0 OR m.away_score != 0
+          AND m.away_score IS NOT NULL
+          AND (m.home_score != 0 OR m.away_score != 0)
           AND r.id IS NULL
         """
     ).fetchall()
@@ -532,15 +534,22 @@ def grade_predictions(conn: sqlite3.Connection) -> int:
 
 def get_prediction_accuracy(
     conn: sqlite3.Connection,
-    model_version: str = "1.1.0",
+    model_version: str = CURRENT_MODEL_VERSION,
 ) -> dict[str, Any]:
-    """Return prediction accuracy stats: outcome and exact-score."""
+    """Return prediction accuracy stats: outcome and exact-score.
+
+    Outcome accuracy uses all graded rows (COUNT(*)). Exact-score
+    accuracy uses only rows where ``exact_score_correct`` is not NULL
+    — legacy rows predating the column are excluded from the
+    exact-score denominator and reported separately.
+    """
     row = conn.execute(
         """
         SELECT
             COUNT(*) AS total,
             SUM(r.correct) AS correct,
             ROUND(AVG(r.correct) * 100, 1) AS pct,
+            COUNT(r.exact_score_correct) AS exact_gradable,
             SUM(r.exact_score_correct) AS exact_correct,
             ROUND(AVG(r.exact_score_correct) * 100, 1) AS exact_pct
         FROM prediction_results r
@@ -552,7 +561,12 @@ def get_prediction_accuracy(
     ).fetchone()
 
     if not row or row["total"] == 0:
-        return {"total": 0, "correct": 0, "pct": 0.0, "exact_correct": 0, "exact_pct": 0.0}
+        return {
+            "total": 0, "correct": 0, "pct": 0.0,
+            "exact_correct": 0, "exact_pct": 0.0, "legacy_count": 0,
+        }
+
+    legacy_count = row["total"] - row["exact_gradable"]
 
     return {
         "total": row["total"],
@@ -560,4 +574,6 @@ def get_prediction_accuracy(
         "pct": row["pct"],
         "exact_correct": row["exact_correct"],
         "exact_pct": row["exact_pct"],
+        "exact_gradable": row["exact_gradable"],
+        "legacy_count": legacy_count,
     }

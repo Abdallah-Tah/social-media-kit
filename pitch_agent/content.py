@@ -706,7 +706,7 @@ def _generate_builder_mode(
         "headline_index_mode": headline_index_mode,
         "data": data,
         "disclaimer": TRADEMARK_DISCLAIMER,
-        "model_version": "1.1.0",
+        "model_version": MODEL_VERSION,
     }
 
 

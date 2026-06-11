@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pitch_agent import MODEL_VERSION as CURRENT_MODEL_VERSION
 
 # Project root = parent of the `pitch_agent/` package directory.
 ROOT = Path(__file__).resolve().parent.parent
@@ -118,7 +119,7 @@ class PitchAgentConfig:
 
     db_path: str = "pitch_agent.db"
     data_dir: str = str(ROOT / "pitch_agent" / "data")
-    model_version: str = "1.1.0"
+    model_version: str = CURRENT_MODEL_VERSION
     unknown_minutes_multiplier: float = 0.90
 
     # Content settings
@@ -145,7 +146,7 @@ class PitchAgentConfig:
         return cls(
             db_path=os.environ.get("PITCH_AGENT_DB", settings.get("db_path", "pitch_agent.db")),
             data_dir=os.environ.get("PITCH_AGENT_DATA_DIR", settings.get("data_dir", str(ROOT / "pitch_agent" / "data"))),
-            model_version=settings.get("model_version", "1.1.0"),
+            model_version=settings.get("model_version", CURRENT_MODEL_VERSION),
             headline_index_mode=content.get("headline_index_mode", "daily"),
             cumulative_index_enabled_after_group_stage=content.get("cumulative_index_enabled_after_group_stage", True),
             football_data_api_key=os.environ.get("FOOTBALL_DATA_API_KEY", ""),

@@ -646,7 +646,14 @@ def cmd_accuracy(args: argparse.Namespace) -> int:
 
     print(f"Prediction accuracy ({args.model_version}):")
     print(f"  Outcome:  {stats['correct']}/{stats['total']} correct ({stats['pct']}%)")
-    print(f"  Exact score: {stats['exact_correct']}/{stats['total']} correct ({stats['exact_pct']}%)")
+    gradable = stats["exact_gradable"]
+    legacy = stats["legacy_count"]
+    if gradable > 0:
+        print(f"  Exact score: {stats['exact_correct']}/{gradable} correct ({stats['exact_pct']}%)")
+    else:
+        print("  Exact score: no graded data yet")
+    if legacy > 0:
+        print(f"  ({legacy} predictions predate exact-score tracking)")
     return 0
 
 

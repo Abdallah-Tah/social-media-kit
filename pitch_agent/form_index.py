@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pitch_agent import MODEL_VERSION_LABEL
+from pitch_agent import MODEL_VERSION_LABEL, MODEL_VERSION as CURRENT_MODEL_VERSION
 from pitch_agent.config import ALL_FIELDS, BASIC_FIELDS, RICH_FIELDS
 
 # Scoring weights
@@ -64,7 +64,7 @@ def _load_unknown_minutes_multiplier() -> float:
 MID_MINUTES_THRESHOLD = 45
 GK_SAVE_RATIO_THRESHOLD = 0.80
 
-MODEL_VERSION = "1.1.0"
+MODEL_VERSION = CURRENT_MODEL_VERSION
 
 
 def compute_form_index(stats: dict[str, Any]) -> dict[str, Any]:

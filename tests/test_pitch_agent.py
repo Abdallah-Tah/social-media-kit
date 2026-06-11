@@ -1158,6 +1158,54 @@ def test_leaderboard_match_context_degrades_without_matches_table(tmp_path):
         assert "score_movement" in row
 
 
+def test_leaderboard_filters_by_model_version(tmp_path):
+    """Leaderboard queries should exclude rows with a different model_version."""
+    db_path = str(tmp_path / "lb_version.db")
+    conn = init_db(db_path)
+
+    # Insert a row with the CURRENT model version
+    upsert_player_match_stats(conn, {
+        "match_id": "MV01", "player_id": "PV01",
+        "player_name": "CurrentPlayer",
+        "team_id": "TV01", "team_name": "TeamA",
+        "position": "FWD",
+        "goals": 1, "assists": 0, "minutes": 90,
+        "team_result": "WIN",
+    })
+    upsert_form_index(conn, {
+        "match_id": "MV01", "player_id": "PV01",
+        "model_version": MODEL_VERSION,
+        "score": 50.0,
+        "score_breakdown_json": "{}",
+    })
+
+    # Insert a row with a stale model version (should NOT appear)
+    upsert_player_match_stats(conn, {
+        "match_id": "MV02", "player_id": "PV02",
+        "player_name": "StalePlayer",
+        "team_id": "TV02", "team_name": "TeamB",
+        "position": "FWD",
+        "goals": 5, "assists": 5, "minutes": 90,
+        "team_result": "WIN",
+    })
+    conn.commit()
+
+    # Directly insert a stale form_index_scores row
+    conn.execute(
+        "INSERT INTO form_index_scores (match_id, player_id, model_version, score, score_breakdown_json) "
+        "VALUES (?, ?, ?, ?, ?)",
+        ("MV02", "PV02", "0.0.0-stale", 99.0, "{}"),
+    )
+    conn.commit()
+
+    # Leaderboard should only return the current version row
+    rows = get_leaderboard(db_path, limit=10)
+    assert len(rows) == 1
+    assert rows[0]["player_name"] == "CurrentPlayer"
+    assert rows[0]["score"] == 50.0
+    conn.close()
+
+
 def test_fan_mode_includes_key_reason(tmp_path):
     """The visible post should mention at least one concrete key reason."""
     db_path = _seed_match_context_db(tmp_path)
@@ -2437,13 +2485,17 @@ def test_exact_score_correct_on_wrong_score_but_right_outcome(tmp_path):
 
 
 def test_exact_score_correct_null_for_legacy_rows(tmp_path):
-    """Legacy prediction_results rows without exact_score_correct should return NULL."""
+    """Legacy prediction_results rows with NULL exact_score_correct are excluded from
+    exact-score denominator. COUNT(exact_score_correct) skips NULLs, so legacy
+    rows don't dilute exact-score accuracy."""
     db_path = str(tmp_path / "exact_legacy.db")
     conn = init_db(db_path)
+
+    # Match with no result yet (home_score/away_score = NULL) so grade_predictions skips it
     upsert_match(conn, {
         "match_id": "M102", "competition_id": "WC", "matchday": 1,
         "home_team_name": "TeamA", "away_team_name": "TeamB",
-        "home_score": 1, "away_score": 0, "date": "2026-06-13",
+        "home_score": None, "away_score": None, "date": "2026-06-13",
     })
     conn.commit()
     upsert_prediction(conn, {
@@ -2453,19 +2505,102 @@ def test_exact_score_correct_null_for_legacy_rows(tmp_path):
         "top_scorelines": [], "key_factor": "",
     })
     conn.commit()
-    # Manually insert a legacy result row without exact_score_correct
+    # Manually insert a legacy result row WITHOUT exact_score_correct
+    # (simulates a row from before the column existed)
     pred_id = conn.execute("SELECT id FROM predictions WHERE match_id = 'M102'").fetchone()["id"]
     conn.execute(
         "INSERT INTO prediction_results (prediction_id, actual_home, actual_away, correct, graded_at) VALUES (?, 1, 0, 1, datetime('now'))",
         (pred_id,),
     )
     conn.commit()
-    # get_prediction_accuracy should handle NULL exact_score_correct
+    # grade_predictions should NOT touch this (match has no result)
+    graded = grade_predictions(conn)
+    assert graded == 0
+
     stats = get_prediction_accuracy(conn)
     assert stats["total"] == 1
     assert stats["correct"] == 1
-    # NULL exact_score_correct is treated as 0 (wrong) in SQL aggregation
-    assert stats["exact_correct"] in (0, None) or stats["exact_correct"] == 0
+    # Legacy row: exact_gradable=0 (NULL excluded), legacy_count=1
+    assert stats["exact_gradable"] == 0
+    assert stats["legacy_count"] == 1
+    conn.close()
+
+
+def test_exact_score_mixed_null_and_graded_rows(tmp_path):
+    """Mix of legacy NULL rows and graded rows: exact-score accuracy counts only
+    graded rows in denominator, and reports legacy_count separately."""
+    db_path = str(tmp_path / "exact_mixed.db")
+    conn = init_db(db_path)
+
+    # Match 1: legacy row (no exact_score_correct) — match has no result yet
+    # so grade_predictions won't overwrite it
+    upsert_match(conn, {
+        "match_id": "M110", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "TeamA", "away_team_name": "TeamB",
+        "home_score": None, "away_score": None, "date": "2026-06-14",
+    })
+    upsert_prediction(conn, {
+        "match_id": "M110", "model_version": MODEL_VERSION,
+        "predicted_home": 2, "predicted_away": 1,
+        "home_win_prob": 0.55, "draw_prob": 0.25, "away_win_prob": 0.20,
+        "top_scorelines": [], "key_factor": "",
+    })
+    conn.commit()
+    # Legacy result row — no exact_score_correct column populated
+    pred1 = conn.execute("SELECT id FROM predictions WHERE match_id = 'M110'").fetchone()["id"]
+    conn.execute(
+        "INSERT INTO prediction_results (prediction_id, actual_home, actual_away, correct, graded_at) VALUES (?, 2, 1, 1, datetime('now'))",
+        (pred1,),
+    )
+
+    # Match 2: graded row — exact score correct
+    upsert_match(conn, {
+        "match_id": "M111", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "TeamC", "away_team_name": "TeamD",
+        "home_score": 3, "away_score": 0, "date": "2026-06-15",
+    })
+    upsert_prediction(conn, {
+        "match_id": "M111", "model_version": MODEL_VERSION,
+        "predicted_home": 3, "predicted_away": 0,
+        "home_win_prob": 0.60, "draw_prob": 0.20, "away_win_prob": 0.20,
+        "top_scorelines": [], "key_factor": "",
+    })
+    conn.commit()
+    # Normal grading via grade_predictions
+    grade_predictions(conn)
+
+    # Match 3: graded row — exact score wrong
+    upsert_match(conn, {
+        "match_id": "M112", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "TeamE", "away_team_name": "TeamF",
+        "home_score": 1, "away_score": 1, "date": "2026-06-16",
+    })
+    upsert_prediction(conn, {
+        "match_id": "M112", "model_version": MODEL_VERSION,
+        "predicted_home": 2, "predicted_away": 0,
+        "home_win_prob": 0.50, "draw_prob": 0.25, "away_win_prob": 0.25,
+        "top_scorelines": [], "key_factor": "",
+    })
+    conn.commit()
+    grade_predictions(conn)
+
+    # Verify grade_predictions didn't touch M110 (no match result)
+    legacy_row = conn.execute(
+        "SELECT exact_score_correct FROM prediction_results WHERE prediction_id = ?",
+        (pred1,),
+    ).fetchone()
+    assert legacy_row["exact_score_correct"] is None, "Legacy row should still have NULL exact_score_correct"
+
+    stats = get_prediction_accuracy(conn)
+    # total counts ALL rows (including legacy)
+    assert stats["total"] == 3
+    # Outcome: 2/3 correct (M110 legacy correct, M111 correct, M112 wrong outcome)
+    assert stats["correct"] == 2
+    # Exact: only 2 gradable rows (M111, M112); 1 correct (M111)
+    assert stats["exact_gradable"] == 2
+    assert stats["exact_correct"] == 1
+    # 1 legacy row excluded from exact-score denominator
+    assert stats["legacy_count"] == 1
     conn.close()
 
 
