@@ -13,7 +13,7 @@ CONTENT SAFETY (enforced by design):
   * Positioned as independent football analytics from Build With Abdallah,
     not affiliated with FIFA or any tournament organiser.
 
-Run:   /usr/bin/python3 scripts/worldcup_short.py --deck group-a
+Run:   /usr/bin/python3 scripts/worldcup_short.py --standings A
 List:  /usr/bin/python3 scripts/worldcup_short.py --list
 Output is review-only — never auto-posted.
 """
@@ -32,7 +32,7 @@ TEMPLATES_DIR = ROOT / "templates" / "shorts"
 SCRIPTS_DIR = ROOT / "scripts"
 LOGO_SRC = ROOT / "content" / "assets" / "brand" / "bwa-youtube-watermark.png"
 
-VOICE = "en-US-AriaNeural"
+VOICE = "en-US-AndrewNeural"
 
 
 def _logo_data_uri() -> str | None:
@@ -195,89 +195,6 @@ def _predict_match(home: str, away: str, group: str) -> dict:
 #   code_card.html   -> title, caption, code, takeaway, progress, watermark
 #   cta_card.html    -> title, caption, cta, url, progress, watermark
 DECKS = {
-    "group-a": {
-        "title": "Group A — Final Standings",
-        "scenes": [
-            {
-                "template": "title_card.html",
-                "title": "Group A Is Decided 🏆",
-                "caption": "2026 FIFA World Cup",
-                "main_idea": "Three matchdays, one clear winner, and a heavyweight "
-                             "crashing out. Here's the final table — and what it means.",
-                "progress": "1/6",
-                "duration_seconds": 8,
-            },
-            {
-                "template": "code_card.html",
-                "title": "The Final Table",
-                "caption": "Group A · after Matchday 3",
-                "code": (
-                    "Pos  Team         P  W  D  L  Pts\n"
-                    "---------------------------------\n"
-                    "1    Argentina    3  3  0  0   9\n"
-                    "2    Brazil       3  2  1  0   7\n"
-                    "3    France       3  1  1  1   4\n"
-                    "4    Morocco      3  0  0  3   0"
-                ),
-                "takeaway": "Argentina top the group with a perfect 9 points",
-                "progress": "2/6",
-                "duration_seconds": 13,
-            },
-            {
-                "template": "title_card.html",
-                "title": "Group Top Scorer ⚽",
-                "caption": "Golden Boot race",
-                "main_idea": "4 goals in 3 games — the Argentine captain is setting "
-                             "the pace and dragging his side through the group.",
-                "progress": "3/6",
-                "duration_seconds": 11,
-            },
-            {
-                "template": "title_card.html",
-                "title": "The Shock 😱",
-                "caption": "Morocco out",
-                "main_idea": "Semi-finalists last time, home of the 2022 fairytale — "
-                             "Morocco leave with zero points. The group of death bit hard.",
-                "progress": "4/6",
-                "duration_seconds": 12,
-            },
-            {
-                "template": "title_card.html",
-                "title": "What's Next 🔜",
-                "caption": "Round of 16",
-                "main_idea": "Argentina avoid the big guns and get a favourable draw. "
-                             "Brazil land the tougher side of the bracket. Advantage Albiceleste.",
-                "progress": "5/6",
-                "duration_seconds": 11,
-            },
-            {
-                "template": "cta_card.html",
-                "title": "Follow For Every Group",
-                "caption": "Daily World Cup breakdowns",
-                "cta": "Follow Build With Abdallah",
-                "url": "buildwithabdallah.com",
-                "progress": "6/6",
-                "duration_seconds": 6,
-            },
-        ],
-        "voiceover": (
-            "Group A is decided, and it delivered. Three matchdays, one dominant "
-            "winner, and a heavyweight going home early. Here's the final table.\n\n"
-            "Argentina, a perfect three wins from three, nine points, top of the "
-            "group. Brazil follow on seven. France squeeze through third on four. "
-            "And Morocco, rooted to the bottom with zero.\n\n"
-            "The Golden Boot race already has a leader. The Argentine captain, four "
-            "goals in three games, setting the pace and carrying his side.\n\n"
-            "But the story is the shock. Morocco, semi-finalists just one cycle ago, "
-            "the home of the 2022 fairytale, crash out without a single point. The "
-            "group of death bit hard.\n\n"
-            "So what's next? Argentina avoid the big guns and land a favourable "
-            "round of sixteen tie. Brazil get the tougher half of the bracket. "
-            "Advantage Albiceleste.\n\n"
-            "Follow Build With Abdallah for a breakdown of every group, every day "
-            "of the World Cup."
-        ),
-    },
     "on-this-day-1970": {
         "title": "On This Day — 1970",
         "scenes": [
@@ -480,19 +397,19 @@ def deck_standings(group_letter: str) -> tuple[dict, str]:
                      f"{r['won']:>2} {r['draw']:>2} {r['lost']:>2} {r['points']:>4}")
     leader = rows[0]["team"]
     played = sum(r["played"] for r in rows)
-    sub = "Latest table" if played else "Group preview — kicks off soon"
+    sub = "Latest table" if played else "Group preview · kicks off soon"
+    table_html = '<div class="rows">' + "".join(
+        f'<div class="row"><span class="dot"></span>'
+        f'<span class="label">{r["position"]}. {html.escape(r["team"])}</span>'
+        f'<span class="tag">{r["points"]} pts</span>'
+        f'<span class="meta">P{r["played"]} · GD {r["goal_difference"]:+d}</span></div>'
+        for r in rows
+    ) + ('<div class="row" style="border-bottom:none"><span class="dot"></span>'
+         '<span class="label">Follow for every group, every day</span></div></div>')
     scenes = [
-        {"template": "title_card.html", "title": f"{block['group']} Standings",
-         "caption": "2026 FIFA World Cup",
-         "main_idea": f"Here's how {block['group']} is shaping up at the 2026 World Cup.",
-         "progress": "1/3", "duration_seconds": 7},
-        {"template": "code_card.html", "title": block["group"], "caption": sub,
-         "code": "\n".join(lines),
-         "takeaway": (f"{leader} lead the group" if played else f"All eyes on {leader} and co."),
-         "progress": "2/3", "duration_seconds": 14},
-        {"template": "cta_card.html", "title": "Follow For Every Group",
-         "caption": "Daily World Cup breakdowns", "cta": "Follow Build With Abdallah",
-         "url": "buildwithabdallah.com", "progress": "3/3", "duration_seconds": 6},
+        {"template": "pitch_card.html", "title": f"{block['group']} Standings",
+         "subtitle": f"2026 World Cup · {sub}", "content": table_html,
+         "progress": "1/1", "duration_seconds": 14},
     ]
     team_list = ", ".join(r["team"] for r in rows)
     if played:
@@ -516,21 +433,49 @@ def deck_preview(when: str = "today") -> tuple[dict, str]:
     if not matches:
         raise SystemExit(f"No matches found for {day}")
     label = "Today" if when == "today" else "Tomorrow"
-    lines = [f"{m['home_team']} vs {m['away_team']}  (Group {m['group']})" for m in matches]
-    scenes = [
-        {"template": "title_card.html", "title": f"{label}'s World Cup Matches",
-         "caption": day.strftime("%b %d, 2026"),
-         "main_idea": f"{len(matches)} match{'es' if len(matches) != 1 else ''} on the World Cup "
-                      f"calendar {label.lower()}. Here's who's playing.",
-         "progress": "1/2", "duration_seconds": 8},
-        {"template": "cta_card.html", "title": "\n".join(lines[:5]),
-         "caption": f"{label}'s fixtures", "cta": "Who's your pick?",
-         "url": "buildwithabdallah.com", "progress": "2/2", "duration_seconds": 10},
-    ]
-    vo_matches = ". ".join(f"{m['home_team']} versus {m['away_team']}" for m in matches)
-    vo = (f"{label} at the 2026 World Cup: {len(matches)} to watch. {vo_matches}. "
-          f"Who are you backing? Follow Build With Abdallah for every matchday.")
-    return {"title": f"{label}'s Matches", "scenes": scenes, "voiceover": vo}, \
+    matches = sorted(matches, key=lambda x: x["date"])[:4]
+    t = wc.teams()
+    scenes, vo_parts = [], []
+    n = len(matches)
+    for i, m in enumerate(matches, 1):
+        try:
+            hflag = _flag_data_uri(t[m["home_id"]]["flag"])
+            aflag = _flag_data_uri(t[m["away_id"]]["flag"])
+        except Exception:
+            hflag = aflag = ""
+        pred = _predict_match(m["home_team"], m["away_team"], m["group"])
+        fav_prob = max(pred["home_prob"], pred["away_prob"])
+        kickoff = m["date"].split(" ")[-1] if " " in m["date"] else ""
+        content = (
+            f'<div class="vs-wrap">'
+            f'<div class="vs-team"><img src="{hflag}"><div class="nm">{m["home_team"]}</div></div>'
+            f'<div class="vs-mid">VS</div>'
+            f'<div class="vs-team"><img src="{aflag}"><div class="nm">{m["away_team"]}</div></div>'
+            f'</div>'
+            f'<div class="rows" style="margin-top:54px">'
+            f'<div class="row"><span class="dot"></span><span class="label">Group {m["group"]} · Matchday {m["matchday"]}</span>'
+            f'<span class="meta">{kickoff}</span></div>'
+            f'<div class="row"><span class="dot"></span><span class="label">Model call</span>'
+            f'<span class="tag">{pred["score"].replace("-", "–")} · {pred["winner"]}</span></div>'
+            f'<div class="row"><span class="dot"></span><span class="label">{pred["winner"]} win probability</span>'
+            f'<span class="tag">{fav_prob}%</span></div>'
+            f'<div class="row" style="border-bottom:none"><span class="dot"></span>'
+            f'<span class="label">{html.escape(pred["stats"][0])}</span></div>'
+            f'</div>'
+        )
+        scenes.append({"template": "pitch_card.html",
+                       "title": f"{m['home_team']} vs {m['away_team']}",
+                       "subtitle": f"{label}'s matches · {day.strftime('%b %d')} · {i} of {n}",
+                       "content": content, "progress": f"{i}/{n}",
+                       "duration_seconds": 10})
+        vo_parts.append(f"{m['home_team']} against {m['away_team']}, Group {m['group']}. "
+                        f"Our model says {pred['score'].replace('-', ' ')}, "
+                        f"{pred['winner']} at {fav_prob} percent.")
+    vo = (f"{label} at the 2026 World Cup — {n} match{'es' if n != 1 else ''}, "
+          f"with our model's call for each. " + " ".join(vo_parts) +
+          " Agree with the calls? Drop yours in the comments, and follow "
+          "Build With Abdallah for every matchday.")
+    return {"title": f"{label}'s Matches + Predictions", "scenes": scenes, "voiceover": vo}, \
         f"preview-{day.isoformat()}"
 
 
@@ -549,19 +494,36 @@ def deck_recap(match_id: str | None = None) -> tuple[dict, str]:
     else:
         result = "Honours even — a point apiece"
     scorers = (m["home_scorers"] or []) + (m["away_scorers"] or [])
-    code_lines = [f"FULL TIME", "-" * 28, f"{m['home_team']}  {m['home_score']}",
-                  f"{m['away_team']}  {m['away_score']}"]
-    if scorers:
-        code_lines += ["", "Scorers:"] + [f"  {s}" for s in scorers[:6]]
+    t = wc.teams()
+    try:
+        hflag = _flag_data_uri(t[m["home_id"]]["flag"])
+        aflag = _flag_data_uri(t[m["away_id"]]["flag"])
+    except Exception:
+        hflag = aflag = ""
+    scorer_rows = "".join(
+        f'<div class="row"><span class="dot"></span><span class="label">⚽ {html.escape(s)}</span></div>'
+        for s in scorers[:5])
+    content = (
+        f'<div class="vs-wrap" style="margin-top:0">'
+        f'<div class="vs-team" style="width:220px"><img src="{hflag}" style="width:200px;height:133px"></div>'
+        f'<div class="score-big" style="margin:0;flex:1;white-space:nowrap;font-size:170px">'
+        f'{m["home_score"]}–{m["away_score"]}</div>'
+        f'<div class="vs-team" style="width:220px"><img src="{aflag}" style="width:200px;height:133px"></div>'
+        f'</div>'
+        f'<div class="score-label">FULL TIME · GROUP {m["group"]}</div>'
+        f'<div class="rows" style="margin-top:56px">'
+        f'<div class="row"><span class="dot"></span><span class="label">{m["home_team"]}</span>'
+        f'<span class="tag">{m["home_score"]}</span></div>'
+        f'<div class="row"><span class="dot"></span><span class="label">{m["away_team"]}</span>'
+        f'<span class="tag">{m["away_score"]}</span></div>'
+        + scorer_rows +
+        f'<div class="row" style="border-bottom:none"><span class="dot"></span>'
+        f'<span class="label">{html.escape(result)}</span></div></div>'
+    )
     scenes = [
-        {"template": "title_card.html", "title": "Full Time ⏱️", "caption": f"Group {m['group']}",
-         "main_idea": score, "progress": "1/3", "duration_seconds": 8},
-        {"template": "code_card.html", "title": "The Result", "caption": "Final score",
-         "code": "\n".join(code_lines), "takeaway": result,
-         "progress": "2/3", "duration_seconds": 13},
-        {"template": "cta_card.html", "title": "Every Result, Every Day",
-         "caption": "World Cup full-time recaps", "cta": "Follow Build With Abdallah",
-         "url": "buildwithabdallah.com", "progress": "3/3", "duration_seconds": 6},
+        {"template": "pitch_card.html", "title": f"{m['home_team']} vs {m['away_team']}",
+         "subtitle": "Full-time result · 2026 World Cup", "content": content,
+         "progress": "FT", "duration_seconds": 14},
     ]
     vo_scorers = (" The goals came from " + ", ".join(scorers[:6]) + "." ) if scorers else ""
     vo = (f"Full time at the World Cup. {m['home_team']} {m['home_score']}, "
