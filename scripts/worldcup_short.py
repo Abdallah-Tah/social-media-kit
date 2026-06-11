@@ -399,11 +399,76 @@ def deck_preview(when: str = "today") -> tuple[dict, str]:
         f"preview-{day.isoformat()}"
 
 
+def deck_recap(match_id: str | None = None) -> tuple[dict, str]:
+    """Build a full-time recap deck from the latest finished match (live data)."""
+    import worldcup26_data as wc
+    finished = wc.finished_matches()
+    if not finished:
+        raise SystemExit("No finished matches yet — recap activates once a match ends.")
+    m = next((x for x in finished if x["id"] == match_id), finished[-1])
+    score = f"{m['home_team']} {m['home_score']}-{m['away_score']} {m['away_team']}"
+    if m["home_score"] > m["away_score"]:
+        result = f"{m['home_team']} win it"
+    elif m["home_score"] < m["away_score"]:
+        result = f"{m['away_team']} take all three points"
+    else:
+        result = "Honours even — a point apiece"
+    scorers = (m["home_scorers"] or []) + (m["away_scorers"] or [])
+    code_lines = [f"FULL TIME", "-" * 28, f"{m['home_team']}  {m['home_score']}",
+                  f"{m['away_team']}  {m['away_score']}"]
+    if scorers:
+        code_lines += ["", "Scorers:"] + [f"  {s}" for s in scorers[:6]]
+    scenes = [
+        {"template": "title_card.html", "title": "Full Time ⏱️", "caption": f"Group {m['group']}",
+         "main_idea": score, "progress": "1/3", "duration_seconds": 8},
+        {"template": "code_card.html", "title": "The Result", "caption": "Final score",
+         "code": "\n".join(code_lines), "takeaway": result,
+         "progress": "2/3", "duration_seconds": 13},
+        {"template": "cta_card.html", "title": "Every Result, Every Day",
+         "caption": "World Cup full-time recaps", "cta": "Follow Build With Abdallah",
+         "url": "buildwithabdallah.com", "progress": "3/3", "duration_seconds": 6},
+    ]
+    vo_scorers = (" The goals came from " + ", ".join(scorers[:6]) + "." ) if scorers else ""
+    vo = (f"Full time at the World Cup. {m['home_team']} {m['home_score']}, "
+          f"{m['away_team']} {m['away_score']}. {result}.{vo_scorers} "
+          f"Follow Build With Abdallah for every full-time recap.")
+    return {"title": f"Full Time: {score}", "scenes": scenes, "voiceover": vo}, \
+        f"recap-{m['id']}"
+
+
+def deck_prediction(when: str = "today") -> tuple[dict, str]:
+    """Build an engagement-first prediction deck for the next match (opinion)."""
+    import worldcup26_data as wc
+    import datetime as dt
+    day = dt.date.today() if when == "today" else dt.date.today() + dt.timedelta(days=1)
+    matches = wc.today_matches(day)
+    if not matches:
+        raise SystemExit(f"No matches found for {day}")
+    m = matches[0]
+    tie = f"{m['home_team']} vs {m['away_team']}"
+    scenes = [
+        {"template": "title_card.html", "title": f"Prediction 🔮", "caption": f"Group {m['group']} · {day.strftime('%b %d')}",
+         "main_idea": f"{tie}. The big question — who comes out on top?",
+         "progress": "1/2", "duration_seconds": 8},
+        {"template": "cta_card.html", "title": tie, "caption": "Drop your scoreline 👇",
+         "cta": "Who wins? Comment your score", "url": "buildwithabdallah.com",
+         "progress": "2/2", "duration_seconds": 9},
+    ]
+    vo = (f"Prediction time. {m['home_team']} take on {m['away_team']} in Group {m['group']}. "
+          f"It's set up to be a close one. Who's your pick, and what's your scoreline? "
+          f"Drop it in the comments, and follow Build With Abdallah for every matchday call.")
+    return {"title": f"Prediction: {tie}", "scenes": scenes, "voiceover": vo}, \
+        f"prediction-{m['id']}"
+
+
 def main():
     ap = argparse.ArgumentParser(description="Tier-1 World Cup Shorts generator (no footage, copyright-safe)")
     ap.add_argument("--deck", help="Static deck slug to build")
     ap.add_argument("--standings", metavar="GROUP", help="Build a live Group Standings short (e.g. A)")
     ap.add_argument("--preview", choices=["today", "tomorrow"], help="Build a live fixtures preview short")
+    ap.add_argument("--recap", nargs="?", const="latest", metavar="MATCH_ID",
+                    help="Build a full-time recap short (latest finished match, or a match id)")
+    ap.add_argument("--prediction", choices=["today", "tomorrow"], help="Build a prediction short")
     ap.add_argument("--list", action="store_true", help="List static decks")
     args = ap.parse_args()
 
@@ -412,6 +477,12 @@ def main():
         build(deck, slug); return
     if args.preview:
         deck, slug = deck_preview(args.preview)
+        build(deck, slug); return
+    if args.recap:
+        deck, slug = deck_recap(None if args.recap == "latest" else args.recap)
+        build(deck, slug); return
+    if args.prediction:
+        deck, slug = deck_prediction(args.prediction)
         build(deck, slug); return
     if args.deck:
         if args.deck not in DECKS:
