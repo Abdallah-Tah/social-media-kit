@@ -3447,3 +3447,72 @@ class TestWorldCup26Provider:
         row = conn.execute("SELECT result_source FROM matches WHERE match_id = 'M900'").fetchone()
         assert row["result_source"] == "manual"
         conn.close()
+
+
+def test_matchday_preview_excludes_finished(tmp_path):
+    """FINISHED matches must not appear in matchday preview."""
+    from pitch_agent.content import _generate_matchday_preview
+    fixtures = [
+        {"home_team_name": "Mexico", "away_team_name": "South Africa",
+         "date": "2026-06-11T19:00:00Z", "status": "FINISHED", "group_name": "Group A",
+         "match_id": "537327", "match_label": "Mexico vs South Africa"},
+        {"home_team_name": "Korea Republic", "away_team_name": "Czechia",
+         "date": "2099-06-12T02:00:00Z", "status": "TIMED", "group_name": "Group A",
+         "match_id": "537328", "match_label": "Korea Republic vs Czechia"},
+    ]
+    preview = _generate_matchday_preview(fixtures)
+    assert "Mexico" not in preview, "FINISHED match must be excluded"
+    assert "Korea Republic" in preview, "Upcoming match must be included"
+
+
+def test_matchday_preview_excludes_past_kickoff(tmp_path):
+    """Matches with past kickoffs must not appear in matchday preview."""
+    from pitch_agent.content import _generate_matchday_preview
+    from datetime import datetime, timezone, timedelta
+    past = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    future = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    fixtures = [
+        {"home_team_name": "PastTeam", "away_team_name": "Other",
+         "date": past, "status": "TIMED", "group_name": "Group A", "match_id": "M1",
+         "match_label": "PastTeam vs Other"},
+        {"home_team_name": "FutureTeam", "away_team_name": "Opponent",
+         "date": future, "status": "TIMED", "group_name": "Group B", "match_id": "M2",
+         "match_label": "FutureTeam vs Opponent"},
+    ]
+    preview = _generate_matchday_preview(fixtures)
+    assert "PastTeam" not in preview, "Past kickoff must be excluded"
+    assert "FutureTeam" in preview, "Future kickoff must be included"
+
+
+def test_key_factor_elo_prior_basis():
+    """When both sides use elo_prior, key factor must show Elo differential."""
+    from pitch_agent.poisson import prediction_key_factor
+    # Elo edge: big gap
+    kf = prediction_key_factor(
+        [], [],
+        home_elo=1900, away_elo=1700,
+        basis_home="elo_prior", basis_away="elo_prior",
+    )
+    assert "Elo edge" in kf
+    assert "+200" in kf
+    # Elo nearly level
+    kf2 = prediction_key_factor(
+        [], [],
+        home_elo=1760, away_elo=1755,
+        basis_home="elo_prior", basis_away="elo_prior",
+    )
+    assert "Elo nearly level" in kf2
+
+
+def test_key_factor_elo_prior_200_point_gap():
+    """200-point Elo gap must produce an Elo key_factor."""
+    from pitch_agent.poisson import prediction_key_factor
+    kf = prediction_key_factor(
+        [], [],
+        home_elo=2000, away_elo=1800,
+        basis_home="elo_prior", basis_away="elo_prior",
+    )
+    assert "Elo edge" in kf
+    assert "+200" in kf
+    assert "2000" in kf
+    assert "1800" in kf

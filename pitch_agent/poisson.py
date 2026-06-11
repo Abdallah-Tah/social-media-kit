@@ -167,12 +167,28 @@ def form_index_to_xg(
 def prediction_key_factor(
     home_scores: list[dict[str, Any]],
     away_scores: list[dict[str, Any]],
+    home_elo: float | None = None,
+    away_elo: float | None = None,
+    basis_home: str = "form_index",
+    basis_away: str = "form_index",
 ) -> str:
     """Return the single biggest factor driving the prediction.
 
-    Compares average Form Index, goals, and team result between the two
-    sides and returns a one-line explanation.
+    When both sides use Elo priors (no Form Index data), the key factor
+    is derived from the Elo differential. When Form Index data is
+    available, it uses FI differentials and goals.
     """
+    # Elo-based key factor (used when basis is elo_prior)
+    if home_elo is not None and away_elo is not None and basis_home == "elo_prior" and basis_away == "elo_prior":
+        elo_diff = home_elo - away_elo
+        if abs(elo_diff) < 15:
+            return f"Elo nearly level ({home_elo:.0f} vs {away_elo:.0f})"
+        leader = "Home" if elo_diff > 0 else "Away"
+        higher = home_elo if elo_diff > 0 else away_elo
+        lower = away_elo if elo_diff > 0 else home_elo
+        return f"Elo edge: {leader} +{abs(elo_diff):.0f} ({higher:.0f} vs {lower:.0f})"
+
+    # Form Index–based key factor (used when FI data exists)
     if not home_scores and not away_scores:
         return "Evenly matched — insufficient data"
 
@@ -181,7 +197,7 @@ def prediction_key_factor(
         if home_scores else 50
     )
     away_avg = (
-        sum(s.get("score", 0) for s in away_scores) / len(away_scores)
+        sum(s.get("score", 0) for s in away_scores) / max(len(away_scores), 1)
         if away_scores else 50
     )
     diff = home_avg - away_avg

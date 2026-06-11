@@ -478,7 +478,32 @@ def _generate_matchday_preview(fixtures: list[dict[str, Any]]) -> str:
             f"{TRADEMARK_DISCLAIMER}"
         )
 
-    upcoming = fixtures[:5]
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    # Filter out FINISHED matches and past kickoffs
+    upcoming = []
+    for fx in fixtures:
+        status = str(fx.get("status", "")).strip().upper()
+        if status == "FINISHED":
+            continue
+        date_str = str(fx.get("date", ""))
+        if date_str:
+            try:
+                kickoff = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                if kickoff < now:
+                    continue
+            except (ValueError, TypeError):
+                pass  # Keep if date can't be parsed
+        upcoming.append(fx)
+
+    if not upcoming:
+        return (
+            "No upcoming matches today.\n\n"
+            "Follow The Pitch Agent for Form Index updates once matches are played.\n\n"
+            f"{TRADEMARK_DISCLAIMER}"
+        )
+
+    upcoming = upcoming[:5]
     lines = ["🗓️ Matchday Preview", ""]
     lines.append(f"Next up on the World Cup calendar — {len(upcoming)} matches to watch:")
     lines.append("")
@@ -614,6 +639,10 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
         key_factor = prediction_key_factor(
             [{"score": home_avg_fi or 50, "goals": 0}],
             [{"score": away_avg_fi or 50, "goals": 0}],
+            home_elo=home_elo,
+            away_elo=away_elo,
+            basis_home=basis_home,
+            basis_away=basis_away,
         )
 
         # Most likely outcome (with tie-breaking)
@@ -625,14 +654,19 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
             "away": outcomes["away_win"],
         }[predicted_outcome]
 
-        # Basis label
-        basis_label_map = {"elo_prior": "pre-tournament Elo", "blended": "Elo+FI blend", "form_index": "Form Index"}
-        basis_parts = []
-        if basis_home != "form_index":
-            basis_parts.append(f"home {basis_label_map[basis_home]}")
-        if basis_away != "form_index":
-            basis_parts.append(f"away {basis_label_map[basis_away]}")
-        basis_tag = (" (" + ", ".join(basis_parts) + ")") if basis_parts else ""
+        # Basis label: collapse common cases
+        basis_label_map = {
+            "elo_prior": "pre-tournament Elo",
+            "blended": "blended: Elo + early form",
+            "form_index": "Form Index",
+        }
+        # Both sides same basis → single label
+        if basis_home == basis_away:
+            basis_tag = f" ({basis_label_map[basis_home]})"
+        else:
+            home_b = basis_label_map.get(basis_home, basis_home)
+            away_b = basis_label_map.get(basis_away, basis_away)
+            basis_tag = f" (home {home_b}, away {away_b})"
 
         most_likely = top[0]
         pred_str = (
