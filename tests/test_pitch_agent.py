@@ -2656,3 +2656,74 @@ def test_match_prediction_returns_none_on_db_error(tmp_path):
             os.environ["PITCH_AGENT_DB"] = old_db
         else:
             os.environ.pop("PITCH_AGENT_DB", None)
+
+
+def test_grade_0_0_draw_prediction(tmp_path):
+    """A 0-0 result should grade a predicted draw as outcome-correct."""
+    db_path = str(tmp_path / "draw_00.db")
+    conn = init_db(db_path)
+    upsert_match(conn, {
+        "match_id": "M200", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "TeamX", "away_team_name": "TeamY",
+        "home_score": 0, "away_score": 0, "date": "2026-06-20",
+    })
+    conn.commit()
+    upsert_prediction(conn, {
+        "match_id": "M200", "model_version": MODEL_VERSION,
+        "predicted_home": 0, "predicted_away": 0,
+        "home_win_prob": 0.25, "draw_prob": 0.50, "away_win_prob": 0.25,
+        "top_scorelines": [], "key_factor": "",
+    })
+    conn.commit()
+    graded = grade_predictions(conn)
+    assert graded == 1
+    result = conn.execute("SELECT correct, exact_score_correct FROM prediction_results").fetchone()
+    assert result["correct"] == 1, "Predicted 0-0 draw, actual 0-0 — outcome should be correct"
+    assert result["exact_score_correct"] == 1, "Predicted exact 0-0, actual 0-0 — exact score should be correct"
+    conn.close()
+
+
+def test_regrading_does_not_create_duplicate_rows(tmp_path):
+    """Re-grading the same match must not create duplicate prediction_results rows
+    or inflate accuracy counts. INSERT OR REPLACE + UNIQUE(prediction_id) ensures
+    this, but we verify explicitly."""
+    db_path = str(tmp_path / "regrade_nodup.db")
+    conn = init_db(db_path)
+    upsert_match(conn, {
+        "match_id": "M300", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "TeamA", "away_team_name": "TeamB",
+        "home_score": 2, "away_score": 1, "date": "2026-06-20",
+    })
+    conn.commit()
+    upsert_prediction(conn, {
+        "match_id": "M300", "model_version": MODEL_VERSION,
+        "predicted_home": 2, "predicted_away": 1,
+        "home_win_prob": 0.55, "draw_prob": 0.25, "away_win_prob": 0.20,
+        "top_scorelines": [], "key_factor": "",
+    })
+    conn.commit()
+
+    # First grading
+    graded = grade_predictions(conn)
+    assert graded == 1
+
+    # Count rows — should be exactly 1
+    count = conn.execute("SELECT COUNT(*) FROM prediction_results").fetchone()[0]
+    assert count == 1
+
+    # Re-grade — should find nothing new (r.id IS NULL filters it out)
+    graded_again = grade_predictions(conn)
+    assert graded_again == 0, "Re-grading should find no ungraded predictions"
+
+    # Still exactly 1 row
+    count = conn.execute("SELECT COUNT(*) FROM prediction_results").fetchone()[0]
+    assert count == 1
+
+    # Accuracy should report exactly 1 prediction
+    stats = get_prediction_accuracy(conn)
+    assert stats["total"] == 1
+    assert stats["correct"] == 1
+    assert stats["exact_gradable"] == 1
+    assert stats["exact_correct"] == 1
+    assert stats["legacy_count"] == 0
+    conn.close()

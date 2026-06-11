@@ -503,7 +503,6 @@ def grade_predictions(conn: sqlite3.Connection) -> int:
         LEFT JOIN prediction_results r ON p.id = r.prediction_id
         WHERE m.home_score IS NOT NULL
           AND m.away_score IS NOT NULL
-          AND (m.home_score != 0 OR m.away_score != 0)
           AND r.id IS NULL
         """
     ).fetchall()
