@@ -636,6 +636,20 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
         outcomes = match_outcome_probs(home_xg, away_xg)
         top = top_scorelines(home_xg, away_xg, n=1)
 
+        # Determine host advantage for key_factor disclosure
+        host_nations_set = set(cfg.host_nations)
+        host_team_ids_set = set(cfg.host_team_ids)
+        is_home_advantage = (
+            (home_team in host_nations_set or home_team in host_team_ids_set)
+            and away_team not in host_nations_set
+            and away_team not in host_team_ids_set
+        )
+
+        # Team codes for key_factor display
+        from pitch_agent.poisson import TEAM_CODES
+        home_code = TEAM_CODES.get(home_team, "")
+        away_code = TEAM_CODES.get(away_team, "")
+
         key_factor = prediction_key_factor(
             [{"score": home_avg_fi or 50, "goals": 0}],
             [{"score": away_avg_fi or 50, "goals": 0}],
@@ -643,6 +657,9 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
             away_elo=away_elo,
             basis_home=basis_home,
             basis_away=basis_away,
+            home_code=home_code,
+            away_code=away_code,
+            is_host_advantage=is_home_advantage,
         )
 
         # Most likely outcome (with tie-breaking)

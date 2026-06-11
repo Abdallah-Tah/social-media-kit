@@ -11,6 +11,23 @@ import math
 from typing import Any
 
 
+# FIFA country codes for the 48 WC 2026 teams (team_name → code)
+TEAM_CODES: dict[str, str] = {
+    "Spain": "ESP", "Argentina": "ARG", "England": "ENG", "France": "FRA",
+    "Brazil": "BRA", "Portugal": "POR", "Germany": "GER", "Netherlands": "NED",
+    "Colombia": "COL", "Norway": "NOR", "Uruguay": "URU", "Ecuador": "ECU",
+    "Senegal": "SEN", "Turkey": "TUR", "Belgium": "BEL", "Switzerland": "SUI",
+    "Croatia": "CRO", "Japan": "JPN", "Morocco": "MAR", "Paraguay": "PAR",
+    "Mexico": "MEX", "Austria": "AUT", "Canada": "CAN", "Scotland": "SCO",
+    "USA": "USA", "Algeria": "ALG", "Sweden": "SWE", "Ivory Coast": "CIV",
+    "Australia": "AUS", "Czechia": "CZE", "Egypt": "EGY", "Korea Republic": "KOR",
+    "Congo DR": "COD", "Panama": "PAN", "Iran": "IRN", "Uzbekistan": "UZB",
+    "Tunisia": "TUN", "Bosnia-H.": "BIH", "Ghana": "GHA", "South Africa": "RSA",
+    "Jordan": "JOR", "Iraq": "IRQ", "Haiti": "HAI", "New Zealand": "NZL",
+    "Saudi Arabia": "KSA", "Cape Verde": "CPV", "Curaçao": "CUW", "Qatar": "QAT",
+}
+
+
 def poisson_prob(lam: float, k: int) -> float:
     """P(k goals | lambda expected goals)."""
     if lam <= 0:
@@ -171,6 +188,9 @@ def prediction_key_factor(
     away_elo: float | None = None,
     basis_home: str = "form_index",
     basis_away: str = "form_index",
+    home_code: str = "",
+    away_code: str = "",
+    is_host_advantage: bool = False,
 ) -> str:
     """Return the single biggest factor driving the prediction.
 
@@ -181,12 +201,20 @@ def prediction_key_factor(
     # Elo-based key factor (used when basis is elo_prior)
     if home_elo is not None and away_elo is not None and basis_home == "elo_prior" and basis_away == "elo_prior":
         elo_diff = home_elo - away_elo
+        # Standardize: always show home code first (FIFA codes)
+        if home_code and away_code:
+            rating_str = f"Elo: {home_code} {home_elo:.0f} vs {away_code} {away_elo:.0f}"
+        else:
+            rating_str = f"Elo: {home_elo:.0f} vs {away_elo:.0f}"
         if abs(elo_diff) < 15:
-            return f"Elo nearly level ({home_elo:.0f} vs {away_elo:.0f})"
+            return f"Elo nearly level ({rating_str})"
         leader = "Home" if elo_diff > 0 else "Away"
-        higher = home_elo if elo_diff > 0 else away_elo
-        lower = away_elo if elo_diff > 0 else home_elo
-        return f"Elo edge: {leader} +{abs(elo_diff):.0f} ({higher:.0f} vs {lower:.0f})"
+        abs_diff = abs(elo_diff)
+        edge_str = f"Elo edge: {leader} +{abs_diff:.0f} ({rating_str})"
+        # Host advantage overrides Elo edge direction
+        if is_host_advantage and elo_diff < 0:
+            return f"Elo edge: {away_code or 'Away'} +{abs_diff:.0f}, offset by host advantage ({rating_str})"
+        return edge_str
 
     # Form Index–based key factor (used when FI data exists)
     if not home_scores and not away_scores:

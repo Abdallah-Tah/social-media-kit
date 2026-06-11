@@ -3516,3 +3516,48 @@ def test_key_factor_elo_prior_200_point_gap():
     assert "+200" in kf
     assert "2000" in kf
     assert "1800" in kf
+
+
+def test_key_factor_host_advantage_overrides_elo_edge():
+    """When host advantage flips the prediction, key_factor must disclose it."""
+    from pitch_agent.poisson import prediction_key_factor
+    # USA (1805) hosts Paraguay (1850) — Paraguay has +45 Elo edge
+    kf = prediction_key_factor(
+        [], [],
+        home_elo=1805, away_elo=1850,
+        basis_home="elo_prior", basis_away="elo_prior",
+        home_code="USA", away_code="PAR",
+        is_host_advantage=True,
+    )
+    assert "offset by host advantage" in kf, f"Expected host advantage disclosure, got: {kf}"
+    assert "PAR" in kf, f"Expected PAR code, got: {kf}"
+
+
+def test_key_factor_no_host_advantage_no_disclosure():
+    """Non-host fixtures should NOT mention host advantage."""
+    from pitch_agent.poisson import prediction_key_factor
+    kf = prediction_key_factor(
+        [], [],
+        home_elo=2000, away_elo=1800,
+        basis_home="elo_prior", basis_away="elo_prior",
+        home_code="BRA", away_code="MAR",
+        is_host_advantage=False,
+    )
+    assert "host advantage" not in kf, f"Unexpected host advantage mention: {kf}"
+    assert "BRA" in kf and "MAR" in kf
+
+
+def test_key_factor_fifa_codes_home_first():
+    """Elo key_factor always shows home code first, regardless of Elo order."""
+    from pitch_agent.poisson import prediction_key_factor
+    # Away team has higher Elo, but home code still listed first
+    kf = prediction_key_factor(
+        [], [],
+        home_elo=1700, away_elo=1900,
+        basis_home="elo_prior", basis_away="elo_prior",
+        home_code="KOR", away_code="SUI",
+    )
+    assert "KOR" in kf
+    assert "SUI" in kf
+    # Home code should appear before away code in the string
+    assert kf.index("KOR") < kf.index("SUI"), f"Home code should come first: {kf}"
