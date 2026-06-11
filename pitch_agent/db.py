@@ -82,8 +82,18 @@ CREATE TABLE IF NOT EXISTS matches (
     group_name            TEXT    NOT NULL DEFAULT '',
     status                TEXT    NOT NULL DEFAULT '',
     provider_name         TEXT    NOT NULL DEFAULT '',
+    result_source        TEXT    NOT NULL DEFAULT '',
     created_at            TEXT    NOT NULL DEFAULT (datetime('now')),
     updated_at            TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS provider_match_map (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    our_match_id        TEXT    NOT NULL,
+    provider             TEXT    NOT NULL,
+    provider_match_id   TEXT    NOT NULL,
+    created_at           TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(our_match_id, provider)
 );
 
 CREATE TABLE IF NOT EXISTS form_index_scores (
@@ -176,6 +186,7 @@ CREATE INDEX IF NOT EXISTS idx_tournament_player ON tournament_form_index(player
 _MATCHES_MIGRATIONS = [
     ("status", "TEXT NOT NULL DEFAULT ''"),
     ("provider_name", "TEXT NOT NULL DEFAULT ''"),
+    ("result_source", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 
@@ -305,6 +316,7 @@ def _migrate_matches_columns(conn: sqlite3.Connection) -> list[str]:
                 group_name            TEXT    NOT NULL DEFAULT '',
                 status                TEXT    NOT NULL DEFAULT '',
                 provider_name         TEXT    NOT NULL DEFAULT '',
+                result_source         TEXT    NOT NULL DEFAULT '',
                 created_at            TEXT    NOT NULL DEFAULT (datetime('now')),
                 updated_at            TEXT    NOT NULL DEFAULT (datetime('now'))
             )
@@ -318,7 +330,7 @@ def _migrate_matches_columns(conn: sqlite3.Connection) -> list[str]:
         new_cols = ["id", "match_id", "competition_id", "matchday", "stage",
                      "home_team_id", "home_team_name", "away_team_id", "away_team_name",
                      "home_score", "away_score", "date", "group_name",
-                     "status", "provider_name", "created_at", "updated_at"]
+                     "status", "provider_name", "result_source", "created_at", "updated_at"]
 
         has_status = "status" in old_cols_set
         # If old table lacks status/provider_name, they'll get defaults
@@ -404,7 +416,7 @@ _STATS_UPDATE_COLUMNS = [c for c in _STATS_COLUMNS if c not in ("match_id", "pla
 _MATCHES_COLUMNS = [
     "match_id", "competition_id", "matchday", "stage",
     "home_team_id", "home_team_name", "away_team_id", "away_team_name",
-    "home_score", "away_score", "date", "group_name", "status", "provider_name",
+    "home_score", "away_score", "date", "group_name", "status", "provider_name", "result_source",
 ]
 _MATCHES_UPDATE_COLUMNS = [c for c in _MATCHES_COLUMNS if c != "match_id"]
 
@@ -810,12 +822,13 @@ def record_match_result(
     match_id: str,
     home_score: int,
     away_score: int,
+    result_source: str = "manual",
 ) -> dict[str, Any]:
     """Set the result for a match and grade any pending predictions.
 
-    Sets ``home_score``, ``away_score``, and ``status = 'FINISHED'``
-    on the match row, then calls :func:`grade_predictions` to grade
-    any ungraded predictions for this match.
+    Sets ``home_score``, ``away_score``, ``status = 'FINISHED'``, and
+    ``result_source`` on the match row, then calls
+    :func:`grade_predictions` to grade any ungraded predictions.
 
     Returns a dict with the match info and the number of predictions graded.
     Raises ``ValueError`` if the match does not exist.
@@ -830,8 +843,8 @@ def record_match_result(
 
     conn.execute(
         "UPDATE matches SET home_score = ?, away_score = ?, status = 'FINISHED', "
-        "updated_at = datetime('now') WHERE match_id = ?",
-        (home_score, away_score, match_id),
+        "result_source = ?, updated_at = datetime('now') WHERE match_id = ?",
+        (home_score, away_score, result_source, match_id),
     )
     conn.commit()
 

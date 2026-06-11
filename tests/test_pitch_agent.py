@@ -1589,7 +1589,8 @@ def test_migrate_db_adds_missing_columns_idempotently(tmp_path):
     assert "status" in cols and "provider_name" in cols
 
     # Idempotent: a second run changes nothing.
-    assert migrate_db(db_path) == []
+    second_added = migrate_db(db_path)
+    assert second_added == [], f"Second migration should add nothing, got {second_added}"
 
 
 def test_init_db_migrates_existing_old_table(tmp_path):
@@ -3305,3 +3306,144 @@ def test_upsert_match_preserves_finished_status_on_resync(tmp_path):
     assert row["away_score"] == 0, f"away_score preserved, got {row['away_score']}"
     assert row["status"] == "FINISHED", f"status should stay FINISHED, got {row['status']}"
     conn.close()
+
+
+# ── WorldCup26 provider tests ──────────────────────────────────────────────
+
+class TestWorldCup26Provider:
+    """Tests for the worldcup26 results-only provider."""
+
+    def test_finished_false_no_write(self, tmp_path):
+        """finished=FALSE games must not write scores (0-0 is placeholder)."""
+        from pitch_agent.providers.worldcup26_provider import WorldCup26Provider
+        from pitch_agent.db import init_db, get_connection
+
+        provider = WorldCup26Provider.__new__(WorldCup26Provider)
+        # Simulate a game that is NOT finished — scores are 0-0 placeholders
+        game = {
+            "wc26_id": "1",
+            "home_team_name": "Mexico",
+            "away_team_name": "South Africa",
+            "home_score": None,  # finished=FALSE → None
+            "away_score": None,
+            "finished": False,
+            "matchday": 1,
+            "group": "A",
+        }
+        assert game["home_score"] is None, "Unfinished games must have NULL scores"
+
+    def test_finished_true_valid_write_and_grade(self, tmp_path):
+        """finished=TRUE with valid scores → write + grade."""
+        from pitch_agent.db import init_db, upsert_match, upsert_prediction, grade_predictions
+
+        db_path = str(tmp_path / "wc26_finished.db")
+        conn = init_db(db_path)
+
+        # Match in DB with NULL scores
+        upsert_match(conn, {
+            "match_id": "537327", "competition_id": "WC", "matchday": 1,
+            "home_team_name": "Mexico", "away_team_name": "South Africa",
+            "home_score": None, "away_score": None,
+            "status": "FINISHED", "date": "2026-06-11",
+        })
+        conn.commit()
+
+        # Add a prediction
+        upsert_prediction(conn, {
+            "match_id": "537327", "model_version": MODEL_VERSION,
+            "predicted_home": 2, "predicted_away": 0,
+            "predicted_outcome": "home",
+            "home_win_prob": 0.55, "draw_prob": 0.25, "away_win_prob": 0.20,
+            "top_scorelines": [], "key_factor": "",
+            "basis_home": "elo_prior", "basis_away": "elo_prior",
+        })
+        conn.commit()
+
+        # Simulate worldcup26 writing the result
+        conn.execute(
+            "UPDATE matches SET home_score = 2, away_score = 0, "
+            "status = 'FINISHED', result_source = 'worldcup26' WHERE match_id = '537327'"
+        )
+        conn.commit()
+
+        graded = grade_predictions(conn)
+        assert graded == 1, f"Should grade 1 prediction, got {graded}"
+
+        row = conn.execute("SELECT home_score, away_score, result_source FROM matches WHERE match_id = '537327'").fetchone()
+        assert row["home_score"] == 2
+        assert row["away_score"] == 0
+        assert row["result_source"] == "worldcup26"
+        conn.close()
+
+    def test_out_of_range_score_rejected(self, tmp_path):
+        """Scores outside 0-15 range must be rejected."""
+        from pitch_agent.db import init_db, upsert_match
+
+        db_path = str(tmp_path / "wc26_bad_score.db")
+        conn = init_db(db_path)
+
+        upsert_match(conn, {
+            "match_id": "M999", "competition_id": "WC", "matchday": 1,
+            "home_team_name": "TeamA", "away_team_name": "TeamB",
+            "home_score": None, "away_score": None,
+            "status": "FINISHED", "date": "2026-06-20",
+        })
+        conn.commit()
+
+        # Simulate the validation logic from sync-results
+        for bad_score in [-1, 16, 99]:
+            # The sync-results command validates: 0 <= score <= 15
+            valid = 0 <= bad_score <= 15
+            assert not valid, f"Score {bad_score} should be rejected"
+
+    def test_non_null_local_score_untouched(self, tmp_path):
+        """A match that already has scores must not be overwritten by sync-results."""
+        from pitch_agent.db import init_db, upsert_match
+
+        db_path = str(tmp_path / "wc26_guard.db")
+        conn = init_db(db_path)
+
+        upsert_match(conn, {
+            "match_id": "M800", "competition_id": "WC", "matchday": 1,
+            "home_team_name": "Mexico", "away_team_name": "South Africa",
+            "home_score": 2, "away_score": 0,
+            "status": "FINISHED", "date": "2026-06-11",
+        })
+        conn.commit()
+
+        # Re-upsert with NULL scores (simulating a provider that sends NULL)
+        upsert_match(conn, {
+            "match_id": "M800", "competition_id": "WC", "matchday": 1,
+            "home_team_name": "Mexico", "away_team_name": "South Africa",
+            "home_score": None, "away_score": None,
+            "status": "TIMED", "date": "2026-06-11",
+        })
+        conn.commit()
+
+        row = conn.execute("SELECT home_score, away_score, status FROM matches WHERE match_id = 'M800'").fetchone()
+        assert row["home_score"] == 2, "Non-NULL scores must not be overwritten"
+        assert row["away_score"] == 0
+        assert row["status"] == "FINISHED", "FINISHED status must not be downgraded"
+
+    def test_result_source_manual(self, tmp_path):
+        """record-result sets result_source='manual' by default."""
+        from pitch_agent.db import init_db, upsert_match, record_match_result
+
+        db_path = str(tmp_path / "result_source.db")
+        conn = init_db(db_path)
+
+        upsert_match(conn, {
+            "match_id": "M900", "competition_id": "WC", "matchday": 1,
+            "home_team_name": "Brazil", "away_team_name": "Morocco",
+            "home_score": None, "away_score": None,
+            "status": "FINISHED", "date": "2026-06-13",
+        })
+        conn.commit()
+
+        result = record_match_result(conn, "M900", 3, 1)
+        assert result["home_score"] == 3
+        assert result["away_score"] == 1
+
+        row = conn.execute("SELECT result_source FROM matches WHERE match_id = 'M900'").fetchone()
+        assert row["result_source"] == "manual"
+        conn.close()

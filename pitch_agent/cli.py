@@ -183,6 +183,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_result.add_argument("--db", default="pitch_agent.db", help="Database path")
     p_result.set_defaults(func=cmd_record_result)
 
+    # ── sync-results ────────────────────────────────────────────────
+    p_sync_res = sub.add_parser("sync-results", help="Sync results from worldcup26.ir for finished matches")
+    p_sync_res.add_argument("--provider", default="worldcup26", help="Results provider (default: worldcup26)")
+    p_sync_res.add_argument("--db", default="pitch_agent.db", help="Database path")
+    p_sync_res.set_defaults(func=cmd_sync_results)
+
     # ── transparency ────────────────────────────────────────────────────
     p_trans = sub.add_parser("transparency",
                               help="Show trademark and affiliation disclaimer")
@@ -935,6 +941,118 @@ def cmd_record_result(args: argparse.Namespace) -> int:
         return 1
     finally:
         conn.close()
+
+
+def cmd_sync_results(args: argparse.Namespace) -> int:
+    """Sync results from worldcup26.ir for finished matches with NULL scores."""
+    from pitch_agent.db import get_connection, upsert_match, grade_predictions
+    from pitch_agent.providers.worldcup26_provider import WorldCup26Provider
+
+    db_path = args.db
+    conn = get_connection(db_path)
+
+    # Fetch games from worldcup26.ir
+    provider = WorldCup26Provider()
+    try:
+        games = provider.fetch_games()
+    except RuntimeError as exc:
+        print(f"⚠ worldcup26.ir unavailable: {exc}", file=sys.stderr)
+        print("Skipping worldcup26 result sync — will retry next run.")
+        conn.close()
+        return 0  # Exit 0 — cron must not die on hobby server downtime
+
+    if not games:
+        print("No games returned from worldcup26.ir.")
+        conn.close()
+        return 0
+
+    # Get our matches with NULL scores that are FINISHED
+    our_matches = conn.execute(
+        "SELECT match_id, home_team_name, away_team_name, home_score, away_score, status "
+        "FROM matches WHERE home_score IS NULL AND away_score IS NULL AND status = 'FINISHED'"
+    ).fetchall()
+    our_by_name: dict[tuple[str, str], dict] = {}
+    for m in our_matches:
+        key = (m["home_team_name"], m["away_team_name"])
+        our_by_name[key] = dict(m)
+
+    # Also get TIMED matches (may have been updated to FINISHED by this provider)
+    timed_matches = conn.execute(
+        "SELECT match_id, home_team_name, away_team_name, matchday, group_name "
+        "FROM matches WHERE status IN ('TIMED', 'SCHEDULED', '')"
+    ).fetchall()
+    timed_by_name: dict[tuple[str, str], dict] = {}
+    for m in timed_matches:
+        key = (m["home_team_name"], m["away_team_name"])
+        timed_by_name[key] = dict(m)
+
+    # Build name lookup for our matches
+    all_matches = conn.execute(
+        "SELECT match_id, home_team_name, away_team_name, home_score, away_score, status, matchday, group_name "
+        "FROM matches"
+    ).fetchall()
+    match_lookup: dict[tuple[str, str], dict] = {}
+    for m in all_matches:
+        key = (m["home_team_name"], m["away_team_name"])
+        match_lookup[key] = dict(m)
+
+    updated = 0
+    graded = 0
+    unmatched: list[dict] = []
+
+    for game in games:
+        if not game["finished"]:
+            continue  # Only process finished games
+
+        home_score = game["home_score"]
+        away_score = game["away_score"]
+        if home_score is None or away_score is None:
+            continue
+
+        # Validate score range
+        if not (0 <= home_score <= 15 and 0 <= away_score <= 15):
+            print(f"⚠ Out-of-range score: {game['home_team_name']} {home_score}-{away_score} {game['away_team_name']} — skipping",
+                  file=sys.stderr)
+            continue
+
+        key = (game["home_team_name"], game["away_team_name"])
+        our_match = match_lookup.get(key)
+
+        if our_match is None:
+            unmatched.append(game)
+            continue
+
+        # Only fill NULL scores — the upsert guard prevents overwriting
+        if our_match["home_score"] is not None and our_match["away_score"] is not None:
+            # Already has scores
+            continue
+
+        match_id = our_match["match_id"]
+        conn.execute(
+            "UPDATE matches SET home_score = ?, away_score = ?, status = 'FINISHED', "
+            "result_source = 'worldcup26', updated_at = datetime('now') WHERE match_id = ?",
+            (home_score, away_score, match_id),
+        )
+        updated += 1
+        print(f"  {game['home_team_name']} {home_score}-{away_score} {game['away_team_name']} (match {match_id})")
+
+    if updated:
+        conn.commit()
+        graded = grade_predictions(conn)
+        print(f"✓ Updated {updated} match results from worldcup26.ir")
+        print(f"  Predictions graded: {graded}")
+    else:
+        print("No new results to sync.")
+
+    if unmatched:
+        print(f"⚠ {len(unmatched)} finished game(s) could not be matched to local fixtures:",
+              file=sys.stderr)
+        for g in unmatched[:5]:
+            print(f"  {g['home_team_name']} vs {g['away_team_name']} (wc26 id={g['wc26_id']})",
+                  file=sys.stderr)
+
+    conn.close()
+    return 0
 
 
 def main() -> int:

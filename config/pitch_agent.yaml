@@ -13,6 +13,9 @@ content:
 # football-data.org provider settings (set FOOTBALL_DATA_API_KEY in secrets.env)
 football_data_base_url: "https://api.football-data.org/v4"
 
+# worldcup26.ir results provider (set WC26_EMAIL/WC26_PASSWORD in secrets.env)
+worldcup26_base_url: "https://worldcup26.ir"
+
 # Branding for charts and review metadata. logo_path is optional — if the file
 # is missing, charts fall back to a "BuildWithAbdallah" text header (no crash).
 # All Pitch Agent visuals are template-driven (pitch_agent/brand_template.py),
