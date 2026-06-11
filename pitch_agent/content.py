@@ -509,7 +509,11 @@ def _generate_matchday_preview(fixtures: list[dict[str, Any]]) -> str:
 
 
 def _match_prediction(fixture: dict[str, Any]) -> str | None:
-    """Return a one-line Poisson prediction for a fixture, or None."""
+    """Return a one-line Poisson prediction for a fixture, or None.
+
+    Never falls back to team_result-derived numbers. If Form Index data
+    is unavailable for either team, returns None (no prediction line).
+    """
     from pitch_agent.poisson import form_index_to_xg, top_scorelines, match_outcome_probs, prediction_key_factor
 
     match_id = fixture.get("match_id") or fixture.get("id") or ""
@@ -523,6 +527,8 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
         cfg = PitchAgentConfig.load()
         conn = get_connection(cfg.db_path)
     except Exception:
+        import sys
+        print("[pitch_agent] Could not connect to DB for match prediction", file=sys.stderr)
         return None
 
     try:
@@ -541,6 +547,11 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
         ).fetchall()
 
         if len(rows) < 2:
+            import sys
+            print(
+                f"[pitch_agent] No Form Index data for {home_team} vs {away_team} — prediction skipped",
+                file=sys.stderr,
+            )
             return None
 
         home_avg = float(rows[0]["avg_score"])

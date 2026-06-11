@@ -18,6 +18,8 @@ import json
 import os
 import sys
 
+from pitch_agent import MODEL_VERSION as CURRENT_MODEL_VERSION
+
 from pitch_agent import __version__, TRADEMARK_DISCLAIMER
 from pitch_agent.config import PitchAgentConfig, load_env
 from pitch_agent.transparency import get_chart_footer, get_disclaimer, get_methodology
@@ -149,10 +151,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_predict.add_argument("--db", default="pitch_agent.db", help="Database path")
     p_predict.set_defaults(func=cmd_predict)
 
+    # ── recompute ────────────────────────────────────────────────────────
+    p_recompute = sub.add_parser("recompute", help="Purge stale model versions and recompute Form Index")
+    p_recompute.add_argument("--db", default="pitch_agent.db", help="Database path")
+    p_recompute.add_argument("--dry-run", action="store_true", help="Show what would be deleted without deleting")
+    p_recompute.set_defaults(func=cmd_recompute)
+
     # ── accuracy ──────────────────────────────────────────────────────────
     p_accuracy = sub.add_parser("accuracy", help="Show prediction accuracy stats")
     p_accuracy.add_argument("--db", default="pitch_agent.db", help="Database path")
-    p_accuracy.add_argument("--model-version", default="1.1.0", help="Model version")
+    p_accuracy.add_argument("--model-version", default=CURRENT_MODEL_VERSION, help="Model version")
     p_accuracy.set_defaults(func=cmd_accuracy)
 
     # ── transparency ────────────────────────────────────────────────────
@@ -331,7 +339,7 @@ def cmd_compute_index(args: argparse.Namespace) -> int:
             upsert_form_index(conn, {
                 "match_id": args.match,
                 "player_id": row["player_id"],
-                "model_version": "1.1.0",
+                "model_version": CURRENT_MODEL_VERSION,
                 "score": result["score"],
                 "score_breakdown_json": json.dumps(result["breakdown"]),
             })
@@ -553,7 +561,7 @@ def cmd_predict(args: argparse.Namespace) -> int:
     # Store prediction in DB
     upsert_prediction(conn, {
         "match_id": args.match,
-        "model_version": "1.1.0",
+        "model_version": CURRENT_MODEL_VERSION,
         "predicted_home": predicted_home,
         "predicted_away": predicted_away,
         "home_win_prob": outcomes["home_win"],
@@ -573,6 +581,54 @@ def cmd_predict(args: argparse.Namespace) -> int:
         print(f"\n✓ Graded {graded} finished prediction(s)")
 
     print(f"\n✓ Prediction stored for match {args.match}")
+    return 0
+
+
+def cmd_recompute(args: argparse.Namespace) -> int:
+    """Purge stale model versions and recompute Form Index with the current model."""
+    from pitch_agent.db import get_connection
+    from pitch_agent.form_index import compute_all, MODEL_VERSION as FORM_MODEL_VERSION
+
+    conn = get_connection(args.db)
+
+    # Count rows with old model versions
+    stale_rows = conn.execute(
+        "SELECT COUNT(*) FROM form_index_scores WHERE model_version != ?",
+        (CURRENT_MODEL_VERSION,),
+    ).fetchone()[0]
+    stale_tournament = conn.execute(
+        "SELECT COUNT(*) FROM tournament_form_index WHERE model_version != ?",
+        (CURRENT_MODEL_VERSION,),
+    ).fetchone()[0]
+
+    total_stale = stale_rows + stale_tournament
+
+    if total_stale == 0:
+        print(f"No stale model versions found. All scores are {CURRENT_MODEL_VERSION}.")
+        conn.close()
+        return 0
+
+    if args.dry_run:
+        print(f"Would delete {stale_rows} form_index_scores rows and {stale_tournament} tournament_form_index rows with model_version != {CURRENT_MODEL_VERSION}")
+        conn.close()
+        return 0
+
+    # Delete stale rows
+    conn.execute(
+        "DELETE FROM form_index_scores WHERE model_version != ?",
+        (CURRENT_MODEL_VERSION,),
+    )
+    conn.execute(
+        "DELETE FROM tournament_form_index WHERE model_version != ?",
+        (CURRENT_MODEL_VERSION,),
+    )
+    conn.commit()
+    print(f"✓ Purged {stale_rows} form_index_scores and {stale_tournament} tournament_form_index rows with old model versions.")
+    conn.close()
+
+    # Recompute with current model
+    count = compute_all(db_path=args.db)
+    print(f"✓ Recomputed {count} player-match scores with model version {CURRENT_MODEL_VERSION}")
     return 0
 
 
