@@ -27,7 +27,7 @@ def get_leaderboard(
     db_path: str = "pitch_agent.db",
     position: str | None = None,
     limit: int = 10,
-    model_version: str = "1.0.0-lite",
+    model_version: str = "1.1.0",
     scope: str = DAILY_SCOPE,
     match_id: str | None = None,
 ) -> list[dict[str, Any]]:
@@ -83,7 +83,7 @@ def get_daily_leaderboard(
     db_path: str = "pitch_agent.db",
     position: str | None = None,
     limit: int = 10,
-    model_version: str = "1.0.0-lite",
+    model_version: str = "1.1.0",
 ) -> list[dict[str, Any]]:
     """Return one row per player using that player's best match score."""
     from pitch_agent.db import get_connection
@@ -153,7 +153,7 @@ def get_match_leaderboard(
     match_id: str | None = None,
     position: str | None = None,
     limit: int = 10,
-    model_version: str = "1.0.0-lite",
+    model_version: str = "1.1.0",
 ) -> list[dict[str, Any]]:
     """Return a leaderboard for a specific match.
 
@@ -225,7 +225,7 @@ def get_tournament_leaderboard(
     db_path: str = "pitch_agent.db",
     position: str | None = None,
     limit: int = 10,
-    model_version: str = "1.0.0-lite",
+    model_version: str = "1.1.0",
 ) -> list[dict[str, Any]]:
     """Return one row per player from cumulative tournament scores."""
     from pitch_agent.db import get_connection

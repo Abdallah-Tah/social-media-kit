@@ -1,9 +1,10 @@
 # The Pitch Agent — Configuration
 # Independent analytics project, not affiliated with FIFA.
 
-model_version: "1.0.0-lite"
+model_version: "1.1.0"
 db_path: "pitch_agent.db"
 data_dir: "pitch_agent/data"
+unknown_minutes_multiplier: 0.90  # Multiplier for unknown minutes (free-tier data)
 
 content:
   headline_index_mode: "daily"

@@ -55,7 +55,7 @@ def build_chart_subtitle(
     as_of_date: str = "",
     model_version_label: str = MODEL_VERSION_LABEL,
 ) -> str:
-    """Build the chart subtitle, e.g. ``<date> • Form Index v1.0 Lite • Basic data``.
+    """Build the chart subtitle, e.g. ``<date> • Form Index v1.1 • Basic data``.
 
     When the provider is the sample CSV source, append ``Demo data only`` so the
     chart can never be mistaken for live tournament data.
@@ -121,7 +121,7 @@ def render_leaderboard_chart(
     as_of_date : str
         Optional ISO date shown in the subtitle.
     model_version_label : str
-        Frozen model label shown in the subtitle (``Form Index v1.0 Lite``).
+        Frozen model label shown in the subtitle (``Form Index v1.1``).
 
     Returns
     -------
@@ -182,7 +182,7 @@ def render_player_spotlight_chart(
     player: dict[str, Any],
     output_path: str | None = None,
     title: str = "Player Spotlight",
-    subtitle: str = "Form Index v1.0 Lite",
+    subtitle: str = "Form Index v1.1",
 ) -> str:
     """Render a single-player spotlight card with the brand template."""
     if output_path is None:
@@ -202,7 +202,7 @@ def render_stat_card_chart(
     stat: dict[str, Any],
     output_path: str | None = None,
     title: str = "Stat of the Day",
-    subtitle: str = "Form Index v1.0 Lite",
+    subtitle: str = "Form Index v1.1",
 ) -> str:
     """Render a big-number stat card with the brand template."""
     if output_path is None:

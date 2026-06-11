@@ -152,7 +152,7 @@ def build_parser() -> argparse.ArgumentParser:
     # ── accuracy ──────────────────────────────────────────────────────────
     p_accuracy = sub.add_parser("accuracy", help="Show prediction accuracy stats")
     p_accuracy.add_argument("--db", default="pitch_agent.db", help="Database path")
-    p_accuracy.add_argument("--model-version", default="1.0.0-lite", help="Model version")
+    p_accuracy.add_argument("--model-version", default="1.1.0", help="Model version")
     p_accuracy.set_defaults(func=cmd_accuracy)
 
     # ── transparency ────────────────────────────────────────────────────
@@ -331,7 +331,7 @@ def cmd_compute_index(args: argparse.Namespace) -> int:
             upsert_form_index(conn, {
                 "match_id": args.match,
                 "player_id": row["player_id"],
-                "model_version": "1.0.0-lite",
+                "model_version": "1.1.0",
                 "score": result["score"],
                 "score_breakdown_json": json.dumps(result["breakdown"]),
             })
@@ -497,7 +497,7 @@ def cmd_predict(args: argparse.Namespace) -> int:
         FROM form_index_scores s
         JOIN player_match_stats p
             ON s.match_id = p.match_id AND s.player_id = p.player_id
-        WHERE s.match_id = ? AND s.model_version = '1.0.0-lite'
+        WHERE s.match_id = ? AND s.model_version = '1.1.0'
         """,
         (args.match,),
     ).fetchall()
@@ -553,7 +553,7 @@ def cmd_predict(args: argparse.Namespace) -> int:
     # Store prediction in DB
     upsert_prediction(conn, {
         "match_id": args.match,
-        "model_version": "1.0.0-lite",
+        "model_version": "1.1.0",
         "predicted_home": predicted_home,
         "predicted_away": predicted_away,
         "home_win_prob": outcomes["home_win"],
@@ -589,7 +589,8 @@ def cmd_accuracy(args: argparse.Namespace) -> int:
         return 0
 
     print(f"Prediction accuracy ({args.model_version}):")
-    print(f"  {stats['correct']}/{stats['total']} correct ({stats['pct']}%)")
+    print(f"  Outcome:  {stats['correct']}/{stats['total']} correct ({stats['pct']}%)")
+    print(f"  Exact score: {stats['exact_correct']}/{stats['total']} correct ({stats['exact_pct']}%)")
     return 0
 
 

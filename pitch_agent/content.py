@@ -470,7 +470,7 @@ def _generate_fan_mode(
 
 
 def _generate_matchday_preview(fixtures: list[dict[str, Any]]) -> str:
-    """Build a short, prediction-free preview of the next few fixtures."""
+    """Build a matchday preview with Poisson predictions for upcoming fixtures."""
     if not fixtures:
         return (
             "No upcoming matches yet.\n\n"
@@ -482,6 +482,8 @@ def _generate_matchday_preview(fixtures: list[dict[str, Any]]) -> str:
     lines = ["🗓️ Matchday Preview", ""]
     lines.append(f"Next up on the World Cup calendar — {len(upcoming)} matches to watch:")
     lines.append("")
+
+    # Try to generate Poisson predictions for each fixture
     for fx in upcoming:
         label = fx.get("match_label") or "TBD"
         context = _fixture_context(fx)
@@ -491,6 +493,12 @@ def _generate_matchday_preview(fixtures: list[dict[str, Any]]) -> str:
         if details:
             bullet += f" ({details})"
         lines.append(bullet)
+
+        # Attach prediction if Form Index data exists for both teams
+        prediction = _match_prediction(fx)
+        if prediction:
+            lines.append(f"  {prediction}")
+
     lines.append("")
     lines.append(
         "Follow The Pitch Agent for Form Index updates once matches are played."
@@ -498,6 +506,65 @@ def _generate_matchday_preview(fixtures: list[dict[str, Any]]) -> str:
     lines.append("")
     lines.append(TRADEMARK_DISCLAIMER)
     return "\n".join(lines)
+
+
+def _match_prediction(fixture: dict[str, Any]) -> str | None:
+    """Return a one-line Poisson prediction for a fixture, or None."""
+    from pitch_agent.poisson import form_index_to_xg, top_scorelines, match_outcome_probs, prediction_key_factor
+
+    match_id = fixture.get("match_id") or fixture.get("id") or ""
+    home_team = fixture.get("home_team_name", "")
+    away_team = fixture.get("away_team_name", "")
+
+    # Try to get Form Index data from the DB
+    try:
+        from pitch_agent.db import get_connection
+        from pitch_agent.config import PitchAgentConfig
+        cfg = PitchAgentConfig.load()
+        conn = get_connection(cfg.db_path)
+    except Exception:
+        return None
+
+    try:
+        # Get average Form Index for each team in this match
+        rows = conn.execute(
+            """
+            SELECT p.team_id, AVG(s.score) as avg_score
+            FROM form_index_scores s
+            JOIN player_match_stats p ON s.match_id = p.match_id AND s.player_id = p.player_id
+            WHERE s.model_version = ? AND (p.team_name = ? OR p.team_name = ?)
+            GROUP BY p.team_id
+            ORDER BY avg_score DESC
+            LIMIT 2
+            """,
+            (MODEL_VERSION, home_team, away_team),
+        ).fetchall()
+
+        if len(rows) < 2:
+            return None
+
+        home_avg = float(rows[0]["avg_score"])
+        away_avg = float(rows[1]["avg_score"])
+
+        # Generate Poisson prediction
+        home_xg, away_xg = form_index_to_xg(home_avg, away_avg)
+        outcomes = match_outcome_probs(home_xg, away_xg)
+        top = top_scorelines(home_xg, away_xg, n=1)
+        key_factor = prediction_key_factor(
+            [{"score": home_avg, "goals": 0}],
+            [{"score": away_avg, "goals": 0}],
+        )
+
+        most_likely = top[0]
+        pred_str = (
+            f"Predicted {most_likely['label']} ({outcomes['home_win']*100:.0f}% home) — "
+            f"{key_factor}"
+        )
+        return pred_str
+    except Exception:
+        return None
+    finally:
+        conn.close()
 
 
 def _fixture_context(fixture: dict[str, Any]) -> str:
@@ -628,7 +695,7 @@ def _generate_builder_mode(
         "headline_index_mode": headline_index_mode,
         "data": data,
         "disclaimer": TRADEMARK_DISCLAIMER,
-        "model_version": "1.0.0-lite",
+        "model_version": "1.1.0",
     }
 
 
@@ -640,7 +707,7 @@ def _generate_real_data_connected(fixtures: list[dict[str, Any]]) -> dict[str, A
         "summary": (
             "The Pitch Agent now pulls real World Cup fixtures from "
             f"{provider}.org and is ready to grade player performances with "
-            "Form Index v1.0 Lite once match results are available."
+            "Form Index v1.1 once match results are available."
         ),
         "provider": provider,
         "data_quality_level": "fixture-only",

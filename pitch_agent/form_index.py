@@ -1,4 +1,4 @@
-"""Form Index v1.0 Lite scoring formula.
+"""Form Index v1.1 scoring formula.
 
 Computes a per-player per-match Form Index score from basic stats.
 Missing fields default to 0 and never crash the calculation.
@@ -8,7 +8,7 @@ Scoring rules:
     yellow cards × -2, red cards × -10, own goals × -5
 
 Minutes adjustment:
-    unknown (-1) → multiplier 0.90  (free-tier providers lack per-player minutes)
+    unknown (-1) → multiplier from config (default 0.90)
     < 15 min  → multiplier 0.50
     15–44 min → multiplier 0.90
     ≥ 45 min  → multiplier 1.00
@@ -46,19 +46,29 @@ MINUTES_UNKNOWN = -1  # Sentinel: free-tier providers don't have per-player minu
 MULTIPLIER_SHORT = 0.50
 MULTIPLIER_MEDIUM = 0.90
 MULTIPLIER_FULL = 1.00
-MULTIPLIER_UNKNOWN = 0.90  # Unknown minutes → treat as likely-full-match (0.90)
+MULTIPLIER_UNKNOWN = None  # Loaded from config; falls back to 0.90
 GOAL_ASSIST_FLOOR = 0.70
 
 # Position bonus thresholds
 MID_PASS_ACCURACY_THRESHOLD = 88.0
+
+
+def _load_unknown_minutes_multiplier() -> float:
+    """Load the unknown-minutes multiplier from config, falling back to 0.90."""
+    try:
+        from pitch_agent.config import PitchAgentConfig
+        cfg = PitchAgentConfig.load()
+        return cfg.unknown_minutes_multiplier
+    except Exception:
+        return 0.90
 MID_MINUTES_THRESHOLD = 45
 GK_SAVE_RATIO_THRESHOLD = 0.80
 
-MODEL_VERSION = "1.0.0-lite"
+MODEL_VERSION = "1.1.0"
 
 
 def compute_form_index(stats: dict[str, Any]) -> dict[str, Any]:
-    """Compute the Form Index v1.0 Lite for a single player-match.
+    """Compute the Form Index v1.1 for a single player-match.
 
     Parameters
     ----------
@@ -124,9 +134,8 @@ def compute_form_index(stats: dict[str, Any]) -> dict[str, Any]:
 
     if minutes == MINUTES_UNKNOWN:
         # Free-tier providers don't provide per-player minutes.
-        # Use MULTIPLIER_UNKNOWN (0.90) to acknowledge the uncertainty
-        # without the harsh penalty of MULTIPLIER_SHORT.
-        multiplier = MULTIPLIER_UNKNOWN
+        # Use configurable multiplier (default 0.90) to acknowledge uncertainty.
+        multiplier = MULTIPLIER_UNKNOWN or _load_unknown_minutes_multiplier()
     elif minutes < MINUTES_SHORT:
         multiplier = MULTIPLIER_SHORT
     elif minutes < MINUTES_MEDIUM:

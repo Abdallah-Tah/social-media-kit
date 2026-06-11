@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS form_index_scores (
     id                      INTEGER PRIMARY KEY AUTOINCREMENT,
     match_id                TEXT    NOT NULL,
     player_id               TEXT    NOT NULL,
-    model_version           TEXT    NOT NULL DEFAULT '1.0.0-lite',
+    model_version           TEXT    NOT NULL DEFAULT '1.1.0',
     score                   REAL    NOT NULL DEFAULT 0.0,
     score_breakdown_json    TEXT    NOT NULL DEFAULT '{}',
     created_at              TEXT    NOT NULL DEFAULT (datetime('now')),
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS tournament_form_index (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     tournament_id         TEXT    NOT NULL,
     player_id             TEXT    NOT NULL,
-    model_version         TEXT    NOT NULL DEFAULT '1.0.0-lite',
+    model_version         TEXT    NOT NULL DEFAULT '1.1.0',
     cumulative_score      REAL    NOT NULL DEFAULT 0.0,
     matches_played        INTEGER NOT NULL DEFAULT 0,
     created_at            TEXT    NOT NULL DEFAULT (datetime('now')),
@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS runs (
 CREATE TABLE IF NOT EXISTS predictions (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     match_id          TEXT    NOT NULL,
-    model_version     TEXT    NOT NULL DEFAULT '1.0.0-lite',
+    model_version     TEXT    NOT NULL DEFAULT '1.1.0',
     predicted_home    INTEGER NOT NULL,
     predicted_away    INTEGER NOT NULL,
     home_win_prob     REAL,
@@ -142,6 +142,7 @@ CREATE TABLE IF NOT EXISTS prediction_results (
     actual_home     INTEGER,
     actual_away     INTEGER,
     correct         INTEGER,
+    exact_score_correct INTEGER,
     graded_at       TEXT    NOT NULL DEFAULT (datetime('now')),
     UNIQUE(prediction_id)
 );
@@ -182,7 +183,18 @@ def run_migrations(conn: sqlite3.Connection) -> list[str]:
     """
     conn.executescript(SCHEMA_SQL)
     added = _migrate_matches_columns(conn)
+    added += _migrate_prediction_results_columns(conn)
     conn.commit()
+    return added
+
+
+def _migrate_prediction_results_columns(conn: sqlite3.Connection) -> list[str]:
+    """Add newer ``prediction_results`` columns to databases created before they existed."""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(prediction_results)")}
+    added: list[str] = []
+    if "exact_score_correct" not in existing:
+        conn.execute("ALTER TABLE prediction_results ADD COLUMN exact_score_correct INTEGER")
+        added.append("exact_score_correct")
     return added
 
 
@@ -464,7 +476,7 @@ def upsert_prediction_result(conn: sqlite3.Connection, record: dict[str, Any]) -
 
     Note: does NOT commit — the caller should batch inserts and commit once.
     """
-    cols = ["prediction_id", "actual_home", "actual_away", "correct"]
+    cols = ["prediction_id", "actual_home", "actual_away", "correct", "exact_score_correct"]
     vals = [record.get(c) for c in cols]
     placeholders = ", ".join("?" for _ in cols)
     col_names = ", ".join(cols)
@@ -502,12 +514,14 @@ def grade_predictions(conn: sqlite3.Connection) -> int:
             "away" if (actual_away or 0) > (actual_home or 0) else "draw"
         )
         correct = 1 if pred_winner == actual_winner else 0
+        exact_correct = 1 if (pred_home == (actual_home or 0) and pred_away == (actual_away or 0)) else 0
 
         upsert_prediction_result(conn, {
             "prediction_id": pred_id,
             "actual_home": actual_home,
             "actual_away": actual_away,
             "correct": correct,
+            "exact_score_correct": exact_correct,
         })
         graded += 1
 
@@ -518,15 +532,17 @@ def grade_predictions(conn: sqlite3.Connection) -> int:
 
 def get_prediction_accuracy(
     conn: sqlite3.Connection,
-    model_version: str = "1.0.0-lite",
+    model_version: str = "1.1.0",
 ) -> dict[str, Any]:
-    """Return prediction accuracy stats: total, correct, percentage."""
+    """Return prediction accuracy stats: outcome and exact-score."""
     row = conn.execute(
         """
         SELECT
             COUNT(*) AS total,
             SUM(r.correct) AS correct,
-            ROUND(AVG(r.correct) * 100, 1) AS pct
+            ROUND(AVG(r.correct) * 100, 1) AS pct,
+            SUM(r.exact_score_correct) AS exact_correct,
+            ROUND(AVG(r.exact_score_correct) * 100, 1) AS exact_pct
         FROM prediction_results r
         JOIN predictions p ON r.prediction_id = p.id
         WHERE p.model_version = ?
@@ -536,10 +552,12 @@ def get_prediction_accuracy(
     ).fetchone()
 
     if not row or row["total"] == 0:
-        return {"total": 0, "correct": 0, "pct": 0.0}
+        return {"total": 0, "correct": 0, "pct": 0.0, "exact_correct": 0, "exact_pct": 0.0}
 
     return {
         "total": row["total"],
         "correct": row["correct"],
         "pct": row["pct"],
+        "exact_correct": row["exact_correct"],
+        "exact_pct": row["exact_pct"],
     }

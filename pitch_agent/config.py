@@ -118,7 +118,8 @@ class PitchAgentConfig:
 
     db_path: str = "pitch_agent.db"
     data_dir: str = str(ROOT / "pitch_agent" / "data")
-    model_version: str = "1.0.0-lite"
+    model_version: str = "1.1.0"
+    unknown_minutes_multiplier: float = 0.90
 
     # Content settings
     headline_index_mode: str = "daily"
@@ -144,11 +145,12 @@ class PitchAgentConfig:
         return cls(
             db_path=os.environ.get("PITCH_AGENT_DB", settings.get("db_path", "pitch_agent.db")),
             data_dir=os.environ.get("PITCH_AGENT_DATA_DIR", settings.get("data_dir", str(ROOT / "pitch_agent" / "data"))),
-            model_version=settings.get("model_version", "1.0.0-lite"),
+            model_version=settings.get("model_version", "1.1.0"),
             headline_index_mode=content.get("headline_index_mode", "daily"),
             cumulative_index_enabled_after_group_stage=content.get("cumulative_index_enabled_after_group_stage", True),
             football_data_api_key=os.environ.get("FOOTBALL_DATA_API_KEY", ""),
             football_data_base_url=os.environ.get("FOOTBALL_DATA_BASE_URL", settings.get("football_data_base_url", "https://api.football-data.org/v4")),
+            unknown_minutes_multiplier=float(settings.get("unknown_minutes_multiplier", 0.90)),
         )
 
 

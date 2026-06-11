@@ -12,7 +12,7 @@ from pitch_agent.providers import DataProvider
 
 
 class APIFootballProvider(DataProvider):
-    """Paid/richer provider path — not yet implemented for v1.0 Lite.
+    """Paid/richer provider path — not yet implemented for v1.1.
 
     API-Football (api-football.com) provides live match data and richer
     per-player statistics.  This stub marks the upgrade path for Form
