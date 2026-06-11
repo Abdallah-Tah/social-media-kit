@@ -555,9 +555,13 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
         home_avg_fi = fi_map.get(home_team)
         away_avg_fi = fi_map.get(away_team)
 
-        # Get Elo priors
+        # Get Elo priors (lookup by team_id first, then team_name)
         home_prior = get_team_prior(conn, home_team_id) if home_team_id else None
+        if not home_prior:
+            home_prior = get_team_prior(conn, home_team)
         away_prior = get_team_prior(conn, away_team_id) if away_team_id else None
+        if not away_prior:
+            away_prior = get_team_prior(conn, away_team)
         home_elo = home_prior["elo"] if home_prior else None
         away_elo = away_prior["elo"] if away_prior else None
 

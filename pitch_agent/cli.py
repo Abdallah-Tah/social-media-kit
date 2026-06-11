@@ -537,8 +537,8 @@ def cmd_predict(args: argparse.Namespace) -> int:
 
     home_team = match["home_team_name"]
     away_team = match["away_team_name"]
-    home_team_id = match.get("home_team_id", "") or ""
-    away_team_id = match.get("away_team_id", "") or ""
+    home_team_id = match["home_team_id"] or ""
+    away_team_id = match["away_team_id"] or ""
 
     # Fetch Form Index scores for both teams in this match
     rows = conn.execute(
@@ -566,9 +566,13 @@ def cmd_predict(args: argparse.Namespace) -> int:
     home_avg = sum(r["score"] for r in home_scores) / len(home_scores) if home_scores else None
     away_avg = sum(r["score"] for r in away_scores) / len(away_scores) if away_scores else None
 
-    # Fetch Elo priors
+    # Fetch Elo priors (lookup by team_id or team_name)
     home_prior = get_team_prior(conn, home_team_id) if home_team_id else None
+    if not home_prior:
+        home_prior = get_team_prior(conn, home_team)
     away_prior = get_team_prior(conn, away_team_id) if away_team_id else None
+    if not away_prior:
+        away_prior = get_team_prior(conn, away_team)
     home_elo = home_prior["elo"] if home_prior else None
     away_elo = away_prior["elo"] if away_prior else None
 

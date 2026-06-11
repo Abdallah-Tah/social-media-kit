@@ -623,12 +623,18 @@ def upsert_team_prior(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
     conn.execute(sql, vals)
 
 
-def get_team_prior(conn: sqlite3.Connection, team_id: str) -> dict[str, Any] | None:
-    """Return a single team's prior, or None."""
+def get_team_prior(conn: sqlite3.Connection, team_id_or_name: str) -> dict[str, Any] | None:
+    """Return a single team's prior by team_id or team_name, or None."""
+    # Try team_id first, then team_name
     row = conn.execute(
         "SELECT team_id, team_name, elo, source FROM team_priors WHERE team_id = ?",
-        (team_id,),
+        (team_id_or_name,),
     ).fetchone()
+    if not row:
+        row = conn.execute(
+            "SELECT team_id, team_name, elo, source FROM team_priors WHERE team_name = ?",
+            (team_id_or_name,),
+        ).fetchone()
     return dict(row) if row else None
 
 
