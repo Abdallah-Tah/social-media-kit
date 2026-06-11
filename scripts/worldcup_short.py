@@ -294,8 +294,8 @@ def assemble_video(scene_paths, voice_path, out_video):
         raise RuntimeError(f"ffmpeg failed: {r.stderr[-700:]}")
 
 
-def build(deck_slug: str) -> Path:
-    deck = DECKS[deck_slug]
+def build(deck: dict, slug: str) -> Path:
+    deck_slug = slug
     out_dir = SHORTS_DIR / f"worldcup-{deck_slug}"
     scenes_dir = out_dir / "scenes"
     scenes_dir.mkdir(parents=True, exist_ok=True)
@@ -327,20 +327,102 @@ def build(deck_slug: str) -> Path:
     return out_video
 
 
+# ── Live-data deck builders (worldcup26.ir) ──────────────────────────────
+
+def deck_standings(group_letter: str) -> tuple[dict, str]:
+    """Build a Group Standings deck from live worldcup26.ir data."""
+    import worldcup26_data as wc
+    blocks = wc.standings(group_letter)
+    if not blocks:
+        raise SystemExit(f"No standings for group {group_letter}")
+    block = blocks[0]
+    rows = block["table"]
+    header = "Pos Team             P  W  D  L  Pts"
+    sep = "-" * len(header)
+    lines = [header, sep]
+    for r in rows:
+        lines.append(f"{r['position']:<3} {r['team'][:15]:<15} {r['played']:>2} "
+                     f"{r['won']:>2} {r['draw']:>2} {r['lost']:>2} {r['points']:>4}")
+    leader = rows[0]["team"]
+    played = sum(r["played"] for r in rows)
+    sub = "Latest table" if played else "Group preview — kicks off soon"
+    scenes = [
+        {"template": "title_card.html", "title": f"{block['group']} Standings",
+         "caption": "2026 FIFA World Cup",
+         "main_idea": f"Here's how {block['group']} is shaping up at the 2026 World Cup.",
+         "progress": "1/3", "duration_seconds": 7},
+        {"template": "code_card.html", "title": block["group"], "caption": sub,
+         "code": "\n".join(lines),
+         "takeaway": (f"{leader} lead the group" if played else f"All eyes on {leader} and co."),
+         "progress": "2/3", "duration_seconds": 14},
+        {"template": "cta_card.html", "title": "Follow For Every Group",
+         "caption": "Daily World Cup breakdowns", "cta": "Follow Build With Abdallah",
+         "url": "buildwithabdallah.com", "progress": "3/3", "duration_seconds": 6},
+    ]
+    team_list = ", ".join(r["team"] for r in rows)
+    if played:
+        vo_table = ". ".join(f"{r['team']}, {r['points']} points" for r in rows)
+        vo = (f"Here's the latest {block['group']} table at the World Cup. {vo_table}. "
+              f"{leader} sit top. Follow Build With Abdallah for every group, every day.")
+    else:
+        vo = (f"{block['group']} at the 2026 World Cup features {team_list}. "
+              f"The group is about to kick off. Follow Build With Abdallah for "
+              f"previews and full-time tables for every group, every day.")
+    return {"title": f"{block['group']} Standings", "scenes": scenes, "voiceover": vo}, \
+        f"standings-{group_letter.lower()}"
+
+
+def deck_preview(when: str = "today") -> tuple[dict, str]:
+    """Build a fixtures preview deck from live worldcup26.ir data."""
+    import worldcup26_data as wc
+    import datetime as dt
+    day = dt.date.today() if when == "today" else dt.date.today() + dt.timedelta(days=1)
+    matches = wc.today_matches(day)
+    if not matches:
+        raise SystemExit(f"No matches found for {day}")
+    label = "Today" if when == "today" else "Tomorrow"
+    lines = [f"{m['home_team']} vs {m['away_team']}  (Group {m['group']})" for m in matches]
+    scenes = [
+        {"template": "title_card.html", "title": f"{label}'s World Cup Matches",
+         "caption": day.strftime("%b %d, 2026"),
+         "main_idea": f"{len(matches)} match{'es' if len(matches) != 1 else ''} on the World Cup "
+                      f"calendar {label.lower()}. Here's who's playing.",
+         "progress": "1/2", "duration_seconds": 8},
+        {"template": "cta_card.html", "title": "\n".join(lines[:5]),
+         "caption": f"{label}'s fixtures", "cta": "Who's your pick?",
+         "url": "buildwithabdallah.com", "progress": "2/2", "duration_seconds": 10},
+    ]
+    vo_matches = ". ".join(f"{m['home_team']} versus {m['away_team']}" for m in matches)
+    vo = (f"{label} at the 2026 World Cup: {len(matches)} to watch. {vo_matches}. "
+          f"Who are you backing? Follow Build With Abdallah for every matchday.")
+    return {"title": f"{label}'s Matches", "scenes": scenes, "voiceover": vo}, \
+        f"preview-{day.isoformat()}"
+
+
 def main():
     ap = argparse.ArgumentParser(description="Tier-1 World Cup Shorts generator (no footage, copyright-safe)")
-    ap.add_argument("--deck", help="Deck slug to build")
-    ap.add_argument("--list", action="store_true", help="List available decks")
+    ap.add_argument("--deck", help="Static deck slug to build")
+    ap.add_argument("--standings", metavar="GROUP", help="Build a live Group Standings short (e.g. A)")
+    ap.add_argument("--preview", choices=["today", "tomorrow"], help="Build a live fixtures preview short")
+    ap.add_argument("--list", action="store_true", help="List static decks")
     args = ap.parse_args()
-    if args.list or not args.deck:
-        print("Available decks:")
-        for slug, d in DECKS.items():
-            print(f"  {slug:22s} — {d['title']} ({len(d['scenes'])} scenes)")
-        return
-    if args.deck not in DECKS:
-        print(f"Unknown deck '{args.deck}'. Use --list.", file=sys.stderr)
-        sys.exit(1)
-    build(args.deck)
+
+    if args.standings:
+        deck, slug = deck_standings(args.standings)
+        build(deck, slug); return
+    if args.preview:
+        deck, slug = deck_preview(args.preview)
+        build(deck, slug); return
+    if args.deck:
+        if args.deck not in DECKS:
+            print(f"Unknown deck '{args.deck}'. Use --list.", file=sys.stderr)
+            sys.exit(1)
+        build(DECKS[args.deck], args.deck); return
+
+    print("Static decks:")
+    for slug, d in DECKS.items():
+        print(f"  {slug:22s} — {d['title']} ({len(d['scenes'])} scenes)")
+    print("\nLive (worldcup26.ir): --standings A | --preview today|tomorrow")
 
 
 if __name__ == "__main__":
