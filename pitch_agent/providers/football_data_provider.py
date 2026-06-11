@@ -85,6 +85,44 @@ class FootballDataProvider(DataProvider):
         resp = self._get(f"/matches/{match_id}")
         return self._normalise_match_stats(resp)
 
+    def fetch_standings(self, competition_id: str | None = None) -> list[dict[str, Any]]:
+        """Return group standings tables for a competition.
+
+        Shape: a list of groups, each ``{"group": "Group A", "table": [rows]}``
+        where each row is a normalised team standing (position, played, W/D/L,
+        goals, points). Used by the Group Standings pillar.
+        """
+        if not competition_id:
+            competition_id = "WC"
+        resp = self._get(f"/competitions/{competition_id}/standings")
+        groups: list[dict[str, Any]] = []
+        for standing in resp.get("standings", []):
+            # football-data returns TOTAL/HOME/AWAY; group-stage uses one block
+            # per group with type "TOTAL".
+            if standing.get("type") and standing.get("type") != "TOTAL":
+                continue
+            raw_group = standing.get("group") or standing.get("stage") or ""
+            group_name = str(raw_group).replace("GROUP_STAGE_", "").replace("_", " ").title() or "Standings"
+            table = []
+            for row in standing.get("table", []):
+                team = row.get("team", {})
+                table.append({
+                    "position": row.get("position"),
+                    "team_id": str(team.get("id", "")),
+                    "team_name": team.get("shortName") or team.get("name", ""),
+                    "played": row.get("playedGames", 0),
+                    "won": row.get("won", 0),
+                    "draw": row.get("draw", 0),
+                    "lost": row.get("lost", 0),
+                    "goals_for": row.get("goalsFor", 0),
+                    "goals_against": row.get("goalsAgainst", 0),
+                    "goal_difference": row.get("goalDifference", 0),
+                    "points": row.get("points", 0),
+                })
+            if table:
+                groups.append({"group": group_name, "table": table})
+        return groups
+
     # ── Internal ─────────────────────────────────────────────────────────
 
     def _get(self, path: str, params: dict | None = None) -> dict[str, Any]:

@@ -12,6 +12,7 @@ Output is review-only — never auto-posted. Send to YouTube/TikTok manually.
 """
 
 import argparse
+import base64
 import html
 import json
 import subprocess
@@ -22,9 +23,47 @@ ROOT = Path(__file__).resolve().parent.parent
 SHORTS_DIR = ROOT / "content" / "assets" / "shorts"
 TEMPLATES_DIR = ROOT / "templates" / "shorts"
 SCRIPTS_DIR = ROOT / "scripts"
+LOGO_SRC = ROOT / "content" / "assets" / "brand" / "bwa-youtube-watermark.png"
 
-WATERMARK = '<span class="wm-text">BWA</span>'
 VOICE = "en-US-GuyNeural"
+
+
+def _watermark_html() -> str:
+    """Use the real BWA logo as the corner watermark instead of a text badge.
+
+    The tracked logo has a white background; make the surrounding white
+    transparent (corner flood-fill keeps the logo interior) and embed it as a
+    base64 data-URI so the Playwright render needs no external file. Falls back
+    to the blue "BWA" text badge if the logo or Pillow is unavailable.
+    """
+    try:
+        from PIL import Image
+        from collections import deque
+
+        img = Image.open(LOGO_SRC).convert("RGBA")
+        px = img.load()
+        w, h = img.size
+        seen = set()
+        q = deque([(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)])
+        while q:
+            x, y = q.popleft()
+            if (x, y) in seen or not (0 <= x < w and 0 <= y < h):
+                continue
+            seen.add((x, y))
+            r, g, b, a = px[x, y]
+            if r > 225 and g > 225 and b > 225 and a > 0:
+                px[x, y] = (r, g, b, 0)
+                q.extend([(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)])
+        from io import BytesIO
+        buf = BytesIO()
+        img.save(buf, "PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        return f'<img class="wm-img" src="data:image/png;base64,{b64}">'
+    except Exception:
+        return '<span class="wm-text">BWA</span>'
+
+
+WATERMARK = _watermark_html()
 
 
 # ── Content decks ────────────────────────────────────────────────────────
