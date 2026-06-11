@@ -32,6 +32,10 @@ from pitch_agent.db import (
     upsert_form_index,
     upsert_player_match_stats,
     upsert_tournament_form_index,
+    upsert_match,
+    upsert_prediction,
+    grade_predictions,
+    get_prediction_accuracy,
 )
 from pitch_agent.form_index import compute_all
 from pitch_agent.leaderboard import get_leaderboard
@@ -2205,3 +2209,175 @@ def test_full_pipeline(tmp_path):
     # Leaderboard
     results = get_leaderboard(db_path, limit=5)
     assert len(results) > 0, "Leaderboard should have results"
+
+
+# ── Predictions & Poisson (Commit 2) ────────────────────────────────────
+
+def test_poisson_probabilities_sum_to_one():
+    """All scoreline probabilities from Poisson should sum close to 1."""
+    from pitch_agent.poisson import scoreline_distribution
+    dist = scoreline_distribution(1.5, 1.2, max_goals=7)
+    total = sum(r["probability"] for r in dist)
+    assert abs(total - 1.0) < 0.01, f"Probabilities sum to {total}"
+
+
+def test_top_scorelines_are_sorted():
+    """Top scorelines should be in descending probability order."""
+    from pitch_agent.poisson import top_scorelines
+    top = top_scorelines(2.0, 0.8, n=3)
+    assert len(top) == 3
+    assert top[0]["probability"] >= top[1]["probability"] >= top[2]["probability"]
+
+
+def test_match_outcome_probs_sum_to_one():
+    """Home win + draw + away win should sum to ~1."""
+    from pitch_agent.poisson import match_outcome_probs
+    probs = match_outcome_probs(1.5, 1.2)
+    total = probs["home_win"] + probs["draw"] + probs["away_win"]
+    assert abs(total - 1.0) < 0.02, f"Outcome probs sum to {total}"
+
+
+def test_form_index_to_xg_returns_reasonable_values():
+    """Form Index → xG should produce plausible expected goals."""
+    from pitch_agent.poisson import form_index_to_xg
+    # Even match (both 50)
+    hxg, axg = form_index_to_xg(50, 50)
+    assert 1.0 <= hxg <= 1.5, f"Even home xG: {hxg}"
+    assert 1.0 <= axg <= 1.5, f"Even away xG: {axg}"
+    # Strong home (80 vs 50)
+    hxg, axg = form_index_to_xg(80, 50)
+    assert hxg > axg, "Strong home should have higher xG"
+    assert hxg >= 1.5, f"Strong home xG should be >= 1.5, got {hxg}"
+
+
+def test_prediction_key_factor_even_match():
+    """Even teams should return 'evenly matched'."""
+    from pitch_agent.poisson import prediction_key_factor
+    factor = prediction_key_factor(
+        [{"score": 60, "goals": 1}], [{"score": 62, "goals": 1}]
+    )
+    assert "Evenly matched" in factor
+
+
+def test_prediction_key_factor_strong_home():
+    """Strong home team should show positive differential."""
+    from pitch_agent.poisson import prediction_key_factor
+    factor = prediction_key_factor(
+        [{"score": 85, "goals": 2}], [{"score": 55, "goals": 0}]
+    )
+    assert "Home" in factor
+    assert "+30" in factor or "+25" in factor or "+20" in factor
+
+
+def test_predictions_table_created_on_init():
+    """init_db should create the predictions and prediction_results tables."""
+    db_path = str(tmp_path / "pred_test.db") if "tmp_path" in dir() else ":memory:"
+    import tempfile, os
+    with tempfile.TemporaryDirectory() as td:
+        db_path = os.path.join(td, "pred_test.db")
+        conn = init_db(db_path)
+        tables = {row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()}
+        conn.close()
+        assert "predictions" in tables
+        assert "prediction_results" in tables
+
+
+def test_upsert_prediction_and_grade(tmp_path):
+    """Insert a prediction, add a match result, and grade it."""
+    db_path = str(tmp_path / "pred_grade.db")
+    conn = init_db(db_path)
+
+    # Create a match with a known result
+    upsert_match(conn, {
+        "match_id": "M001", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "Mexico", "away_team_name": "South Africa",
+        "home_score": 2, "away_score": 0, "date": "2026-06-11",
+    })
+    conn.commit()
+
+    # Insert a prediction: Mexico 2-0
+    upsert_prediction(conn, {
+        "match_id": "M001", "model_version": "1.0.0-lite",
+        "predicted_home": 2, "predicted_away": 0,
+        "home_win_prob": 0.63, "draw_prob": 0.20, "away_win_prob": 0.17,
+        "top_scorelines": [{"home_goals": 2, "away_goals": 0, "probability": 0.15, "label": "2-0"}],
+        "key_factor": "Home +20 Form Index differential",
+    })
+    conn.commit()
+
+    # Grade predictions
+    graded = grade_predictions(conn)
+
+    assert graded == 1, f"Should grade 1 prediction, got {graded}"
+
+    # Check accuracy
+    accuracy = get_prediction_accuracy(conn)
+    assert accuracy["total"] == 1
+    assert accuracy["correct"] == 1  # Mexico 2-0 was predicted and correct
+    assert accuracy["pct"] == 100.0
+
+    conn.close()
+
+
+def test_incorrect_prediction_graded_as_wrong(tmp_path):
+    """An incorrect prediction should be graded as wrong."""
+    db_path = str(tmp_path / "pred_wrong.db")
+    conn = init_db(db_path)
+
+    upsert_match(conn, {
+        "match_id": "M002", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "TeamA", "away_team_name": "TeamB",
+        "home_score": 0, "away_score": 3, "date": "2026-06-12",
+    })
+    conn.commit()
+
+    # Predict home win, but away won
+    upsert_prediction(conn, {
+        "match_id": "M002", "model_version": "1.0.0-lite",
+        "predicted_home": 2, "predicted_away": 1,
+        "home_win_prob": 0.48, "draw_prob": 0.25, "away_win_prob": 0.27,
+        "top_scorelines": [],
+        "key_factor": "Home +10 Form Index",
+    })
+    conn.commit()
+
+    graded = grade_predictions(conn)
+    assert graded == 1
+
+    accuracy = get_prediction_accuracy(conn)
+    assert accuracy["total"] == 1
+    assert accuracy["correct"] == 0
+    assert accuracy["pct"] == 0.0
+    conn.close()
+
+
+def test_draw_prediction_graded_correctly(tmp_path):
+    """A predicted draw that ends in a draw should be correct."""
+    db_path = str(tmp_path / "pred_draw.db")
+    conn = init_db(db_path)
+
+    upsert_match(conn, {
+        "match_id": "M003", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "TeamA", "away_team_name": "TeamB",
+        "home_score": 1, "away_score": 1, "date": "2026-06-13",
+    })
+    conn.commit()
+
+    upsert_prediction(conn, {
+        "match_id": "M003", "model_version": "1.0.0-lite",
+        "predicted_home": 1, "predicted_away": 1,
+        "home_win_prob": 0.30, "draw_prob": 0.35, "away_win_prob": 0.35,
+        "top_scorelines": [],
+        "key_factor": "Evenly matched",
+    })
+    conn.commit()
+
+    graded = grade_predictions(conn)
+    assert graded == 1
+
+    accuracy = get_prediction_accuracy(conn)
+    assert accuracy["correct"] == 1
+    assert accuracy["total"] == 1
+    conn.close()

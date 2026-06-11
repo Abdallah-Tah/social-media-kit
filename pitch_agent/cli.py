@@ -142,6 +142,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_content.add_argument("--db", default="pitch_agent.db", help="Database path")
     p_content.set_defaults(func=cmd_generate_content)
 
+    # ── predict ────────────────────────────────────────────────────────────
+    p_predict = sub.add_parser("predict", help="Generate Poisson scoreline prediction for a match")
+    p_predict.add_argument("--match", required=True, help="Match ID to predict")
+    p_predict.add_argument("--top", type=int, default=3, help="Number of top scorelines to show")
+    p_predict.add_argument("--db", default="pitch_agent.db", help="Database path")
+    p_predict.set_defaults(func=cmd_predict)
+
+    # ── accuracy ──────────────────────────────────────────────────────────
+    p_accuracy = sub.add_parser("accuracy", help="Show prediction accuracy stats")
+    p_accuracy.add_argument("--db", default="pitch_agent.db", help="Database path")
+    p_accuracy.add_argument("--model-version", default="1.0.0-lite", help="Model version")
+    p_accuracy.set_defaults(func=cmd_accuracy)
+
     # ── transparency ────────────────────────────────────────────────────
     p_trans = sub.add_parser("transparency",
                               help="Show trademark and affiliation disclaimer")
@@ -250,6 +263,13 @@ def cmd_sync_data(args: argparse.Namespace) -> int:
         upsert_player_match_stats(conn, record)
         count += 1
     conn.commit()
+
+    # Grade any predictions where match results are now known
+    from pitch_agent.db import grade_predictions
+    graded = grade_predictions(conn)
+    if graded:
+        print(f"✓ Graded {graded} prediction(s)")
+
     conn.close()
 
     print(f"✓ Synced {count} player-match stat records from {args.provider}")
@@ -458,6 +478,118 @@ def cmd_transparency(args: argparse.Namespace) -> int:
     print()
     print("Chart footer:")
     print(get_chart_footer())
+    return 0
+
+
+def cmd_predict(args: argparse.Namespace) -> int:
+    """Generate a Poisson scoreline prediction for a match."""
+    from pitch_agent.db import get_connection, upsert_prediction
+    from pitch_agent.poisson import form_index_to_xg, top_scorelines, match_outcome_probs, prediction_key_factor
+    from pitch_agent.leaderboard import get_match_leaderboard
+
+    conn = get_connection(args.db)
+
+    # Fetch Form Index scores for both teams in this match
+    rows = conn.execute(
+        """
+        SELECT s.player_id, s.score, p.team_id, p.team_name, p.position,
+               p.goals, p.assists, p.minutes, p.team_result
+        FROM form_index_scores s
+        JOIN player_match_stats p
+            ON s.match_id = p.match_id AND s.player_id = p.player_id
+        WHERE s.match_id = ? AND s.model_version = '1.0.0-lite'
+        """,
+        (args.match,),
+    ).fetchall()
+
+    if not rows:
+        print(f"No Form Index data found for match {args.match}")
+        conn.close()
+        return 1
+
+    # Separate home and away teams
+    match = conn.execute(
+        "SELECT home_team_name, away_team_name FROM matches WHERE match_id = ?",
+        (args.match,),
+    ).fetchone()
+    home_team = match["home_team_name"] if match else "Home"
+    away_team = match["away_team_name"] if match else "Away"
+
+    home_team_id = rows[0]["team_id"] if rows else None
+    home_scores = [dict(r) for r in rows if r["team_id"] == home_team_id]
+    away_scores = [dict(r) for r in rows if r["team_id"] != home_team_id]
+
+    # If we can't split by team, use all scores as home
+    if not away_scores and home_scores:
+        away_scores = home_scores[len(home_scores)//2:]
+        home_scores = home_scores[:len(home_scores)//2]
+
+    home_avg = sum(r["score"] for r in home_scores) / len(home_scores) if home_scores else 50
+    away_avg = sum(r["score"] for r in away_scores) / len(away_scores) if away_scores else 50
+
+    home_xg, away_xg = form_index_to_xg(home_avg, away_avg)
+    outcomes = match_outcome_probs(home_xg, away_xg)
+    top = top_scorelines(home_xg, away_xg, n=args.top)
+    key_factor = prediction_key_factor(home_scores, away_scores)
+
+    # Most likely scoreline
+    predicted_home = top[0]["home_goals"]
+    predicted_away = top[0]["away_goals"]
+
+    print(f"Match: {home_team} vs {away_team}")
+    print(f"Home avg Form Index: {home_avg:.1f}  |  Away avg Form Index: {away_avg:.1f}")
+    print(f"Home xG: {home_xg:.2f}  |  Away xG: {away_xg:.2f}")
+    print(f"Key factor: {key_factor}")
+    print()
+    print(f"Outcome probabilities:")
+    print(f"  Home win: {outcomes['home_win']*100:.1f}%")
+    print(f"  Draw:     {outcomes['draw']*100:.1f}%")
+    print(f"  Away win: {outcomes['away_win']*100:.1f}%")
+    print()
+    print(f"Top {args.top} scorelines:")
+    for s in top:
+        print(f"  {s['label']}: {s['probability']*100:.1f}%")
+
+    # Store prediction in DB
+    upsert_prediction(conn, {
+        "match_id": args.match,
+        "model_version": "1.0.0-lite",
+        "predicted_home": predicted_home,
+        "predicted_away": predicted_away,
+        "home_win_prob": outcomes["home_win"],
+        "draw_prob": outcomes["draw"],
+        "away_win_prob": outcomes["away_win"],
+        "top_scorelines": top,
+        "key_factor": key_factor,
+    })
+    conn.commit()
+
+    # Grade any finished matches
+    from pitch_agent.db import grade_predictions
+    graded = grade_predictions(conn)
+    conn.close()
+
+    if graded:
+        print(f"\n✓ Graded {graded} finished prediction(s)")
+
+    print(f"\n✓ Prediction stored for match {args.match}")
+    return 0
+
+
+def cmd_accuracy(args: argparse.Namespace) -> int:
+    """Show prediction accuracy stats."""
+    from pitch_agent.db import get_connection, get_prediction_accuracy
+
+    conn = get_connection(args.db)
+    stats = get_prediction_accuracy(conn, model_version=args.model_version)
+    conn.close()
+
+    if stats["total"] == 0:
+        print("No graded predictions yet. Use `predict --match MATCH_ID` first.")
+        return 0
+
+    print(f"Prediction accuracy ({args.model_version}):")
+    print(f"  {stats['correct']}/{stats['total']} correct ({stats['pct']}%)")
     return 0
 
 

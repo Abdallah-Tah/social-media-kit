@@ -111,14 +111,39 @@ CREATE TABLE IF NOT EXISTS tournament_form_index (
 
 CREATE TABLE IF NOT EXISTS runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_type    TEXT    NOT NULL,
-    pillar      TEXT    NOT NULL DEFAULT '',
-    provider    TEXT    NOT NULL DEFAULT '',
-    mode        TEXT    NOT NULL DEFAULT '',
+    run_type    TEXT NOT NULL,
+    pillar      TEXT NOT NULL DEFAULT '',
+    provider    TEXT NOT NULL DEFAULT '',
+    mode        TEXT NOT NULL DEFAULT '',
     dry_run     INTEGER NOT NULL DEFAULT 0,
-    status      TEXT    NOT NULL DEFAULT 'pending',
-    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    status      TEXT NOT NULL DEFAULT 'pending',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(run_type, pillar, provider, mode, created_at)
+);
+
+CREATE TABLE IF NOT EXISTS predictions (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    match_id          TEXT    NOT NULL,
+    model_version     TEXT    NOT NULL DEFAULT '1.0.0-lite',
+    predicted_home    INTEGER NOT NULL,
+    predicted_away    INTEGER NOT NULL,
+    home_win_prob     REAL,
+    draw_prob         REAL,
+    away_win_prob     REAL,
+    top_scorelines    TEXT    NOT NULL DEFAULT '[]',
+    key_factor        TEXT    NOT NULL DEFAULT '',
+    created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(match_id, model_version)
+);
+
+CREATE TABLE IF NOT EXISTS prediction_results (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    prediction_id   INTEGER NOT NULL REFERENCES predictions(id),
+    actual_home     INTEGER,
+    actual_away     INTEGER,
+    correct         INTEGER,
+    graded_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(prediction_id)
 );
 
 -- Indexes for common queries
@@ -394,3 +419,127 @@ def insert_run(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
     sql = f"INSERT OR IGNORE INTO runs ({col_names}) VALUES ({placeholders})"
     conn.execute(sql, vals)
     conn.commit()
+
+
+# ── Predictions ─────────────────────────────────────────────────────────────
+
+_PREDICTIONS_COLUMNS = [
+    "match_id", "model_version", "predicted_home", "predicted_away",
+    "home_win_prob", "draw_prob", "away_win_prob", "top_scorelines", "key_factor",
+]
+_PREDICTIONS_UPDATE_COLUMNS = [
+    "predicted_home", "predicted_away",
+    "home_win_prob", "draw_prob", "away_win_prob", "top_scorelines", "key_factor",
+]
+
+
+def upsert_prediction(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
+    """Insert or update a prediction for a match.
+
+    Note: does NOT commit — the caller should batch inserts and commit once.
+    """
+    cols, vals = [], []
+    for col in _PREDICTIONS_COLUMNS:
+        cols.append(col)
+        val = record.get(col, "" if col == "key_factor" or col == "top_scorelines" else 0)
+        if col == "top_scorelines" and isinstance(val, list):
+            val = json.dumps(val)
+        vals.append(val)
+
+    placeholders = ", ".join("?" for _ in cols)
+    col_names = ", ".join(cols)
+    update_sets = ", ".join(
+        f"{c} = excluded.{c}" for c in _PREDICTIONS_UPDATE_COLUMNS
+    )
+
+    sql = (
+        f"INSERT INTO predictions ({col_names}) VALUES ({placeholders}) "
+        f"ON CONFLICT(match_id, model_version) DO UPDATE SET {update_sets}"
+    )
+    conn.execute(sql, vals)
+
+
+def upsert_prediction_result(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
+    """Insert or update a prediction result (auto-graded after match).
+
+    Note: does NOT commit — the caller should batch inserts and commit once.
+    """
+    cols = ["prediction_id", "actual_home", "actual_away", "correct"]
+    vals = [record.get(c) for c in cols]
+    placeholders = ", ".join("?" for _ in cols)
+    col_names = ", ".join(cols)
+
+    sql = (
+        f"INSERT OR REPLACE INTO prediction_results ({col_names}) VALUES ({placeholders})"
+    )
+    conn.execute(sql, vals)
+
+
+def grade_predictions(conn: sqlite3.Connection) -> int:
+    """Grade all ungraded predictions where the match result is known.
+
+    Returns the number of predictions graded.
+    """
+    # Find predictions with finished matches that haven't been graded yet
+    rows = conn.execute(
+        """
+        SELECT p.id, p.match_id, p.predicted_home, p.predicted_away,
+               m.home_score, m.away_score
+        FROM predictions p
+        JOIN matches m ON p.match_id = m.match_id
+        LEFT JOIN prediction_results r ON p.id = r.prediction_id
+        WHERE m.home_score IS NOT NULL
+          AND m.home_score != 0 OR m.away_score != 0
+          AND r.id IS NULL
+        """
+    ).fetchall()
+
+    graded = 0
+    for row in rows:
+        pred_id, match_id, pred_home, pred_away, actual_home, actual_away = row
+        pred_winner = "home" if pred_home > pred_away else ("away" if pred_away > pred_home else "draw")
+        actual_winner = "home" if (actual_home or 0) > (actual_away or 0) else (
+            "away" if (actual_away or 0) > (actual_home or 0) else "draw"
+        )
+        correct = 1 if pred_winner == actual_winner else 0
+
+        upsert_prediction_result(conn, {
+            "prediction_id": pred_id,
+            "actual_home": actual_home,
+            "actual_away": actual_away,
+            "correct": correct,
+        })
+        graded += 1
+
+    if graded:
+        conn.commit()
+    return graded
+
+
+def get_prediction_accuracy(
+    conn: sqlite3.Connection,
+    model_version: str = "1.0.0-lite",
+) -> dict[str, Any]:
+    """Return prediction accuracy stats: total, correct, percentage."""
+    row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS total,
+            SUM(r.correct) AS correct,
+            ROUND(AVG(r.correct) * 100, 1) AS pct
+        FROM prediction_results r
+        JOIN predictions p ON r.prediction_id = p.id
+        WHERE p.model_version = ?
+        """
+        ,
+        (model_version,),
+    ).fetchone()
+
+    if not row or row["total"] == 0:
+        return {"total": 0, "correct": 0, "pct": 0.0}
+
+    return {
+        "total": row["total"],
+        "correct": row["correct"],
+        "pct": row["pct"],
+    }
