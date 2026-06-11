@@ -229,18 +229,28 @@ def write_news_article(story, source_text):
         f"SOURCE MATERIAL:\n{source_text}"
     )
     body = _chat([{"role": "user", "content": prompt}], max_tokens=2600, temperature=0.35)
-    if len(body.split()) >= 800:
-        return normalize_news_sections(clean_forbidden_phrases(body))
-    expand_prompt = (
-        "Expand this developer news-analysis article to 800-1500 words without adding facts that are "
-        "not supported by the source material. Keep the same title and Sources section. Add more practical "
-        "developer impact, a concrete real-world example, an opinionated Builder's Take, and specific "
-        "items for What I'll Be Watching.\n\n"
-        f"SOURCE MATERIAL:\n{source_text}\n\n"
-        f"ARTICLE:\n{body}"
-    )
-    expanded = _chat([{"role": "user", "content": expand_prompt}], max_tokens=3000, temperature=0.3)
-    return normalize_news_sections(clean_forbidden_phrases(expanded))
+    best = normalize_news_sections(clean_forbidden_phrases(body))
+
+    # Expand until comfortably above the 750-word publish gate. The model often
+    # under-delivers on a single expand pass (and can even shorten the draft),
+    # so retry and keep the longest draft instead of returning the last one.
+    for _ in range(3):
+        if len(best.split()) >= 800:
+            break
+        expand_prompt = (
+            "Expand this developer news-analysis article to 900-1500 words without adding facts that are "
+            "not supported by the source material. Keep the same title and Sources section. Add more practical "
+            "developer impact, a concrete real-world example, an opinionated Builder's Take, and specific "
+            "items for What I'll Be Watching. The result MUST be at least 900 words.\n\n"
+            f"SOURCE MATERIAL:\n{source_text}\n\n"
+            f"ARTICLE:\n{best}"
+        )
+        expanded = normalize_news_sections(clean_forbidden_phrases(
+            _chat([{"role": "user", "content": expand_prompt}], max_tokens=3000, temperature=0.3)
+        ))
+        if len(expanded.split()) > len(best.split()):
+            best = expanded
+    return best
 
 
 def clean_forbidden_phrases(body):
