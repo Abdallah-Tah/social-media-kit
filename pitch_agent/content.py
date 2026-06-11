@@ -574,19 +574,21 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
             )
             return None
 
-        # Team missing from team_priors at n=0 → warning
+        # Team missing from team_priors at n=0 → skip, not baseline
         if home_elo is None and home_avg_fi is None:
             import sys
             print(
-                f"[pitch_agent] No Elo prior for {home_team} — using baseline",
+                f"[pitch_agent] No Elo prior or FI for {home_team} — skipping",
                 file=sys.stderr,
             )
+            return None
         if away_elo is None and away_avg_fi is None:
             import sys
             print(
-                f"[pitch_agent] No Elo prior for {away_team} — using baseline",
+                f"[pitch_agent] No Elo prior or FI for {away_team} — skipping",
                 file=sys.stderr,
             )
+            return None
 
         # Compute blended xG (per-team)
         home_xg, away_xg, basis_home, basis_away = predict_xg(
@@ -599,6 +601,7 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
             home_matches=home_matches,
             away_matches=away_matches,
             host_nations=cfg.host_nations,
+            host_team_ids=cfg.host_team_ids,
         )
 
         outcomes = match_outcome_probs(home_xg, away_xg)

@@ -2882,18 +2882,15 @@ def test_predict_xg_pure_form_index():
 
 
 def test_predict_xg_no_elo_no_fi():
-    """With no Elo and no FI, returns baseline xG with both bases='elo_prior'."""
-    from pitch_agent.poisson import predict_xg, _BASE_HOME_XG, _BASE_AWAY_XG
-    home_xg, away_xg, basis_home, basis_away = predict_xg(
+    """With no Elo and no FI, predict_xg returns None (no prediction from baseline)."""
+    from pitch_agent.poisson import predict_xg
+    result = predict_xg(
         home_team="TeamA", away_team="TeamB",
         home_avg_fi=None, away_avg_fi=None,
         home_elo=None, away_elo=None,
         home_matches=0, away_matches=0,
     )
-    assert basis_home == "elo_prior"
-    assert basis_away == "elo_prior"
-    assert home_xg == _BASE_HOME_XG
-    assert away_xg == _BASE_AWAY_XG
+    assert result is None, "predict_xg must return None when no real data is available"
 
 
 def test_resolve_predicted_outcome_clear_winner():
@@ -2989,12 +2986,11 @@ def test_basis_label_in_prediction(tmp_path):
     conn.close()
 
 
-def test_missing_team_prior_stderr_warning(tmp_path):
-    """A team missing from team_priors at n=0 should produce a stderr warning."""
-    from pitch_agent.db import init_db, get_connection
+def test_missing_team_prior_skip_fixture(tmp_path):
+    """A team missing from team_priors at n=0 must be skipped — no baseline fallback."""
+    from pitch_agent.db import init_db
     import os
-    # Point to a real DB path so the connection succeeds
-    db_path = str(tmp_path / "prior_warn.db")
+    db_path = str(tmp_path / "prior_skip.db")
     os.environ["PITCH_AGENT_DB"] = db_path
     conn = init_db(db_path)
     conn.close()
@@ -3008,10 +3004,9 @@ def test_missing_team_prior_stderr_warning(tmp_path):
         "away_team_id": "",
         "date": "2026-06-20",
     }
-    # No team_priors data, no FI data → should return None
+    # No team_priors data, no FI data → must return None (skip)
     result = _match_prediction(fixture)
-    assert result is None
-    # Clean up
+    assert result is None, "Missing prior must skip fixture, not generate baseline prediction"
     os.environ.pop("PITCH_AGENT_DB", None)
 
 
@@ -3051,3 +3046,55 @@ def test_elo_host_advantage():
     host_home, host_away = elo_to_xg(1600, 1600, home_advantage=True)
     assert host_home > host_away
     assert host_home > neutral_home  # Host gets boost
+
+
+def test_host_team_ids_match():
+    """Host advantage should apply when home team ID is in host_team_ids."""
+    from pitch_agent.poisson import predict_xg
+    # Neutral venue: equal Elo, no host nations → symmetric xG
+    neutral = predict_xg(
+        home_team="USA", away_team="Brazil",
+        home_avg_fi=None, away_avg_fi=None,
+        home_elo=1600, away_elo=1600,
+        home_matches=0, away_matches=0,
+        host_nations=[],
+        host_team_ids=[],
+    )
+    assert neutral is not None
+    # USA at home with host advantage (by name)
+    host = predict_xg(
+        home_team="USA", away_team="Brazil",
+        home_avg_fi=None, away_avg_fi=None,
+        home_elo=1600, away_elo=1600,
+        home_matches=0, away_matches=0,
+        host_nations=["USA", "Mexico", "Canada"],
+        host_team_ids=["8321"],
+    )
+    assert host is not None
+    # Host advantage should boost home xG over neutral
+    assert host[0] > neutral[0], "USA at home (host) should have higher xG than neutral"
+
+    # Test matching by team ID only (name not in host_nations)
+    by_id = predict_xg(
+        home_team="8321", away_team="Brazil",
+        home_avg_fi=None, away_avg_fi=None,
+        home_elo=1600, away_elo=1600,
+        home_matches=0, away_matches=0,
+        host_nations=[],
+        host_team_ids=["8321"],
+    )
+    assert by_id is not None
+    assert by_id[0] > neutral[0], "Host team ID match should apply home advantage"
+
+
+def test_predict_xg_returns_none_no_data():
+    """predict_xg must return None when both Elo and FI are missing for a side."""
+    from pitch_agent.poisson import predict_xg
+    # No Elo, no FI → None
+    result = predict_xg(
+        home_team="X", away_team="Y",
+        home_avg_fi=None, away_avg_fi=None,
+        home_elo=None, away_elo=None,
+        home_matches=0, away_matches=0,
+    )
+    assert result is None

@@ -562,10 +562,11 @@ def cmd_predict(args: argparse.Namespace) -> int:
     home_matches = count_team_matches(conn, home_team)
     away_matches = count_team_matches(conn, away_team)
 
-    # Load host nations from config
+    # Load host nations and team IDs from config
     from pitch_agent.config import PitchAgentConfig as _PAC
     cfg = _PAC.load()
     host_nations = cfg.host_nations
+    host_team_ids = cfg.host_team_ids
 
     # Compute blended xG (per-team)
     home_xg, away_xg, basis_home, basis_away = predict_xg(
@@ -578,6 +579,7 @@ def cmd_predict(args: argparse.Namespace) -> int:
         home_matches=home_matches,
         away_matches=away_matches,
         host_nations=host_nations,
+        host_team_ids=host_team_ids,
     )
 
     outcomes = match_outcome_probs(home_xg, away_xg)

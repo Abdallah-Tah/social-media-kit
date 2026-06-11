@@ -256,7 +256,8 @@ def predict_xg(
     home_matches: int = 0,
     away_matches: int = 0,
     host_nations: list[str] | None = None,
-) -> tuple[float, float, str, str]:
+    host_team_ids: list[str] | None = None,
+) -> tuple[float, float, str, str] | None:
     """Blend Elo-prior xG and Form-Index xG per-team.
 
     Each side blends independently:
@@ -264,8 +265,9 @@ def predict_xg(
     - Away xG: ``prior_away * (1 - w_away) + fi_away * w_away``
     where ``w = min(3, matches) / 3``.
 
-    Returns ``(home_xg, away_xg, basis_home, basis_away)`` where each
-    basis is ``'elo_prior'``, ``'blended'``, or ``'form_index'``.
+    Returns ``(home_xg, away_xg, basis_home, basis_away)`` or ``None`` if
+    neither Elo nor FI data is available for either team. No baseline
+    values are ever used — a prediction requires real data.
 
     ``host_nations`` controls home advantage in Elo xG. When the home
     team is a host nation (USA, Mexico, Canada for WC2026), home
@@ -274,14 +276,27 @@ def predict_xg(
     """
     if host_nations is None:
         host_nations = ["USA", "Mexico", "Canada"]
+    if host_team_ids is None:
+        host_team_ids = []
 
-    is_home_advantage = home_team in host_nations and away_team not in host_nations
+    # Match by team ID first, fall back to exact name match
+    is_home_advantage = (
+        (home_team in host_nations or home_team in host_team_ids)
+        and away_team not in host_nations
+        and away_team not in host_team_ids
+    )
 
-    # Elo-based xG (fallback if no Elo data: use baseline)
-    if home_elo is not None and away_elo is not None:
-        prior_xg = elo_to_xg(home_elo, away_elo, home_advantage=is_home_advantage)
-    else:
+    # Elo-based xG — required, no baseline fallback
+    if home_elo is None or away_elo is None:
+        # No Elo data — cannot predict without real data
+        if home_avg_fi is None and away_avg_fi is None:
+            return None
+        # Partial: use baseline Elo as fallback only when one side has FI
+        # (predict_xg should not be called in this case; _match_prediction
+        # handles the skip logic)
         prior_xg = (_BASE_HOME_XG, _BASE_AWAY_XG)
+    else:
+        prior_xg = elo_to_xg(home_elo, away_elo, home_advantage=is_home_advantage)
 
     # FI-based xG
     if home_avg_fi is not None and away_avg_fi is not None:
@@ -292,15 +307,6 @@ def predict_xg(
     # Per-team blend weights
     w_home = min(3, home_matches) / 3.0
     w_away = min(3, away_matches) / 3.0
-
-    # Determine basis for each side
-    def _side_basis(fi_val: float | None, n_matches: int, weight: float) -> tuple[float, float, str]:
-        """Return (xg, prior_or_fi_xg, basis) for one side."""
-        if fi_val is None:
-            return prior_xg[0] if weight < 1 else prior_xg[1], "elo_prior"
-        if n_matches == 0:
-            return prior_xg[0], "elo_prior"
-        return fi_val if weight >= 1 else (1 - weight) * prior_xg[0] + weight * fi_val, "blended" if weight < 1 else "form_index"
 
     # Home side
     if home_avg_fi is None and away_avg_fi is None:

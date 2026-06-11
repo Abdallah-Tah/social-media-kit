@@ -122,6 +122,7 @@ class PitchAgentConfig:
     model_version: str = CURRENT_MODEL_VERSION
     unknown_minutes_multiplier: float = 0.90
     host_nations: list[str] = field(default_factory=lambda: ["USA", "Mexico", "Canada"])
+    host_team_ids: list[str] = field(default_factory=lambda: ["8321", "5768", "9415"])
 
     # Content settings
     headline_index_mode: str = "daily"
@@ -154,6 +155,7 @@ class PitchAgentConfig:
             football_data_base_url=os.environ.get("FOOTBALL_DATA_BASE_URL", settings.get("football_data_base_url", "https://api.football-data.org/v4")),
             unknown_minutes_multiplier=float(settings.get("unknown_minutes_multiplier", 0.90)),
             host_nations=settings.get("host_nations", ["USA", "Mexico", "Canada"]),
+            host_team_ids=settings.get("host_team_ids", ["8321", "5768", "9415"]),
         )
 
 
