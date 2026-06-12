@@ -127,3 +127,61 @@ def render_match_recap_html_card(
                         .replace("{{logo}}", _load_logo_img()))
 
     return _render_html_to_png(html_src, output_path)
+
+
+def render_matchday_preview_html_card(
+    fixtures: list[dict],
+    output_path: str | Path | None = None,
+    title: str = "Matchday Preview",
+    subtitle: str = "",
+) -> Path:
+    """Render an upcoming-fixtures card as HTML → PNG (same brand template
+    as the match recap card — replaces the old matplotlib fixtures chart).
+
+    Each fixture dict has: label, context (short date/group), and
+    prediction (one-line Poisson string or None).
+    """
+    import datetime as dt
+
+    if output_path is None:
+        output_path = str(_SMKIT_ROOT / "artifacts" / "pitch_agent" / "charts" / "fixtures.png")
+
+    if not subtitle:
+        day = dt.date.today()
+        subtitle = f"{day.strftime('%B %d, %Y')} · upcoming matches & model predictions"
+
+    html_src = (_TEMPLATES_DIR / "match_recap_wide.html").read_text()
+    # Compact rows: four fixtures + prediction sub-rows need tighter spacing
+    # than the recap layout to clear the footer.
+    html_src = html_src.replace(
+        "</head>",
+        "<style>"
+        ".row { padding: 10px 4px; } .row .label { font-size: 24px; }"
+        ".pred-row { padding: 3px 4px 5px 34px; }"
+        ".pred-row .pred-text { font-size: 16px; }"
+        "</style></head>",
+    )
+
+    rows_html = []
+    for fx in fixtures:
+        ctx = html.escape(fx.get("context", ""))
+        ctx_html = f'<span class="meta2">{ctx}</span>' if ctx else ''
+        rows_html.append(
+            f'<div class="row"><span class="dot"></span>'
+            f'<span class="label">{html.escape(fx["label"])}</span>'
+            f'{ctx_html}</div>'
+        )
+        prediction = fx.get("prediction")
+        if prediction:
+            rows_html.append(
+                f'<div class="pred-row"><div class="pred-text">'
+                f'{html.escape(prediction)}</div></div>'
+            )
+
+    content_html = f'<div class="rows">{chr(10).join(rows_html)}</div>'
+    html_src = (html_src.replace("{{title}}", html.escape(title))
+                        .replace("{{subtitle_meta}}", _meta_html(subtitle))
+                        .replace("{{content}}", content_html)
+                        .replace("{{logo}}", _load_logo_img()))
+
+    return _render_html_to_png(html_src, output_path)

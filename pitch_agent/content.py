@@ -415,12 +415,17 @@ def _ensure_review_chart(
     position: str | None = None,
     recap_data: dict[str, Any] | None = None,
 ) -> None:
-    """Render a review chart when the metadata points to a missing chart file."""
-    chart_path = metadata.get("chart_path")
-    if not chart_path or Path(chart_path).is_file():
-        return
+    """Render a review chart when the metadata points to a missing chart file.
 
+    matchday_preview is time-sensitive (fixtures roll over daily), so its
+    card is always re-rendered instead of reusing a cached file.
+    """
+    chart_path = metadata.get("chart_path")
+    if not chart_path:
+        return
     pillar = metadata.get("pillar", "")
+    if Path(chart_path).is_file() and pillar != "matchday_preview":
+        return
 
     # For match_recap, render HTML → PNG card via Playwright
     if pillar == "match_recap" and recap_data and recap_data.get("matches"):
@@ -444,6 +449,21 @@ def _ensure_review_chart(
 
     if not data:
         return
+
+    # For matchday_preview, render the HTML → PNG card (same brand template
+    # as match_recap) instead of the old matplotlib fixtures chart.
+    if pillar == "matchday_preview":
+        try:
+            from pitch_agent.html_cards import render_matchday_preview_html_card
+            render_matchday_preview_html_card(
+                _matchday_preview_card_data(data),
+                output_path=chart_path,
+            )
+            return
+        except Exception as exc:
+            import sys
+            print(f"[pitch_agent] HTML card render failed ({exc}), falling back to matplotlib", file=sys.stderr)
+            # fall through to the matplotlib path below
 
     from pitch_agent.charts import render_for_pillar
     render_for_pillar(
@@ -582,23 +602,8 @@ def _generate_matchday_preview(fixtures: list[dict[str, Any]]) -> str:
             f"{TRADEMARK_DISCLAIMER}"
         )
 
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
     # Filter out FINISHED matches and past kickoffs
-    upcoming = []
-    for fx in fixtures:
-        status = str(fx.get("status", "")).strip().upper()
-        if status == "FINISHED":
-            continue
-        date_str = str(fx.get("date", ""))
-        if date_str:
-            try:
-                kickoff = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-                if kickoff < now:
-                    continue
-            except (ValueError, TypeError):
-                pass  # Keep if date can't be parsed
-        upcoming.append(fx)
+    upcoming = _upcoming_fixtures(fixtures, limit=len(fixtures) or 1)
 
     if not upcoming:
         return (
@@ -635,6 +640,49 @@ def _generate_matchday_preview(fixtures: list[dict[str, Any]]) -> str:
     lines.append("")
     lines.append(TRADEMARK_DISCLAIMER)
     return "\n".join(lines)
+
+
+def _upcoming_fixtures(fixtures: list[dict[str, Any]], limit: int = 5) -> list[dict[str, Any]]:
+    """Filter to unplayed, future fixtures (same rules as the text preview)."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    upcoming = []
+    for fx in fixtures:
+        if str(fx.get("status", "")).strip().upper() == "FINISHED":
+            continue
+        date_str = str(fx.get("date", ""))
+        if date_str:
+            try:
+                kickoff = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                if kickoff < now:
+                    continue
+            except (ValueError, TypeError):
+                pass  # Keep if date can't be parsed
+        upcoming.append(fx)
+    return upcoming[:limit]
+
+
+def _matchday_preview_card_data(fixtures: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Shape fixtures into rows for the matchday-preview HTML card.
+
+    Capped at 4 — five rows with prediction sub-rows overflow the
+    1200x628 card and collide with the footer.
+    """
+    rows = []
+    for fx in _upcoming_fixtures(fixtures, limit=4):
+        label = fx.get("match_label") or "TBD"
+        date = _short_date(fx.get("date", ""))
+        group = _fixture_context(fx)
+        prediction = _match_prediction(fx)
+        if prediction:
+            # Drop the verbose Elo-edge tail — the card needs one clean line.
+            prediction = prediction.split(" — ")[0].strip()
+            if group:
+                prediction = f"{group} · {prediction}"
+        elif group:
+            prediction = group
+        rows.append({"label": label, "context": date, "prediction": prediction})
+    return rows
 
 
 def _match_prediction(fixture: dict[str, Any]) -> str | None:
