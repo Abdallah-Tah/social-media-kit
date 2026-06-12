@@ -238,7 +238,11 @@ def generate_content(
         data = _fetch_pillar_data(pillar, db_path, position, match_id, scope)
 
     # Generate content
-    if mode == "builder_mode":
+    recap_data = None  # For match_recap, populated separately
+    if pillar == "match_recap" and mode != "builder_mode":
+        recap_data = _build_match_recap_data(data, db_path)
+        content = recap_data["text"]
+    elif mode == "builder_mode":
         content = _generate_builder_mode(pillar, data, headline_index_mode)
     else:
         content = _generate_fan_mode(pillar, data, headline_index_mode, position, db_path=db_path)
@@ -249,6 +253,7 @@ def generate_content(
         "content": content,
         "goal_string": FAN_GOAL_STRINGS.get(pillar, ""),
         "disclaimer": TRADEMARK_DISCLAIMER,
+        "recap_data": recap_data,  # None for non-recap pillars
         "metadata": _build_operational_metadata(
             pillar=pillar,
             mode=mode,
@@ -286,7 +291,7 @@ def generate_content(
                 result["content"] = ai_result["content"]
 
     if send_telegram_review:
-        _ensure_review_chart(result["metadata"], data, position)
+        _ensure_review_chart(result["metadata"], data, position, recap_data=recap_data)
         from pitch_agent.telegram_review import send_review
         result["telegram_review"] = send_review(result, debug=telegram_debug)
         result["strict_telegram"] = strict_telegram
@@ -354,10 +359,26 @@ def _ensure_review_chart(
     metadata: dict[str, Any],
     data: list[dict[str, Any]],
     position: str | None = None,
+    recap_data: dict[str, Any] | None = None,
 ) -> None:
     """Render a review chart when the metadata points to a missing chart file."""
     chart_path = metadata.get("chart_path")
-    if not chart_path or not data or Path(chart_path).is_file():
+    if not chart_path or Path(chart_path).is_file():
+        return
+
+    pillar = metadata.get("pillar", "")
+
+    # For match_recap, use structured recap data for the chart
+    if pillar == "match_recap" and recap_data and recap_data.get("matches"):
+        from pitch_agent.charts import render_match_recap_chart
+        render_match_recap_chart(
+            recap_data["matches"],
+            output_path=chart_path,
+            model_record=recap_data.get("model_record", ""),
+        )
+        return
+
+    if not data:
         return
 
     from pitch_agent.charts import render_for_pillar
@@ -393,6 +414,10 @@ def _build_operational_metadata(
         if pillar == "matchday_preview":
             chart_path = str(
                 Path("artifacts") / "pitch_agent" / "charts" / "fixtures.png"
+            )
+        elif pillar == "match_recap":
+            chart_path = str(
+                Path("artifacts") / "pitch_agent" / "charts" / "match_recap.png"
             )
     else:
         providers: set[str] = set()
@@ -715,18 +740,20 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
         conn.close()
 
 
-def _generate_match_recap(finished_matches: list[dict[str, Any]], db_path: str = "pitch_agent.db") -> str:
-    """Build post-match recaps for finished matches.
+def _build_match_recap_data(finished_matches: list[dict[str, Any]], db_path: str = "pitch_agent.db") -> dict[str, Any]:
+    """Build structured recap data for finished matches.
 
-    For each FINISHED match with non-NULL scores:
-    - If a journaled prediction exists, render the prediction vs actual
-      result with checkmark/cross per dimension (outcome / exact score).
-    - If no journaled prediction exists, render score and context only
-      -- never present non-journaled numbers as model predictions.
-    - Include the running model record from get_prediction_accuracy().
+    Returns a dict with:
+      text: str — the fan-mode text recap
+      matches: list[dict] — structured per-match data for chart rendering
+      model_record: str — the running model record line
     """
     if not finished_matches:
-        return "No finished matches to recap yet.\n\n" + TRADEMARK_DISCLAIMER
+        return {
+            "text": "No finished matches to recap yet.\n\n" + TRADEMARK_DISCLAIMER,
+            "matches": [],
+            "model_record": "",
+        }
 
     from pitch_agent.db import get_connection, get_prediction_accuracy
     from pitch_agent.poisson import TEAM_CODES
@@ -741,7 +768,7 @@ def _generate_match_recap(finished_matches: list[dict[str, Any]], db_path: str =
                     "legacy_count": 0}
 
     lines = ["\U0001f3c1 Match Recap", ""]
-    recaps_rendered = 0
+    chart_matches = []
 
     for match in finished_matches:
         home = match["home_team_name"]
@@ -768,6 +795,9 @@ def _generate_match_recap(finished_matches: list[dict[str, Any]], db_path: str =
         detail = f" ({', '.join(detail_parts)})" if detail_parts else ""
         lines.append(f"\u2022 {result_line}{detail}")
 
+        # Chart context string
+        chart_context = ", ".join(detail_parts) if detail_parts else ""
+
         # Look for a journaled prediction for this match
         pred = conn.execute(
             "SELECT predicted_home, predicted_away, predicted_outcome, "
@@ -775,6 +805,14 @@ def _generate_match_recap(finished_matches: list[dict[str, Any]], db_path: str =
             "FROM predictions WHERE match_id = ? AND model_version = ?",
             (match_id, MODEL_VERSION),
         ).fetchone()
+
+        chart_entry = {
+            "label": result_line,
+            "context": chart_context,
+            "prediction": None,
+            "key_factor": "",
+            "no_pred": False,
+        }
 
         if pred:
             # We have a journaled prediction -- render comparison
@@ -797,17 +835,22 @@ def _generate_match_recap(finished_matches: list[dict[str, Any]], db_path: str =
             exact_correct = (pred_home == home_score and pred_away == away_score)
             exact_icon = "\u2713" if exact_correct else "\u2717"
 
-            lines.append(
-                f"  Predicted: {outcome_label} ({prob*100:.0f}%), {pred_home}-{pred_away} "
+            pred_str = (
+                f"Predicted: {outcome_label} ({prob*100:.0f}%), {pred_home}-{pred_away} "
                 f"\u2014 Outcome {outcome_icon} | Score {exact_icon}"
             )
+            lines.append(f"  {pred_str}")
             if key_factor:
                 lines.append(f"  {key_factor}")
+
+            chart_entry["prediction"] = pred_str
+            chart_entry["key_factor"] = key_factor
         else:
             # No journaled prediction -- render score and context only
             lines.append("  (No prediction on record for this match)")
+            chart_entry["no_pred"] = True
 
-        recaps_rendered += 1
+        chart_matches.append(chart_entry)
         lines.append("")
 
     # Running model record -- only journaled predictions count
@@ -821,12 +864,32 @@ def _generate_match_recap(finished_matches: list[dict[str, Any]], db_path: str =
         record_line += ")"
         lines.append(record_line)
     else:
-        lines.append("(Model record: 0 journaled predictions graded yet)")
+        record_line = "(Model record: 0 journaled predictions graded yet)"
+        lines.append(record_line)
 
     lines.append("")
     lines.append(TRADEMARK_DISCLAIMER)
     conn.close()
-    return "\n".join(lines)
+
+    return {
+        "text": "\n".join(lines),
+        "matches": chart_matches,
+        "model_record": record_line,
+    }
+
+
+def _generate_match_recap(finished_matches: list[dict[str, Any]], db_path: str = "pitch_agent.db") -> str:
+    """Build post-match recaps for finished matches.
+
+    For each FINISHED match with non-NULL scores:
+    - If a journaled prediction exists, render the prediction vs actual
+      result with checkmark/cross per dimension (outcome / exact score).
+    - If no journaled prediction exists, render score and context only
+      -- never present non-journaled numbers as model predictions.
+    - Include the running model record from get_prediction_accuracy().
+    """
+    data = _build_match_recap_data(finished_matches, db_path)
+    return data["text"]
 
 
 def _fixture_context(fixture: dict[str, Any]) -> str:

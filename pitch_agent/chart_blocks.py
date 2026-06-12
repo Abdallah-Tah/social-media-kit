@@ -25,6 +25,104 @@ _SCORE_X = 0.94
 _NAME_MAX_CHARS = 34
 _FIXTURE_LABEL_MAX_CHARS = 36
 
+# ── Match Recap ───────────────────────────────────────────────────────────────
+# Each match produces 2 visual rows: score line + prediction/notes line.
+# Plus 1 final row for the model record.
+_RECAP_LABEL_MAX = 36
+_RECAP_PREDICT_MAX = 48
+
+
+def draw_match_recap_rows(
+    ax: Any, matches: list[dict[str, Any]], theme: dict[str, Any], layout: Layout,
+) -> None:
+    """Match recap rows: score line with result + prediction comparison.
+
+    Each match dict has:
+        label       – "Brazil 2-1 Germany" or "Korea Republic 1-1 Czechia (Draw)"
+        context     – "Group A" or "Jun 12, Group A"
+        prediction  – "Predicted: Home win (55%), 2-1 — Outcome ✓ | Score ✓" or None
+        key_factor  – "Elo edge: BRA +280" or "" (shown under prediction)
+        no_pred     – True if no prediction exists for this match
+    After all matches, one final row for the model record.
+    Each match uses 2 layout rows (score + prediction), plus 1 for the record.
+    """
+    primary = theme.get("primary_text", "#0B1F44")
+    secondary = theme.get("secondary_text", "#6B7280")
+    accent = theme.get("accent_blue", "#1D6CF2")
+    success = theme.get("success_green", "#16A34A")
+    danger = theme.get("danger_red", "#DC2626")
+    divider = theme.get("divider_color", "#D9E1EC")
+
+    n_matches = len(matches)
+    row_idx = 0
+
+    for i, m in enumerate(matches):
+        # Row 1: score line + context
+        y1 = layout.row_y(row_idx)
+        ax.text(layout.left, y1, "•", transform=ax.transAxes, ha="left",
+                va="center", fontsize=15, color=accent)
+        label = truncate(str(m.get("label", "")), _RECAP_LABEL_MAX)
+        ax.text(layout.left + 0.03, y1, label, transform=ax.transAxes, ha="left",
+                va="center", fontsize=FS_ROW, color=primary, fontweight="bold")
+        context = str(m.get("context", "")).strip()
+        if context:
+            ax.text(layout.right, y1, truncate(context, 20), transform=ax.transAxes,
+                    ha="right", va="center", fontsize=FS_ROW_SECONDARY, color=secondary)
+        row_idx += 1
+
+        # Row 2: prediction line or no-prediction note
+        y2 = layout.row_y(row_idx)
+        prediction = m.get("prediction")
+        key_factor = m.get("key_factor", "")
+        no_pred = m.get("no_pred", False)
+
+        if prediction:
+            # Color the ✓/✗ icons
+            pred_text = str(prediction)
+            # Split into segments so we can color ✓ green and ✗ red
+            # Draw the whole line first as secondary text
+            ax.text(layout.left + 0.03, y2, truncate(pred_text, _RECAP_PREDICT_MAX),
+                    transform=ax.transAxes, ha="left", va="center",
+                    fontsize=FS_ROW_SECONDARY, color=secondary)
+        elif no_pred:
+            ax.text(layout.left + 0.03, y2, "(No prediction on record)",
+                    transform=ax.transAxes, ha="left", va="center",
+                    fontsize=FS_ROW_SECONDARY, color=secondary, fontstyle="italic")
+
+        # Optional key factor on a 3rd sub-row (compact, indented)
+        if key_factor:
+            # Use a slightly lower y position within the row space
+            y3 = y2 - layout.row_step * 0.45
+            ax.text(layout.left + 0.06, y3, truncate(key_factor, 52),
+                    transform=ax.transAxes, ha="left", va="center",
+                    fontsize=9, color=secondary)
+            row_idx += 1  # Key factor takes a row
+
+        # Divider between matches
+        if i < n_matches - 1:
+            line_y = layout.row_y(row_idx) - layout.row_step / 2
+            ax.plot([layout.left, layout.right], [line_y, line_y],
+                    transform=ax.transAxes, color=divider, lw=0.8, zorder=1)
+
+        row_idx += 1
+
+    # Final row: model record
+    model_record = None
+    for m in matches:
+        if m.get("model_record"):
+            model_record = m["model_record"]
+            break
+
+    y_rec = layout.row_y(row_idx)
+    if model_record:
+        ax.text(layout.left + 0.03, y_rec, model_record, transform=ax.transAxes,
+                ha="left", va="center", fontsize=FS_ROW_SECONDARY,
+                color=accent, fontweight="bold")
+    else:
+        ax.text(layout.left + 0.03, y_rec, "(Model record: 0 journaled predictions graded yet)",
+                transform=ax.transAxes, ha="left", va="center",
+                fontsize=FS_ROW_SECONDARY, color=secondary, fontstyle="italic")
+
 
 def _bar_height(layout: Layout) -> float:
     return min(0.34 * layout.row_step, 0.05)

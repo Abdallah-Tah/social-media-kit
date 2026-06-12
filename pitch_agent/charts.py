@@ -218,6 +218,40 @@ def render_stat_card_chart(
     return brand_template.save_chart(fig, output_path, theme)
 
 
+def render_match_recap_chart(
+    matches: list[dict[str, Any]],
+    output_path: str | None = None,
+    model_record: str = "",
+    title: str = "Match Recap",
+    subtitle: str = "",
+) -> str:
+    """Render a branded match-recap card as a PNG.
+
+    Each match dict has: label, context, prediction (or no_pred), key_factor.
+    The model_record string is shown at the bottom.
+    """
+    if output_path is None:
+        output_path = str(DEFAULT_CHART_DIR / "match_recap.png")
+
+    brand, theme = _load_brand_and_theme()
+
+    # Each match takes 2-3 layout rows; add 1 for model record
+    n_visual_rows = sum(2 + (1 if m.get("key_factor") else 0) for m in matches) + 1
+    fig, ax, layout = brand_template.create_canvas(
+        n_visual_rows, brand, theme, title=title, subtitle=subtitle,
+    )
+
+    if not matches:
+        _draw_empty(ax, theme, "No finished matches to recap")
+    else:
+        # Inject model_record into first match dict so the renderer can find it
+        rows = [dict(m) for m in matches]
+        if rows:
+            rows[0]["model_record"] = model_record
+        chart_blocks.draw_match_recap_rows(ax, rows, theme, layout)
+    return brand_template.save_chart(fig, output_path, theme)
+
+
 def _draw_empty(ax: Any, theme: dict[str, Any], message: str) -> None:
     ax.text(0.5, 0.45, message, transform=ax.transAxes, ha="center", va="center",
             fontsize=15, color=theme.get("secondary_text", "#6B7280"))
@@ -240,6 +274,8 @@ def render_for_pillar(
     """
     if pillar == "matchday_preview":
         return render_fixtures_chart(data, output_path=output_path)
+    if pillar == "match_recap":
+        return render_match_recap_chart(data, output_path=output_path)
     if pillar == "player_spotlight" and data:
         return render_player_spotlight_chart(data[0], output_path=output_path)
     if pillar == "stat_of_the_day" and data:
