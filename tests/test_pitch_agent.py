@@ -3662,3 +3662,183 @@ def test_predict_allows_pre_kickoff_overwrite(tmp_path, capsys):
     assert "Overwriting" in captured.err, f"Expected overwrite log, got: {captured.err!r}"
     assert "1-0" in captured.err, f"Expected old prediction logged, got: {captured.err!r}"
     conn.close()
+
+
+# ── match_recap pillar tests ──────────────────────────────────────────────
+
+def test_match_recap_with_prediction(tmp_path):
+    """Recap of a finished match with a journaled prediction shows checkmark/cross."""
+    from pitch_agent.db import init_db, upsert_match, upsert_prediction, grade_predictions
+    from pitch_agent.content import generate_content
+
+    db_path = str(tmp_path / "recap.db")
+    conn = init_db(db_path)
+
+    upsert_match(conn, {
+        "match_id": "M_RECAP1", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "Brazil", "away_team_name": "Germany",
+        "home_score": 2, "away_score": 1, "status": "FINISHED",
+        "date": "2026-06-11",
+    })
+    conn.commit()
+
+    upsert_prediction(conn, {
+        "match_id": "M_RECAP1", "model_version": MODEL_VERSION,
+        "predicted_home": 2, "predicted_away": 1,
+        "predicted_outcome": "home",
+        "home_win_prob": 0.55, "draw_prob": 0.25, "away_win_prob": 0.20,
+        "top_scorelines": [], "key_factor": "Elo edge: BRA +280",
+    }, _skip_immutability_check=True)
+    conn.commit()
+
+    graded = grade_predictions(conn)
+    assert graded == 1
+    conn.close()
+
+    result = generate_content(pillar="match_recap", db_path=db_path)
+    content = result["content"]
+    # Should show final score
+    assert "Brazil 2-1 Germany" in content
+    # Should show prediction with outcome checkmark
+    assert "Outcome ✓" in content
+    # Should show exact score checkmark (2-1 predicted, 2-1 actual)
+    assert "Score ✓" in content
+    # Should show key factor
+    assert "Elo edge" in content
+    # Should show model record
+    assert "Model record:" in content
+    assert "1/1 outcomes" in content
+
+
+def test_match_recap_wrong_outcome(tmp_path):
+    """Recap where predicted outcome was wrong shows cross for outcome."""
+    from pitch_agent.db import init_db, upsert_match, upsert_prediction, grade_predictions
+    from pitch_agent.content import generate_content
+
+    db_path = str(tmp_path / "recap_wrong.db")
+    conn = init_db(db_path)
+
+    upsert_match(conn, {
+        "match_id": "M_RECAP2", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "Argentina", "away_team_name": "France",
+        "home_score": 0, "away_score": 2, "status": "FINISHED",
+        "date": "2026-06-12",
+    })
+    conn.commit()
+
+    upsert_prediction(conn, {
+        "match_id": "M_RECAP2", "model_version": MODEL_VERSION,
+        "predicted_home": 1, "predicted_away": 0,
+        "predicted_outcome": "home",
+        "home_win_prob": 0.50, "draw_prob": 0.30, "away_win_prob": 0.20,
+        "top_scorelines": [], "key_factor": "",
+    }, _skip_immutability_check=True)
+    conn.commit()
+
+    grade_predictions(conn)
+    conn.close()
+
+    result = generate_content(pillar="match_recap", db_path=db_path)
+    content = result["content"]
+    # Should show France winning (away win)
+    assert "France 2-0 Argentina" in content
+    # Outcome wrong -> cross
+    assert "Outcome ✗" in content
+    # Score wrong too
+    assert "Score ✗" in content
+
+
+def test_match_recap_no_prediction(tmp_path):
+    """Recap of a finished match with NO prediction shows score only, no model claim."""
+    from pitch_agent.db import init_db, upsert_match
+    from pitch_agent.content import generate_content
+
+    db_path = str(tmp_path / "recap_nopred.db")
+    conn = init_db(db_path)
+
+    upsert_match(conn, {
+        "match_id": "M_RECAP_NOPRED", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "Mexico", "away_team_name": "South Africa",
+        "home_score": 2, "away_score": 0, "status": "FINISHED",
+        "date": "2026-06-11",
+    })
+    conn.commit()
+    conn.close()
+
+    result = generate_content(pillar="match_recap", db_path=db_path)
+    content = result["content"]
+    # Should show the final score
+    assert "Mexico 2-0 South Africa" in content
+    # Should NOT claim any model prediction
+    assert "Predicted:" not in content
+    assert "No prediction on record" in content
+    # Should NOT show a model record claiming any predictions
+    assert "0 journaled predictions graded yet" in content
+
+
+def test_match_recap_timed_match_not_shown(tmp_path):
+    """TIMED matches (not finished) should NOT appear in match_recap."""
+    from pitch_agent.db import init_db, upsert_match
+    from pitch_agent.content import generate_content
+    from datetime import datetime, timezone, timedelta
+
+    db_path = str(tmp_path / "recap_timed.db")
+    conn = init_db(db_path)
+
+    future = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    upsert_match(conn, {
+        "match_id": "M_TIMED_RECAP", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "Japan", "away_team_name": "Spain",
+        "home_score": None, "away_score": None, "status": "TIMED",
+        "date": future,
+    })
+    conn.commit()
+    conn.close()
+
+    result = generate_content(pillar="match_recap", db_path=db_path)
+    content = result["content"]
+    # Should not show Japan vs Spain
+    assert "Japan" not in content
+    assert "Spain" not in content
+    # Should indicate no finished matches
+    assert "No finished matches to recap" in content
+
+
+def test_match_recap_draw(tmp_path):
+    """Recap of a draw with correct outcome prediction."""
+    from pitch_agent.db import init_db, upsert_match, upsert_prediction, grade_predictions
+    from pitch_agent.content import generate_content
+
+    db_path = str(tmp_path / "recap_draw.db")
+    conn = init_db(db_path)
+
+    upsert_match(conn, {
+        "match_id": "M_RECAP_DRAW", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "Korea Republic", "away_team_name": "Czechia",
+        "home_score": 1, "away_score": 1, "status": "FINISHED",
+        "date": "2026-06-12",
+    })
+    conn.commit()
+
+    upsert_prediction(conn, {
+        "match_id": "M_RECAP_DRAW", "model_version": MODEL_VERSION,
+        "predicted_home": 1, "predicted_away": 1,
+        "predicted_outcome": "draw",
+        "home_win_prob": 0.35, "draw_prob": 0.30, "away_win_prob": 0.35,
+        "top_scorelines": [], "key_factor": "Elo nearly level",
+    }, _skip_immutability_check=True)
+    conn.commit()
+
+    grade_predictions(conn)
+    conn.close()
+
+    result = generate_content(pillar="match_recap", db_path=db_path)
+    content = result["content"]
+    # Should show draw
+    assert "Draw" in content
+    # Outcome correct
+    assert "Outcome ✓" in content
+    # Exact score correct (1-1 predicted, 1-1 actual)
+    assert "Score ✓" in content
+    # Key factor shown
+    assert "Elo nearly level" in content

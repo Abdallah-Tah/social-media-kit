@@ -121,7 +121,7 @@ def build_parser() -> argparse.ArgumentParser:
             "form_index_update", "position_leaderboard", "player_spotlight",
             "team_form_report", "news_digest", "stat_of_the_day",
             "underdog_watch", "post_match_grades", "builder_update",
-            "matchday_preview", "real_data_connected",
+            "matchday_preview", "match_recap", "real_data_connected",
         ],
         required=True,
         help="Content pillar")
@@ -141,6 +141,8 @@ def build_parser() -> argparse.ArgumentParser:
                            help="Send visible post and safe metadata to Telegram review")
     p_content.add_argument("--strict-telegram", action="store_true",
                            help="Fail if Telegram review is requested but cannot be sent")
+    p_content.add_argument("--match",
+                           help="Match ID filter (for match_recap pillar)")
     p_content.add_argument("--db", default="pitch_agent.db", help="Database path")
     p_content.set_defaults(func=cmd_generate_content)
 
@@ -488,6 +490,7 @@ def cmd_generate_content(args: argparse.Namespace) -> int:
         dry_run=args.dry_run,
         headline_index_mode=config.headline_index_mode,
         leaderboard_scope=args.scope,
+        match_id=getattr(args, "match", None),
         send_telegram_review=args.send_telegram_review,
         strict_telegram=args.strict_telegram,
         use_ai=getattr(args, "use_ai", False),

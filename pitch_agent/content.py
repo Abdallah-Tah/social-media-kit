@@ -54,12 +54,13 @@ PILLARS = [
     "post_match_grades",
     "builder_update",
     "matchday_preview",
+    "match_recap",
     "real_data_connected",
 ]
 
 # Fixture-driven pillars work before any player grades exist: they read the
 # matches table instead of the Form Index leaderboard.
-FIXTURE_PILLARS = ("matchday_preview", "real_data_connected")
+FIXTURE_PILLARS = ("matchday_preview", "match_recap", "real_data_connected")
 
 # The four pillars frozen as production-ready for the World Cup launch. Other
 # pillars still run but are not yet considered launch quality.
@@ -155,6 +156,13 @@ FAN_GOAL_STRINGS = {
         "coming up and an invitation to follow for Form Index updates once the "
         "matches are played."
     ),
+    "match_recap": (
+        "Write a football-only post-match recap for The Pitch Agent. "
+        "Report the final score, compare the journaled prediction to the "
+        "actual result, and show the model's running record. Keep the copy "
+        "strictly consumer-facing and limited to on-pitch performance. "
+        "Never present non-journaled numbers as model predictions."
+    ),
     "real_data_connected": (
         "Generate a structured builder update confirming that real World Cup "
         "fixtures are now connected and the agent is ready to grade results."
@@ -217,7 +225,11 @@ def generate_content(
         raise ValueError(f"Unknown pillar '{pillar}'. Available: {', '.join(PILLARS)}")
 
     # Fetch data based on pillar
-    if pillar in FIXTURE_PILLARS:
+    if pillar == "match_recap":
+        scope = "finished"
+        from pitch_agent.fixtures import get_finished_matches
+        data = get_finished_matches(db_path=db_path, limit=10, match_id=match_id)
+    elif pillar in FIXTURE_PILLARS:
         scope = "fixtures"
         from pitch_agent.fixtures import get_fixtures
         data = get_fixtures(db_path=db_path, limit=10)
@@ -229,7 +241,7 @@ def generate_content(
     if mode == "builder_mode":
         content = _generate_builder_mode(pillar, data, headline_index_mode)
     else:
-        content = _generate_fan_mode(pillar, data, headline_index_mode, position)
+        content = _generate_fan_mode(pillar, data, headline_index_mode, position, db_path=db_path)
 
     result = {
         "pillar": pillar,
@@ -443,6 +455,7 @@ def _generate_fan_mode(
     data: list[dict[str, Any]],
     headline_index_mode: str,
     position: str | None = None,
+    db_path: str = "pitch_agent.db",
 ) -> str:
     """Generate a short, human-readable football story for fan_mode.
 
@@ -452,6 +465,8 @@ def _generate_fan_mode(
     """
     if pillar == "matchday_preview":
         return _generate_matchday_preview(data)
+    if pillar == "match_recap":
+        return _generate_match_recap(data, db_path=db_path)
     if pillar in FIXTURE_PILLARS:
         # e.g. real_data_connected is a builder-mode pillar with no fan narrative.
         return (
@@ -698,6 +713,120 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
         return None
     finally:
         conn.close()
+
+
+def _generate_match_recap(finished_matches: list[dict[str, Any]], db_path: str = "pitch_agent.db") -> str:
+    """Build post-match recaps for finished matches.
+
+    For each FINISHED match with non-NULL scores:
+    - If a journaled prediction exists, render the prediction vs actual
+      result with checkmark/cross per dimension (outcome / exact score).
+    - If no journaled prediction exists, render score and context only
+      -- never present non-journaled numbers as model predictions.
+    - Include the running model record from get_prediction_accuracy().
+    """
+    if not finished_matches:
+        return "No finished matches to recap yet.\n\n" + TRADEMARK_DISCLAIMER
+
+    from pitch_agent.db import get_connection, get_prediction_accuracy
+    from pitch_agent.poisson import TEAM_CODES
+
+    conn = get_connection(db_path)
+
+    try:
+        accuracy = get_prediction_accuracy(conn)
+    except Exception:
+        accuracy = {"total": 0, "correct": 0, "pct": 0.0,
+                    "exact_correct": 0, "exact_gradable": 0, "exact_pct": 0.0,
+                    "legacy_count": 0}
+
+    lines = ["\U0001f3c1 Match Recap", ""]
+    recaps_rendered = 0
+
+    for match in finished_matches:
+        home = match["home_team_name"]
+        away = match["away_team_name"]
+        home_score = match["home_score"]
+        away_score = match["away_score"]
+        match_id = match["match_id"]
+
+        # Determine actual outcome
+        if home_score > away_score:
+            result_line = f"{home} {home_score}-{away_score} {away}"
+            actual_outcome = "home"
+        elif away_score > home_score:
+            result_line = f"{away} {away_score}-{home_score} {home}"
+            actual_outcome = "away"
+        else:
+            result_line = f"{home} {home_score}-{away_score} {away} (Draw)"
+            actual_outcome = "draw"
+
+        # One-line result with group context
+        context = _fixture_context(match)
+        date = _short_date(match.get("date", ""))
+        detail_parts = [p for p in (date, context) if p]
+        detail = f" ({', '.join(detail_parts)})" if detail_parts else ""
+        lines.append(f"\u2022 {result_line}{detail}")
+
+        # Look for a journaled prediction for this match
+        pred = conn.execute(
+            "SELECT predicted_home, predicted_away, predicted_outcome, "
+            "home_win_prob, draw_prob, away_win_prob, key_factor "
+            "FROM predictions WHERE match_id = ? AND model_version = ?",
+            (match_id, MODEL_VERSION),
+        ).fetchone()
+
+        if pred:
+            # We have a journaled prediction -- render comparison
+            pred_home = pred["predicted_home"]
+            pred_away = pred["predicted_away"]
+            pred_outcome = pred["predicted_outcome"]
+            pred_hw = pred["home_win_prob"]
+            pred_d = pred["draw_prob"]
+            pred_aw = pred["away_win_prob"]
+            key_factor = pred["key_factor"] or ""
+
+            outcome_label = {"home": "Home win", "draw": "Draw", "away": "Away win"}[pred_outcome]
+            prob = {"home": pred_hw, "draw": pred_d, "away": pred_aw}[pred_outcome]
+
+            # Outcome correct?
+            outcome_correct = pred_outcome == actual_outcome
+            outcome_icon = "\u2713" if outcome_correct else "\u2717"
+
+            # Exact score correct?
+            exact_correct = (pred_home == home_score and pred_away == away_score)
+            exact_icon = "\u2713" if exact_correct else "\u2717"
+
+            lines.append(
+                f"  Predicted: {outcome_label} ({prob*100:.0f}%), {pred_home}-{pred_away} "
+                f"\u2014 Outcome {outcome_icon} | Score {exact_icon}"
+            )
+            if key_factor:
+                lines.append(f"  {key_factor}")
+        else:
+            # No journaled prediction -- render score and context only
+            lines.append("  (No prediction on record for this match)")
+
+        recaps_rendered += 1
+        lines.append("")
+
+    # Running model record -- only journaled predictions count
+    if accuracy["total"] > 0:
+        record_line = (
+            f"Model record: {accuracy['correct']}/{accuracy['total']} outcomes "
+            f"({accuracy['pct']:.0f}%"
+        )
+        if accuracy["exact_gradable"] > 0:
+            record_line += f", {accuracy['exact_correct']}/{accuracy['exact_gradable']} exact scores {accuracy['exact_pct']:.0f}%"
+        record_line += ")"
+        lines.append(record_line)
+    else:
+        lines.append("(Model record: 0 journaled predictions graded yet)")
+
+    lines.append("")
+    lines.append(TRADEMARK_DISCLAIMER)
+    conn.close()
+    return "\n".join(lines)
 
 
 def _fixture_context(fixture: dict[str, Any]) -> str:

@@ -58,3 +58,58 @@ def get_fixtures(
             "match_label": f"{home} vs {away}" if home and away else "TBD",
         })
     return fixtures
+
+
+def get_finished_matches(
+    db_path: str = "pitch_agent.db",
+    limit: int = 10,
+    match_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return finished matches with non-NULL scores, newest first.
+
+    Each dict has the same keys as :func:`get_fixtures`, plus
+    ``home_score``, ``away_score``, ``result_source``.
+    If *match_id* is given, only that match is returned (if finished).
+    """
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        query = (
+            "SELECT match_id, date, stage, group_name, home_team_name, "
+            "away_team_name, home_team_id, away_team_id, "
+            "home_score, away_score, status, result_source, provider_name "
+            "FROM matches "
+            "WHERE status = 'FINISHED' AND home_score IS NOT NULL AND away_score IS NOT NULL"
+        )
+        params: list[Any] = []
+        if match_id:
+            query += " AND match_id = ?"
+            params.append(match_id)
+        query += " ORDER BY date DESC, match_id DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(query, params).fetchall()
+        conn.close()
+    except sqlite3.OperationalError:
+        return []
+
+    results = []
+    for row in rows:
+        home = row["home_team_name"]
+        away = row["away_team_name"]
+        results.append({
+            "match_id": row["match_id"],
+            "date": row["date"],
+            "stage": row["stage"],
+            "group_name": row["group_name"],
+            "home_team_name": home,
+            "away_team_name": away,
+            "home_team_id": row["home_team_id"] or "",
+            "away_team_id": row["away_team_id"] or "",
+            "home_score": row["home_score"],
+            "away_score": row["away_score"],
+            "status": row["status"],
+            "result_source": row["result_source"],
+            "provider_name": row["provider_name"],
+            "match_label": f"{home} vs {away}" if home and away else "TBD",
+        })
+    return results
