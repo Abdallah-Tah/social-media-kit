@@ -368,14 +368,24 @@ def _ensure_review_chart(
 
     pillar = metadata.get("pillar", "")
 
-    # For match_recap, use structured recap data for the chart
+    # For match_recap, render HTML → PNG card via Playwright
     if pillar == "match_recap" and recap_data and recap_data.get("matches"):
-        from pitch_agent.charts import render_match_recap_chart
-        render_match_recap_chart(
-            recap_data["matches"],
-            output_path=chart_path,
-            model_record=recap_data.get("model_record", ""),
-        )
+        try:
+            from pitch_agent.html_cards import render_match_recap_html_card
+            render_match_recap_html_card(
+                recap_data["matches"],
+                output_path=chart_path,
+                model_record=recap_data.get("model_record", ""),
+            )
+        except Exception as exc:
+            import sys
+            print(f"[pitch_agent] HTML card render failed ({exc}), falling back to matplotlib", file=sys.stderr)
+            from pitch_agent.charts import render_match_recap_chart
+            render_match_recap_chart(
+                recap_data["matches"],
+                output_path=chart_path,
+                model_record=recap_data.get("model_record", ""),
+            )
         return
 
     if not data:

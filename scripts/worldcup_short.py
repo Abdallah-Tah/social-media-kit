@@ -391,9 +391,10 @@ def _meta_html(subtitle: str) -> str:
 
 # ── Feed cards (horizontal 1200x628, same pitch-card brand family) ───────
 
-def render_feed_card(title: str, subtitle: str, content_html: str, out_png: Path) -> Path:
-    """Render a LinkedIn/Facebook feed card from pitch_card_wide.html."""
-    html_src = (TEMPLATES_DIR / "pitch_card_wide.html").read_text()
+def render_feed_card(title: str, subtitle: str, content_html: str, out_png: Path,
+                      template: str = "pitch_card_wide.html") -> Path:
+    """Render a LinkedIn/Facebook feed card from an HTML template."""
+    html_src = (TEMPLATES_DIR / template).read_text()
     html_src = (html_src.replace("{{title}}", title)
                         .replace("{{subtitle_meta}}", _meta_html(subtitle))
                         .replace("{{content}}", content_html)
@@ -472,6 +473,57 @@ def feed_card_standings(group_letter: str, out_png: str | Path | None = None) ->
         "2026 World Cup · latest table",
         f'<div class="rows">{rows}</div>',
         out,
+    )
+
+
+def feed_card_match_recap(matches: list[dict], model_record: str = "",
+                            out_png: str | Path | None = None) -> Path:
+    """Match Recap feed card in the same light-theme brand family.
+
+    Each match dict has: label, context, prediction (str or None),
+    key_factor (str), no_pred (bool).
+    """
+    rows_html = []
+    for m in matches:
+        # Main score row
+        ctx = html.escape(m.get("context", ""))
+        ctx_html = f'<span class="meta2">{ctx}</span>' if ctx else ''
+        rows_html.append(
+            f'<div class="row"><span class="dot"></span>'
+            f'<span class="label">{html.escape(m["label"])}</span>'
+            f'{ctx_html}</div>'
+        )
+        # Prediction or no-prediction sub-row
+        if m.get("prediction"):
+            pred_html = html.escape(m["prediction"])
+            # Replace ✓/✗ with styled spans (AFTER escaping so entities stay)
+            pred_html = pred_html.replace("\u2713", '<span class="correct">\u2713</span>')
+            pred_html = pred_html.replace("\u2717", '<span class="wrong">\u2717</span>')
+            kf = m.get("key_factor", "")
+            kf_html = f'<div class="key-factor">{html.escape(kf)}</div>' if kf else ''
+            rows_html.append(
+                f'<div class="pred-row"><div class="pred-text">{pred_html}</div>{kf_html}</div>'
+            )
+        elif m.get("no_pred"):
+            rows_html.append(
+                '<div class="no-pred-row"><span class="no-pred-text">'
+                '(No prediction on record)</span></div>'
+            )
+
+    # Model record bar
+    is_no_data = '0 journaled' in (model_record or '') or not model_record
+    rec_cls = 'record-bar no-data' if is_no_data else 'record-bar'
+    rows_html.append(f'<div class="{rec_cls}">{html.escape(model_record)}</div>')
+
+    import datetime as dt
+    day = dt.date.today()
+    out = Path(out_png) if out_png else SHORTS_DIR.parent / "feed" / f"wc-recap-{day.isoformat()}.png"
+    return render_feed_card(
+        "Match Recap",
+        f"{day.strftime('%B %d, %Y')} \u2022 post-match results & model accountability",
+        f'<div class="rows">{chr(10).join(rows_html)}</div>',
+        out,
+        template="match_recap_wide.html",
     )
 
 
