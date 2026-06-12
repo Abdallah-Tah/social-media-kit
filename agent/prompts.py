@@ -8,6 +8,25 @@ from __future__ import annotations
 
 from typing import Any
 
+# Single source of truth for the prompt version, mirroring
+# pitch_agent.MODEL_VERSION. Every journal row is stamped with it, and
+# `agent_journal proposals approve` bumps the patch number whenever a
+# learned rule is applied — do not edit by hand.
+PROMPT_VERSION = "1.0.0"
+
+
+def _load_learned_rules() -> str:
+    """Rules applied through the self-improvement gate (config/taco_rules.md).
+
+    Missing module/file just means no learned rules yet — never an error.
+    """
+    try:
+        from agent_journal.rules import load_rules
+        return load_rules()
+    except Exception:
+        return ""
+
+
 # Map profile platform keys → the tools the agent may use for each.
 PLATFORM_TOOLS = {
     "blog": "publish_blog",
@@ -52,6 +71,14 @@ def build_system_prompt(profile: dict[str, Any], config) -> str:
         "goes live. Still complete the full routine so the buyer can preview "
         "exactly what would be posted."
         if config.dry_run
+        else ""
+    )
+    learned_rules = _load_learned_rules()
+    learned_section = (
+        f"\n\n## Learned rules (prompt v{PROMPT_VERSION})\n"
+        "These rules were learned from reviewed past runs and are mandatory:\n"
+        f"{learned_rules}"
+        if learned_rules
         else ""
     )
     publication_rules = (
@@ -182,7 +209,8 @@ with the link and a genuine question. 3 hashtags max.
 - Be efficient: don't fetch more than ~6 URLs.
 - If a posting tool fails, report it in the summary; never silently drop it.
 - Respect character limits; the tools will reject oversized posts.
-- Quality over quantity. One excellent, accurate piece beats five thin ones.{dry}
+- Quality over quantity. One excellent, accurate piece beats five thin ones.{dry}\
+{learned_section}
 """
 
 

@@ -170,7 +170,61 @@ FAN_GOAL_STRINGS = {
 }
 
 
+def _journal_run(task_type: str, **kwargs):
+    """Taco run-journal context. Journaling must never break the pipeline:
+    if agent_journal is unavailable, fall back to an inert record."""
+    try:
+        from agent_journal.journal import record_run
+        return record_run(task_type, **kwargs)
+    except Exception:
+        import contextlib
+        from types import SimpleNamespace
+
+        @contextlib.contextmanager
+        def _null():
+            yield SimpleNamespace(
+                model_used="", output_ref="", error=None, outcome=None,
+                outcome_detail=None, tool_calls=[], run_id=None,
+            )
+        return _null()
+
+
 def generate_content(
+    pillar: str,
+    mode: str = "fan_mode",
+    db_path: str = "pitch_agent.db",
+    dry_run: bool = False,
+    position: str | None = None,
+    match_id: str | None = None,
+    headline_index_mode: str = "daily",
+    leaderboard_scope: str | None = None,
+    send_telegram_review: bool = False,
+    telegram_debug: bool = False,
+    strict_telegram: bool = False,
+    use_ai: bool = False,
+) -> dict[str, Any]:
+    """Journal-instrumented wrapper around :func:`_generate_content_impl`."""
+    with _journal_run(
+        "generate",
+        pillar=pillar,
+        input_summary=f"mode={mode} dry_run={dry_run} use_ai={use_ai} match={match_id or '-'}",
+    ) as rec:
+        result = _generate_content_impl(
+            pillar=pillar, mode=mode, db_path=db_path, dry_run=dry_run,
+            position=position, match_id=match_id,
+            headline_index_mode=headline_index_mode,
+            leaderboard_scope=leaderboard_scope,
+            send_telegram_review=send_telegram_review,
+            telegram_debug=telegram_debug, strict_telegram=strict_telegram,
+            use_ai=use_ai,
+        )
+        ai = result.get("ai_rewrite") or {}
+        rec.model_used = ai.get("model", "") if ai.get("used") else "template"
+        rec.output_ref = (result.get("metadata") or {}).get("chart_path", "") or ""
+        return result
+
+
+def _generate_content_impl(
     pillar: str,
     mode: str = "fan_mode",
     db_path: str = "pitch_agent.db",

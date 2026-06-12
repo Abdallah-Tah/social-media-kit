@@ -29,6 +29,54 @@ class RunResult:
         return not self.error
 
 
+def _journal_run(task_type: str, **kwargs):
+    """Taco run-journal context. Journaling must never break the run:
+    if agent_journal is unavailable, fall back to an inert record."""
+    try:
+        from agent_journal.journal import record_run
+        return record_run(task_type, **kwargs)
+    except Exception:
+        import contextlib
+        from types import SimpleNamespace
+
+        @contextlib.contextmanager
+        def _null():
+            yield SimpleNamespace(
+                model_used="", output_ref="", error=None, outcome=None,
+                outcome_detail=None, tool_calls=[], run_id=None,
+            )
+        return _null()
+
+
+# Tools whose dispatch counts as an outward-facing publish step.
+def _is_publish_tool(name: str) -> bool:
+    return name == "publish_blog" or name.startswith("post_")
+
+
+def _publish_failed(output: str) -> bool:
+    """Heuristic: tool outputs are strings; failures start with an error
+    marker or report a missing configuration."""
+    lowered = (output or "").strip().lower()
+    return lowered.startswith(("error", "failed", "⚠")) or "not configured" in lowered
+
+
+def _log_publish(name: str, tool_input: dict, output: str, config: AgentConfig) -> bool:
+    """Journal one publish step; returns True when it looks successful."""
+    failed = _publish_failed(output)
+    with _journal_run(
+        "publish",
+        pillar=name,
+        model_used=config.model,
+        input_summary=("[dry-run] " if config.dry_run else "") + _short(tool_input, 300),
+    ) as rec:
+        rec.output_ref = (output or "")[:300]
+        if failed:
+            rec.error = (output or "")[:300]
+        elif not config.dry_run:
+            rec.outcome = "published"
+    return not failed
+
+
 def run_agent(
     goal: str,
     config: AgentConfig,
@@ -40,6 +88,29 @@ def run_agent(
     ``on_event(kind, text)`` is called for streaming-style UI updates where
     ``kind`` is one of: 'thinking', 'tool', 'tool_result', 'final', 'error'.
     """
+    with _journal_run(
+        "generate",
+        pillar=profile.get("name", ""),
+        model_used=config.model,
+        input_summary=goal[:300],
+    ) as rec:
+        result = _run_agent_impl(goal, config, profile, on_event, rec)
+        rec.error = result.error or None
+        rec.output_ref = (result.summary or "")[:300]
+        rec.tool_calls = [
+            {"name": tc["name"], "input": _short(tc.get("input", {}), 200)}
+            for tc in result.tool_calls
+        ]
+        return result
+
+
+def _run_agent_impl(
+    goal: str,
+    config: AgentConfig,
+    profile: dict[str, Any],
+    on_event: Callable[[str, str], None] | None,
+    journal_rec,
+) -> RunResult:
     emit = on_event or (lambda kind, text: None)
 
     try:
@@ -97,6 +168,11 @@ def run_agent(
 
             emit("tool", f"{name}({_short(tool_input)})")
             output = toolbox.dispatch(name, tool_input)
+            if _is_publish_tool(name):
+                # Journal each publish step; a successful live publish also
+                # marks the whole generate run as published.
+                if _log_publish(name, tool_input, output, config) and not config.dry_run:
+                    journal_rec.outcome = "published"
             result.tool_calls.append(
                 {"name": name, "input": tool_input, "result": output}
             )

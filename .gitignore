@@ -40,3 +40,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Taco run journal (runtime)
+agent_journal.db*

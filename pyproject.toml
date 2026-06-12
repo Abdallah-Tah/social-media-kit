@@ -32,9 +32,10 @@ addopts = "-q"
 [project.scripts]
 smkit = "agent.cli:main"
 pitch-agent = "pitch_agent.cli:main"
+taco-journal = "agent_journal.cli:main"
 
 [tool.setuptools]
-packages = ["agent", "pitch_agent", "pitch_agent.providers"]
+packages = ["agent", "agent_journal", "pitch_agent", "pitch_agent.providers"]
 include-package-data = true
 
 [tool.setuptools.package-data]

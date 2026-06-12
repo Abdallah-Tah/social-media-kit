@@ -431,6 +431,16 @@ def cmd_fixtures(args: argparse.Namespace) -> int:
 
 
 def cmd_render_chart(args: argparse.Namespace) -> int:
+    from pitch_agent.content import _journal_run
+    with _journal_run(
+        "render",
+        pillar=args.type,
+        input_summary=f"scope={getattr(args, 'scope', '')} limit={args.limit}",
+    ) as rec:
+        return _render_chart(args, rec)
+
+
+def _render_chart(args: argparse.Namespace, rec) -> int:
     from pitch_agent.leaderboard import get_leaderboard
     from pitch_agent.charts import render_leaderboard_chart, render_fixtures_chart
 
@@ -439,8 +449,10 @@ def cmd_render_chart(args: argparse.Namespace) -> int:
         fixtures = get_fixtures(db_path=args.db, limit=args.limit)
         if not fixtures:
             print("No fixtures found. Run `sync-data` first.")
+            rec.error = "no fixtures found"
             return 1
         output = render_fixtures_chart(fixtures, output_path=args.output, limit=args.limit)
+        rec.output_ref = str(output)
         print(f"✓ Chart saved to {output}")
         return 0
 
@@ -454,6 +466,7 @@ def cmd_render_chart(args: argparse.Namespace) -> int:
 
     if not results:
         print("No Form Index scores found. Run `compute-index` first.")
+        rec.error = "no Form Index scores found"
         return 1
 
     provider_name = ""
@@ -475,6 +488,7 @@ def cmd_render_chart(args: argparse.Namespace) -> int:
         data_quality=data_quality,
         as_of_date=as_of_date,
     )
+    rec.output_ref = str(output)
     print(f"✓ Chart saved to {output}")
     return 0
 
