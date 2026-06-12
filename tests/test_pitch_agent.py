@@ -2356,7 +2356,7 @@ def test_upsert_prediction_and_grade(tmp_path):
         "home_win_prob": 0.63, "draw_prob": 0.20, "away_win_prob": 0.17,
         "top_scorelines": [{"home_goals": 2, "away_goals": 0, "probability": 0.15, "label": "2-0"}],
         "key_factor": "Home +20 Form Index differential",
-    })
+    }, _skip_immutability_check=True)
     conn.commit()
 
     # Grade predictions
@@ -2393,7 +2393,7 @@ def test_incorrect_prediction_graded_as_wrong(tmp_path):
         "home_win_prob": 0.48, "draw_prob": 0.25, "away_win_prob": 0.27,
         "top_scorelines": [],
         "key_factor": "Home +10 Form Index",
-    })
+    }, _skip_immutability_check=True)
     conn.commit()
 
     graded = grade_predictions(conn)
@@ -2425,7 +2425,7 @@ def test_draw_prediction_graded_correctly(tmp_path):
         "home_win_prob": 0.30, "draw_prob": 0.35, "away_win_prob": 0.35,
         "top_scorelines": [],
         "key_factor": "Evenly matched",
-    })
+    }, _skip_immutability_check=True)
     conn.commit()
 
     graded = grade_predictions(conn)
@@ -2455,7 +2455,7 @@ def test_exact_score_correct_on_exact_match(tmp_path):
         "predicted_outcome": "home",
         "home_win_prob": 0.63, "draw_prob": 0.20, "away_win_prob": 0.17,
         "top_scorelines": [], "key_factor": "Home +20 FI",
-    })
+    }, _skip_immutability_check=True)
     conn.commit()
     graded = grade_predictions(conn)
     assert graded == 1
@@ -2482,7 +2482,7 @@ def test_exact_score_correct_on_wrong_score_but_right_outcome(tmp_path):
         "predicted_outcome": "home",
         "home_win_prob": 0.55, "draw_prob": 0.25, "away_win_prob": 0.20,
         "top_scorelines": [], "key_factor": "",
-    })
+    }, _skip_immutability_check=True)
     conn.commit()
     graded = grade_predictions(conn)
     assert graded == 1
@@ -2512,7 +2512,7 @@ def test_exact_score_correct_null_for_legacy_rows(tmp_path):
         "predicted_outcome": "home",
         "home_win_prob": 0.50, "draw_prob": 0.30, "away_win_prob": 0.20,
         "top_scorelines": [], "key_factor": "",
-    })
+    }, _skip_immutability_check=True)
     conn.commit()
     # Manually insert a legacy result row WITHOUT exact_score_correct
     # (simulates a row from before the column existed)
@@ -2554,7 +2554,7 @@ def test_exact_score_mixed_null_and_graded_rows(tmp_path):
         "predicted_outcome": "home",
         "home_win_prob": 0.55, "draw_prob": 0.25, "away_win_prob": 0.20,
         "top_scorelines": [], "key_factor": "",
-    })
+    }, _skip_immutability_check=True)
     conn.commit()
     # Legacy result row — no exact_score_correct column populated
     pred1 = conn.execute("SELECT id FROM predictions WHERE match_id = 'M110'").fetchone()["id"]
@@ -2575,7 +2575,7 @@ def test_exact_score_mixed_null_and_graded_rows(tmp_path):
         "predicted_outcome": "home",
         "home_win_prob": 0.60, "draw_prob": 0.20, "away_win_prob": 0.20,
         "top_scorelines": [], "key_factor": "",
-    })
+    }, _skip_immutability_check=True)
     conn.commit()
     # Normal grading via grade_predictions
     grade_predictions(conn)
@@ -2592,7 +2592,7 @@ def test_exact_score_mixed_null_and_graded_rows(tmp_path):
         "predicted_outcome": "home",
         "home_win_prob": 0.50, "draw_prob": 0.25, "away_win_prob": 0.25,
         "top_scorelines": [], "key_factor": "",
-    })
+    }, _skip_immutability_check=True)
     conn.commit()
     grade_predictions(conn)
 
@@ -2686,7 +2686,7 @@ def test_grade_0_0_draw_prediction(tmp_path):
         "predicted_outcome": "draw",
         "home_win_prob": 0.25, "draw_prob": 0.50, "away_win_prob": 0.25,
         "top_scorelines": [], "key_factor": "",
-    })
+    }, _skip_immutability_check=True)
     conn.commit()
     graded = grade_predictions(conn)
     assert graded == 1
@@ -2714,7 +2714,7 @@ def test_regrading_does_not_create_duplicate_rows(tmp_path):
         "predicted_outcome": "home",
         "home_win_prob": 0.55, "draw_prob": 0.25, "away_win_prob": 0.20,
         "top_scorelines": [], "key_factor": "",
-    })
+    }, _skip_immutability_check=True)
     conn.commit()
 
     # First grading
@@ -2766,7 +2766,7 @@ def test_predicted_outcome_differs_from_top_scoreline(tmp_path):
         "predicted_outcome": "away",
         "home_win_prob": 0.25, "draw_prob": 0.35, "away_win_prob": 0.40,
         "top_scorelines": [], "key_factor": "",
-    })
+    }, _skip_immutability_check=True)
     conn.commit()
 
     graded = grade_predictions(conn)
@@ -2978,7 +2978,7 @@ def test_basis_label_in_prediction(tmp_path):
         "basis_away": "form_index",
         "home_win_prob": 0.60, "draw_prob": 0.25, "away_win_prob": 0.15,
         "top_scorelines": [], "key_factor": "",
-    })
+    }, _skip_immutability_check=True)
     conn.commit()
 
     row = conn.execute("SELECT basis_home, basis_away FROM predictions WHERE match_id = 'M500'").fetchone()
@@ -3120,7 +3120,7 @@ def test_grade_finished_null_scores_no_grade(tmp_path):
         "predicted_outcome": "home",
         "home_win_prob": 0.50, "draw_prob": 0.25, "away_win_prob": 0.25,
         "top_scorelines": [], "key_factor": "",
-    })
+    }, _skip_immutability_check=True)
     conn.commit()
     graded = grade_predictions(conn)
     assert graded == 0, "FINISHED match with NULL scores must not be graded"
@@ -3146,7 +3146,7 @@ def test_grade_timed_match_no_grade(tmp_path):
         "predicted_outcome": "home",
         "home_win_prob": 0.50, "draw_prob": 0.25, "away_win_prob": 0.25,
         "top_scorelines": [], "key_factor": "",
-    })
+    }, _skip_immutability_check=True)
     conn.commit()
     graded = grade_predictions(conn)
     assert graded == 0, "TIMED match must not be graded"
@@ -3253,7 +3253,7 @@ def test_record_result_triggers_grading(tmp_path):
         "home_win_prob": 0.55, "draw_prob": 0.25, "away_win_prob": 0.20,
         "top_scorelines": [], "key_factor": "",
         "basis_home": "elo_prior", "basis_away": "form_index",
-    })
+    }, _skip_immutability_check=True)
     conn.commit()
 
     result = record_match_result(conn, "M900", 3, 1)
@@ -3356,7 +3356,7 @@ class TestWorldCup26Provider:
             "home_win_prob": 0.55, "draw_prob": 0.25, "away_win_prob": 0.20,
             "top_scorelines": [], "key_factor": "",
             "basis_home": "elo_prior", "basis_away": "elo_prior",
-        })
+        }, _skip_immutability_check=True)
         conn.commit()
 
         # Simulate worldcup26 writing the result
@@ -3561,3 +3561,104 @@ def test_key_factor_fifa_codes_home_first():
     assert "SUI" in kf
     # Home code should appear before away code in the string
     assert kf.index("KOR") < kf.index("SUI"), f"Home code should come first: {kf}"
+
+
+def test_predict_refuses_post_kickoff(tmp_path):
+    """predict must refuse to write a prediction after kickoff."""
+    from pitch_agent.db import init_db, upsert_match, upsert_prediction
+    from datetime import datetime, timezone, timedelta
+    db_path = str(tmp_path / "post_kickoff.db")
+    conn = init_db(db_path)
+
+    # Match that started 1 hour ago
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    upsert_match(conn, {
+        "match_id": "M_PAST", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "TeamA", "away_team_name": "TeamB",
+        "home_score": None, "away_score": None,
+        "status": "IN_PLAY", "date": past,
+    })
+    conn.commit()
+
+    with pytest.raises(ValueError, match="kickoff has passed"):
+        upsert_prediction(conn, {
+            "match_id": "M_PAST", "model_version": MODEL_VERSION,
+            "predicted_home": 1, "predicted_away": 0,
+            "predicted_outcome": "home",
+            "home_win_prob": 0.5, "draw_prob": 0.25, "away_win_prob": 0.25,
+            "top_scorelines": [], "key_factor": "",
+        })
+    conn.close()
+
+
+def test_predict_refuses_finished_match(tmp_path):
+    """predict must refuse to write a prediction for a FINISHED match."""
+    from pitch_agent.db import init_db, upsert_match, upsert_prediction
+    db_path = str(tmp_path / "finished_predict.db")
+    conn = init_db(db_path)
+
+    upsert_match(conn, {
+        "match_id": "M_FIN", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "TeamA", "away_team_name": "TeamB",
+        "home_score": 2, "away_score": 0,
+        "status": "FINISHED", "date": "2026-06-11",
+    })
+    conn.commit()
+
+    with pytest.raises(ValueError, match="finished match"):
+        upsert_prediction(conn, {
+            "match_id": "M_FIN", "model_version": MODEL_VERSION,
+            "predicted_home": 1, "predicted_away": 0,
+            "predicted_outcome": "home",
+            "home_win_prob": 0.5, "draw_prob": 0.25, "away_win_prob": 0.25,
+            "top_scorelines": [], "key_factor": "",
+        })
+    conn.close()
+
+
+def test_predict_allows_pre_kickoff_overwrite(tmp_path, capsys):
+    """Pre-kickoff overwrite is allowed and logs old values to stderr."""
+    from pitch_agent.db import init_db, upsert_match, upsert_prediction
+    from datetime import datetime, timezone, timedelta
+    db_path = str(tmp_path / "pre_kickoff.db")
+    conn = init_db(db_path)
+
+    future = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    upsert_match(conn, {
+        "match_id": "M_FUTURE", "competition_id": "WC", "matchday": 1,
+        "home_team_name": "TeamA", "away_team_name": "TeamB",
+        "home_score": None, "away_score": None,
+        "status": "TIMED", "date": future,
+    })
+    conn.commit()
+
+    # First prediction
+    upsert_prediction(conn, {
+        "match_id": "M_FUTURE", "model_version": MODEL_VERSION,
+        "predicted_home": 1, "predicted_away": 0,
+        "predicted_outcome": "home",
+        "home_win_prob": 0.5, "draw_prob": 0.25, "away_win_prob": 0.25,
+        "top_scorelines": [], "key_factor": "",
+    })
+    conn.commit()
+
+    # Overwrite (pre-kickoff — should succeed)
+    upsert_prediction(conn, {
+        "match_id": "M_FUTURE", "model_version": MODEL_VERSION,
+        "predicted_home": 2, "predicted_away": 1,
+        "predicted_outcome": "home",
+        "home_win_prob": 0.6, "draw_prob": 0.2, "away_win_prob": 0.2,
+        "top_scorelines": [], "key_factor": "",
+    })
+    conn.commit()
+
+    # Verify overwrite happened
+    row = conn.execute("SELECT predicted_home, predicted_away FROM predictions WHERE match_id = 'M_FUTURE'").fetchone()
+    assert row["predicted_home"] == 2, "Pre-kickoff overwrite should work"
+    assert row["predicted_away"] == 1
+
+    # Verify old values were logged to stderr
+    captured = capsys.readouterr()
+    assert "Overwriting" in captured.err, f"Expected overwrite log, got: {captured.err!r}"
+    assert "1-0" in captured.err, f"Expected old prediction logged, got: {captured.err!r}"
+    conn.close()

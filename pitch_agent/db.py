@@ -681,11 +681,62 @@ _PREDICTIONS_UPDATE_COLUMNS = [
 ]
 
 
-def upsert_prediction(conn: sqlite3.Connection, record: dict[str, Any]) -> None:
+def upsert_prediction(conn: sqlite3.Connection, record: dict[str, Any], *, _skip_immutability_check: bool = False) -> None:
     """Insert or update a prediction for a match.
+
+    **Immutability guard**: refuses to overwrite a prediction for a match
+    whose kickoff has passed. Pre-kickoff overwrites are allowed (with
+    old values logged to stderr). Post-kickoff overwrites raise
+    ``ValueError``.
+
+    Set ``_skip_immutability_check=True`` to bypass the guard (for tests).
 
     Note: does NOT commit — the caller should batch inserts and commit once.
     """
+    import sys
+    from datetime import datetime, timezone
+
+    match_id = record.get("match_id", "")
+
+    if not _skip_immutability_check:
+        # Check kickoff time for immutability
+        match_row = conn.execute(
+            "SELECT date, status FROM matches WHERE match_id = ?",
+            (match_id,),
+        ).fetchone()
+        if match_row:
+            status = str(match_row["status"]).strip().upper()
+            if status == "FINISHED":
+                raise ValueError(
+                    f"Cannot predict finished match {match_id}"
+                )
+            date_str = str(match_row["date"]).strip()
+            if date_str:
+                try:
+                    kickoff = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                except (ValueError, TypeError):
+                    kickoff = None  # Can't parse — skip check
+                if kickoff is not None and kickoff <= datetime.now(timezone.utc):
+                    raise ValueError(
+                        f"Cannot predict match {match_id}: kickoff has passed ({date_str})"
+                    )
+
+        # Check if prediction already exists (pre-kickoff overwrite)
+        existing = conn.execute(
+            "SELECT predicted_home, predicted_away, predicted_outcome, "
+            "home_win_prob, draw_prob, away_win_prob "
+            "FROM predictions WHERE match_id = ? AND model_version = ?",
+            (match_id, record.get("model_version", "")),
+        ).fetchone()
+        if existing:
+            print(
+                f"[pitch_agent] Overwriting prediction for {match_id}: "
+                f"old={existing['predicted_home']}-{existing['predicted_away']} "
+                f"({existing['predicted_outcome']}, "
+                f"H={existing['home_win_prob']:.3f} D={existing['draw_prob']:.3f} "
+                f"A={existing['away_win_prob']:.3f})",
+                file=sys.stderr,
+            )
     cols, vals = [], []
     for col in _PREDICTIONS_COLUMNS:
         cols.append(col)

@@ -527,9 +527,9 @@ def cmd_predict(args: argparse.Namespace) -> int:
     conn = get_connection(args.db)
 
     match = conn.execute(
-        "SELECT home_team_name, away_team_name, home_team_id, away_team_id FROM matches WHERE match_id = ?",
+        "SELECT home_team_name, away_team_name, home_team_id, away_team_id, date, status FROM matches WHERE match_id = ?",
         (args.match,),
-    ).fetchone()
+    ).fetchone().fetchone()
     if not match:
         print(f"Match {args.match} not found")
         conn.close()
@@ -539,6 +539,24 @@ def cmd_predict(args: argparse.Namespace) -> int:
     away_team = match["away_team_name"]
     home_team_id = match["home_team_id"] or ""
     away_team_id = match["away_team_id"] or ""
+
+    # Immutability: refuse prediction after kickoff
+    match_date = match["date"] if "date" in match.keys() else ""
+    match_status = match["status"] if "status" in match.keys() else ""
+    from datetime import datetime, timezone
+    if str(match_status).strip().upper() == "FINISHED":
+        print(f"✗ Cannot predict finished match {args.match}", file=sys.stderr)
+        conn.close()
+        return 1
+    if match_date:
+        try:
+            kickoff = datetime.fromisoformat(str(match_date).replace("Z", "+00:00"))
+            if kickoff <= datetime.now(timezone.utc):
+                print(f"✗ Cannot predict match {args.match}: kickoff has passed", file=sys.stderr)
+                conn.close()
+                return 1
+        except (ValueError, TypeError):
+            pass
 
     # Fetch Form Index scores for both teams in this match
     rows = conn.execute(
