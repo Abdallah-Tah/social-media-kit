@@ -52,16 +52,24 @@ def write_episode_script(title, excerpt, body):
         "{\n"
         '  "hook_title": "<3-5 word punchy on-screen title, UPPERCASE ok>",\n'
         '  "hook_caption": "<one line under the title>",\n'
-        '  "narration": ["<5-7 spoken lines, hook first, max ~16 words each>"],\n'
+        '  "narration": ["<6-8 spoken lines, hook first, max ~16 words each>"],\n'
         '  "cards": [\n'
         '    {"heading": "<short>", "bullets": ["<<=7 words>", "<<=7 words>", "<<=7 words>"]},\n'
         '    {"heading": "<short>", "bullets": ["<<=7 words>", "<<=7 words>"]}\n'
         "  ],\n"
+        '  "take_title": "<2-4 words, e.g. MY TAKE / THE CATCH / WORTH IT?>",\n'
+        '  "take": "<the article author\'s OWN strongest opinion, gotcha, or '
+        'hard-won lesson — EXTRACTED from the article body, not invented. '
+        'The real \'here\'s what actually matters / here\'s the catch\' point. '
+        '1 sentence, the author\'s voice>",\n'
         '  "cta_line": "<spoken CTA ending with a question to spark comments>",\n'
         '  "hashtags": ["<6-9 tags incl #BuildWithAbdallah, each starts with #>"]\n'
         "}\n"
-        "The last narration line must BE the cta_line.\n\n"
-        f"TITLE: {title}\nEXCERPT: {excerpt}\nARTICLE (start): {(body or '')[:1800]}"
+        "narration order: line 0 = hook; middle lines = the how; "
+        "second-to-last line = speak the `take`; last line = the cta_line.\n"
+        "The `take` MUST come from the article's actual content — if the "
+        "author warns about something or states an opinion, use THAT.\n\n"
+        f"TITLE: {title}\nEXCERPT: {excerpt}\nARTICLE (start): {(body or '')[:2200]}"
     )
 
     def _parse(txt):
@@ -79,6 +87,8 @@ def write_episode_script(title, excerpt, body):
             "hook_caption": (obj.get("hook_caption") or "").strip(),
             "narration": narration,
             "cards": cards,
+            "take_title": (obj.get("take_title") or "MY TAKE").strip(),
+            "take": (obj.get("take") or "").strip(),
             "cta_line": (obj.get("cta_line") or narration[-1]).strip(),
             "hashtags": tags,
         }
@@ -116,6 +126,8 @@ def write_episode_script(title, excerpt, body):
             {"heading": "What you get", "bullets": ["Real, working code", "No placeholders", "Production-ready"]},
             {"heading": "Why it matters", "bullets": ["Saves real time", "Fewer bugs"]},
         ],
+        "take_title": "MY TAKE",
+        "take": (excerpt[:140] or "Worth it if you ship — skip the hype, read the docs, test it yourself."),
         "cta_line": "What would you build with this? Tell me in the comments.",
         "hashtags": ["#Programming", "#WebDevelopment", "#BuildWithAbdallah"],
     }
@@ -136,37 +148,62 @@ def _esc(s):
 
 
 def build_spec(slug, title, script):
-    """Map the LLM script onto a video-factory episode spec (single voice)."""
+    """Map the LLM script onto a video-factory episode spec (single voice).
+
+    Narration roles (set by the prompt): line 0 = hook, lines 1..n-3 = the
+    how, line n-2 = the "my take" editorial, line n-1 = the CTA. Scenes
+    partition [0, n-1] CONTIGUOUSLY — the engine clips audio to video
+    length, so every narration line must be covered by exactly one scene.
+    """
     narration = script["narration"]
     n = len(narration)
-    # Scene 1 = hook (line 0). Two content cards split the middle lines.
-    # Last scene = CTA (final line).
-    mid = narration[1:-1] or narration[1:]
-    half = max(1, len(mid) // 2)
-    s1_end = 0
-    s2_range = (1, half)
-    s3_range = (half + 1, n - 2) if n - 2 >= half + 1 else (half + 1, half + 1)
     cards = script.get("cards", [])
     c0 = cards[0] if len(cards) > 0 else {"heading": "Key points", "bullets": []}
     c1 = cards[1] if len(cards) > 1 else {"heading": "Why it matters", "bullets": []}
 
     scenes = [
-        {"segments": [0, s1_end], "title": script["hook_title"],
+        {"segments": [0, 0], "title": script["hook_title"],
          "caption": script.get("hook_caption", ""), "rows": "",
          "stat": "⌁ Build With Abdallah · practical dev content"},
-        {"segments": list(s2_range), "title": _esc(c0.get("heading", "Key points")),
-         "caption": "", "rows": _bullets_html(c0.get("bullets", [])),
-         "stat": ""},
-        {"segments": list(s3_range), "title": _esc(c1.get("heading", "Why it matters")),
-         "caption": "", "rows": _bullets_html(c1.get("bullets", [])),
-         "stat": ""},
-        {"segments": [n - 1, n - 1], "title": "YOUR TURN",
-         "caption": _esc(script["cta_line"]), "rows": "",
-         # Audience→revenue: drive to a destination we OWN (email/site),
-         # not just a platform follow. NEWSLETTER_URL overrides.
-         "stat": "▶ Full code + guide → " +
-                 os.environ.get("NEWSLETTER_URL", "buildwithabdallah.com")},
     ]
+
+    # Content cards cover the "how" lines [1 .. n-3].
+    how_lo, how_hi = 1, n - 3
+    if how_hi >= how_lo:
+        span = how_hi - how_lo + 1
+        if span >= 2:
+            mid = how_lo + span // 2 - 1
+            scenes.append({"segments": [how_lo, mid],
+                           "title": _esc(c0.get("heading", "Key points")), "caption": "",
+                           "rows": _bullets_html(c0.get("bullets", [])), "stat": ""})
+            scenes.append({"segments": [mid + 1, how_hi],
+                           "title": _esc(c1.get("heading", "Why it matters")), "caption": "",
+                           "rows": _bullets_html(c1.get("bullets", [])), "stat": ""})
+        else:
+            scenes.append({"segments": [how_lo, how_hi],
+                           "title": _esc(c0.get("heading", "Key points")), "caption": "",
+                           "rows": _bullets_html(c0.get("bullets", [])), "stat": ""})
+
+    # "My take" — the author's real editorial pulled from the article. This
+    # is the faceless human-intention signal that keeps the channel out of
+    # the "inauthentic content" bucket.
+    take = script.get("take", "").strip()
+    if take and n >= 3:
+        scenes.append({"segments": [n - 2, n - 2],
+                       "title": _esc(script.get("take_title", "MY TAKE")),
+                       "caption": _esc(take), "rows": "",
+                       "stat": "— the honest version"})
+    elif n >= 3:
+        # No take returned — fold that line into the last content card range
+        # so coverage stays contiguous: extend CTA back to n-2.
+        pass
+
+    # CTA — drives to a destination we OWN (email/site), not just a follow.
+    cta_lo = n - 1 if (take and n >= 3) else max(1, n - 2)
+    scenes.append({"segments": [cta_lo, n - 1], "title": "YOUR TURN",
+                   "caption": _esc(script["cta_line"]), "rows": "",
+                   "stat": "▶ Full code + guide → " +
+                           os.environ.get("NEWSLETTER_URL", "buildwithabdallah.com")})
     return {
         "slug": f"article-{slug[:40]}",
         "title": title,
