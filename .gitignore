@@ -43,3 +43,4 @@ Thumbs.db
 
 # Taco run journal (runtime)
 agent_journal.db*
+content/video_posts.json

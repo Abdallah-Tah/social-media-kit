@@ -162,7 +162,10 @@ def build_spec(slug, title, script):
          "stat": ""},
         {"segments": [n - 1, n - 1], "title": "YOUR TURN",
          "caption": _esc(script["cta_line"]), "rows": "",
-         "stat": "▶ Follow Build With Abdallah · buildwithabdallah.com"},
+         # Audience→revenue: drive to a destination we OWN (email/site),
+         # not just a platform follow. NEWSLETTER_URL overrides.
+         "stat": "▶ Full code + guide → " +
+                 os.environ.get("NEWSLETTER_URL", "buildwithabdallah.com")},
     ]
     return {
         "slug": f"article-{slug[:40]}",
@@ -175,12 +178,38 @@ def build_spec(slug, title, script):
     }
 
 
+# Per-slug video log — prevents re-posting the same article's video on
+# every cron run (the "replicable at scale" pattern YouTube demonetizes).
+_VIDEO_LOG = os.path.join(KIT, "content", "video_posts.json")
+
+
+def _already_posted(slug: str) -> bool:
+    try:
+        with open(_VIDEO_LOG) as f:
+            return slug in json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return False
+
+
+def _mark_posted(slug: str) -> None:
+    try:
+        with open(_VIDEO_LOG) as f:
+            seen = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        seen = []
+    if slug not in seen:
+        seen.append(slug)
+        with open(_VIDEO_LOG, "w") as f:
+            json.dump(seen[-200:], f)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--slug")
     ap.add_argument("--latest", action="store_true")
     ap.add_argument("--publish", action="store_true", help="PUBLISH publicly (default: build only)")
     ap.add_argument("--youtube", action="store_true", help="Also upload to YouTube")
+    ap.add_argument("--force", action="store_true", help="Rebuild even if this article already has a video")
     args = ap.parse_args()
 
     post = RFA.fetch_article(slug=args.slug, latest=args.latest)
@@ -190,6 +219,12 @@ def main():
     title, slug = post["title"], post["slug"]
     url = f"{RFA.SITE}/tutorials/{slug}"
     print(f"→ {title}\n  {url}")
+
+    # Dedup: one video per article. Cron runs 3x/weekday — without this it
+    # would re-post the same templated video repeatedly (demonetization risk).
+    if args.publish and not args.force and _already_posted(slug):
+        print(f"⏭  Already posted a video for '{slug}' — skipping (use --force to override).")
+        return 0
 
     script = write_episode_script(title, post.get("excerpt") or "", post.get("body") or "")
     print(f"  narration: {len(script['narration'])} lines · hook: {script['hook_title']}")
@@ -202,7 +237,9 @@ def main():
         print("Built only (use --publish to post the FB Reel, --youtube for YouTube).")
         return 0
 
-    # Publish FB Reel
+    # Publish FB Reel — caption is the social-copy paragraph (hook differs
+    # from the YouTube title below so the cross-post isn't byte-for-byte
+    # identical metadata).
     import social_copy
     import fb_reels_publisher as FB
     caption_text = social_copy.make_social_copy(title, post.get("body") or "", url)
@@ -212,13 +249,18 @@ def main():
 
     if args.youtube:
         import youtube_shorts_publisher as YT
-        yt_title = (title[:80] + " #Shorts")
-        yt_desc = f"{title}\n\n{url}\n\n" + " ".join(script["hashtags"]) + " #Shorts"
+        # Distinct YT hook from the FB caption — uses the script's punchy
+        # hook title, not the raw article title, so the platforms diverge.
+        yt_title = (f"{script['hook_title'].title()} — {title}")[:90] + " #Shorts"
+        yt_desc = (f"{script['hook_caption']}\n\n{title}\n{url}\n\n"
+                   + " ".join(script["hashtags"]) + " #Shorts")
         sys.argv = ["yt", "upload", "--video", str(video), "--title", yt_title,
                     "--description", yt_desc, "--privacy", "public",
                     "--tags", "BuildWithAbdallah,Programming,Tutorial,Shorts",
                     "--category-id", "28"]
         YT.main()
+
+    _mark_posted(slug)
     return 0
 
 
