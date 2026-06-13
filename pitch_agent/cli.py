@@ -546,7 +546,7 @@ def cmd_predict(args: argparse.Namespace) -> int:
     match = conn.execute(
         "SELECT home_team_name, away_team_name, home_team_id, away_team_id, date, status FROM matches WHERE match_id = ?",
         (args.match,),
-    ).fetchone().fetchone()
+    ).fetchone()
     if not match:
         print(f"Match {args.match} not found")
         conn.close()

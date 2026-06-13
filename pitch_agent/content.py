@@ -345,7 +345,7 @@ def _generate_content_impl(
                 result["content"] = ai_result["content"]
 
     if send_telegram_review:
-        _ensure_review_chart(result["metadata"], data, position, recap_data=recap_data)
+        _ensure_review_chart(result["metadata"], data, position, recap_data=recap_data, db_path=db_path)
         from pitch_agent.telegram_review import send_review
         result["telegram_review"] = send_review(result, debug=telegram_debug)
         result["strict_telegram"] = strict_telegram
@@ -414,6 +414,7 @@ def _ensure_review_chart(
     data: list[dict[str, Any]],
     position: str | None = None,
     recap_data: dict[str, Any] | None = None,
+    db_path: str = "pitch_agent.db",
 ) -> None:
     """Render a review chart when the metadata points to a missing chart file.
 
@@ -455,8 +456,11 @@ def _ensure_review_chart(
     if pillar == "matchday_preview":
         try:
             from pitch_agent.html_cards import render_matchday_preview_html_card
+            card = _matchday_preview_card_data(data, db_path=db_path)
             render_matchday_preview_html_card(
-                _matchday_preview_card_data(data),
+                card["fixtures"],
+                results=card["results"],
+                model_record=card["model_record"],
                 output_path=chart_path,
             )
             return
@@ -573,7 +577,7 @@ def _generate_fan_mode(
     table — much friendlier for X, Threads, Facebook, and LinkedIn.
     """
     if pillar == "matchday_preview":
-        return _generate_matchday_preview(data)
+        return _generate_matchday_preview(data, db_path=db_path)
     if pillar == "match_recap":
         return _generate_match_recap(data, db_path=db_path)
     if pillar in FIXTURE_PILLARS:
@@ -593,47 +597,59 @@ def _generate_fan_mode(
     return "\n".join(parts)
 
 
-def _generate_matchday_preview(fixtures: list[dict[str, Any]]) -> str:
-    """Build a matchday preview with Poisson predictions for upcoming fixtures."""
-    if not fixtures:
-        return (
-            "No upcoming matches yet.\n\n"
-            "Follow The Pitch Agent for Form Index updates once matches are played.\n\n"
-            f"{TRADEMARK_DISCLAIMER}"
-        )
+def _generate_matchday_preview(
+    fixtures: list[dict[str, Any]],
+    db_path: str = "pitch_agent.db",
+) -> str:
+    """Build the matchday post: TODAY's games with predictions, plus a
+    look back at recent results and how the Pitch Agent's predictions did.
 
-    # Filter out FINISHED matches and past kickoffs
-    upcoming = _upcoming_fixtures(fixtures, limit=len(fixtures) or 1)
+    Only fixtures kicking off on today's local date are listed — never
+    games days in advance.
+    """
+    import datetime as dt
+    today_str = dt.date.today().strftime("%B %d")
+    lines = [f"🗓️ Matchday — {today_str}", ""]
 
-    if not upcoming:
-        return (
-            "No upcoming matches today.\n\n"
-            "Follow The Pitch Agent for Form Index updates once matches are played.\n\n"
-            f"{TRADEMARK_DISCLAIMER}"
-        )
+    # ── Today's matches only ─────────────────────────────────────────
+    today = _upcoming_fixtures(fixtures or [], limit=6, today_only=True)
+    if today:
+        plural = "matches" if len(today) != 1 else "match"
+        lines.append(f"⚽ Today's {plural} ({len(today)}):")
+        for fx in today:
+            label = fx.get("match_label") or "TBD"
+            context = _fixture_context(fx)
+            bullet = f"• {label}"
+            if context:
+                bullet += f" ({context})"
+            lines.append(bullet)
+            # Attach prediction if Form Index / Elo data exists
+            prediction = _match_prediction(fx)
+            if prediction:
+                lines.append(f"  {prediction}")
+        lines.append("")
+    else:
+        lines.append("No matches scheduled today.")
+        lines.append("")
 
-    upcoming = upcoming[:5]
-    lines = ["🗓️ Matchday Preview", ""]
-    lines.append(f"Next up on the World Cup calendar — {len(upcoming)} matches to watch:")
-    lines.append("")
+    # ── How the model did on recent results ──────────────────────────
+    from pitch_agent.fixtures import get_finished_matches
+    finished = get_finished_matches(db_path=db_path, limit=3)
+    if finished:
+        recap = _build_match_recap_data(finished, db_path)
+        lines.append("🏁 How The Pitch Agent did — latest results:")
+        for m in recap["matches"]:
+            ctx = f" ({m['context']})" if m.get("context") else ""
+            lines.append(f"• {m['label']}{ctx}")
+            if m.get("prediction"):
+                lines.append(f"  {m['prediction']}")
+            elif m.get("no_pred"):
+                lines.append("  (No prediction on record)")
+        if recap.get("model_record"):
+            lines.append("")
+            lines.append(recap["model_record"])
+        lines.append("")
 
-    # Try to generate Poisson predictions for each fixture
-    for fx in upcoming:
-        label = fx.get("match_label") or "TBD"
-        context = _fixture_context(fx)
-        date = _short_date(fx.get("date", ""))
-        bullet = f"• {label}"
-        details = " — ".join(part for part in (date, context) if part)
-        if details:
-            bullet += f" ({details})"
-        lines.append(bullet)
-
-        # Attach prediction if Form Index data exists for both teams
-        prediction = _match_prediction(fx)
-        if prediction:
-            lines.append(f"  {prediction}")
-
-    lines.append("")
     lines.append(
         "Follow The Pitch Agent for Form Index updates once matches are played."
     )
@@ -642,36 +658,71 @@ def _generate_matchday_preview(fixtures: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _upcoming_fixtures(fixtures: list[dict[str, Any]], limit: int = 5) -> list[dict[str, Any]]:
-    """Filter to unplayed, future fixtures (same rules as the text preview)."""
+def _upcoming_fixtures(
+    fixtures: list[dict[str, Any]],
+    limit: int = 5,
+    today_only: bool = False,
+) -> list[dict[str, Any]]:
+    """Filter to unplayed, future fixtures (same rules as the text preview).
+
+    With ``today_only`` keep only fixtures whose kickoff falls on today's
+    LOCAL date — the matchday post covers today's games, not days in
+    advance. Fixtures with unparseable dates are excluded in that mode
+    (we can't confirm they are today's).
+    """
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
+    today_local = now.astimezone().date()
     upcoming = []
     for fx in fixtures:
         if str(fx.get("status", "")).strip().upper() == "FINISHED":
             continue
         date_str = str(fx.get("date", ""))
+        kickoff = None
         if date_str:
             try:
                 kickoff = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-                if kickoff < now:
-                    continue
             except (ValueError, TypeError):
-                pass  # Keep if date can't be parsed
+                kickoff = None
+        if kickoff is not None and kickoff.tzinfo is None:
+            # Naive timestamps (e.g. date-only "2026-06-12") are local.
+            kickoff = kickoff.astimezone()
+        # Past-kickoff filter only applies when we have an actual kickoff
+        # time — a date-only value is midnight, not a real kickoff.
+        has_time = len(date_str) > 10
+        if kickoff is not None and has_time and kickoff < now:
+            continue
+        if today_only:
+            if kickoff is None or kickoff.astimezone().date() != today_local:
+                continue
         upcoming.append(fx)
     return upcoming[:limit]
 
 
-def _matchday_preview_card_data(fixtures: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Shape fixtures into rows for the matchday-preview HTML card.
+def _matchday_preview_card_data(
+    fixtures: list[dict[str, Any]],
+    db_path: str = "pitch_agent.db",
+) -> dict[str, Any]:
+    """Shape today's games + recent results into the matchday HTML card.
 
-    Capped at 4 — five rows with prediction sub-rows overflow the
-    1200x628 card and collide with the footer.
+    Returns {fixtures, results, model_record}. Row counts are capped so
+    the sections fit the 1200x628 card without colliding with the footer.
     """
+    from datetime import datetime
+
     rows = []
-    for fx in _upcoming_fixtures(fixtures, limit=4):
+    for fx in _upcoming_fixtures(fixtures or [], limit=3, today_only=True):
         label = fx.get("match_label") or "TBD"
-        date = _short_date(fx.get("date", ""))
+        # Today's games: show LOCAL kickoff time, not the (possibly
+        # next-day) UTC date — "Jun 13" under "Today's matches" reads wrong.
+        date_str = str(fx.get("date", ""))
+        try:
+            kickoff = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            if len(date_str) <= 10:  # date-only — midnight isn't a kickoff time
+                raise ValueError
+            date = kickoff.astimezone().strftime("%-I:%M %p")
+        except (ValueError, TypeError):
+            date = _short_date(date_str)
         group = _fixture_context(fx)
         prediction = _match_prediction(fx)
         if prediction:
@@ -682,7 +733,19 @@ def _matchday_preview_card_data(fixtures: list[dict[str, Any]]) -> list[dict[str
         elif group:
             prediction = group
         rows.append({"label": label, "context": date, "prediction": prediction})
-    return rows
+
+    # Recent results with prediction grading (✓/✗) and the model record.
+    # Budget: ~3 match rows + section labels + record bar fit the card.
+    from pitch_agent.fixtures import get_finished_matches
+    results_limit = max(1, 3 - len(rows))
+    finished = get_finished_matches(db_path=db_path, limit=results_limit)
+    recap = _build_match_recap_data(finished, db_path) if finished else {}
+
+    return {
+        "fixtures": rows,
+        "results": recap.get("matches", []),
+        "model_record": recap.get("model_record", ""),
+    }
 
 
 def _match_prediction(fixture: dict[str, Any]) -> str | None:

@@ -132,14 +132,17 @@ def render_match_recap_html_card(
 def render_matchday_preview_html_card(
     fixtures: list[dict],
     output_path: str | Path | None = None,
-    title: str = "Matchday Preview",
+    title: str = "Matchday",
     subtitle: str = "",
+    results: list[dict] | None = None,
+    model_record: str = "",
 ) -> Path:
-    """Render an upcoming-fixtures card as HTML → PNG (same brand template
-    as the match recap card — replaces the old matplotlib fixtures chart).
+    """Render the matchday card: TODAY's games + recent results with the
+    model's graded predictions (✓/✗) and the running record bar.
 
-    Each fixture dict has: label, context (short date/group), and
-    prediction (one-line Poisson string or None).
+    ``fixtures`` dicts: label, context (kickoff date), prediction (or None).
+    ``results`` dicts: recap entries (label, context, prediction with ✓/✗,
+    no_pred) as built by content._build_match_recap_data.
     """
     import datetime as dt
 
@@ -148,35 +151,76 @@ def render_matchday_preview_html_card(
 
     if not subtitle:
         day = dt.date.today()
-        subtitle = f"{day.strftime('%B %d, %Y')} · upcoming matches & model predictions"
+        subtitle = f"{day.strftime('%B %d, %Y')} · today's matches & model accountability"
 
     html_src = (_TEMPLATES_DIR / "match_recap_wide.html").read_text()
-    # Compact rows: four fixtures + prediction sub-rows need tighter spacing
+    # Compact rows: two sections plus the record bar need tighter spacing
     # than the recap layout to clear the footer.
     html_src = html_src.replace(
         "</head>",
         "<style>"
-        ".row { padding: 10px 4px; } .row .label { font-size: 24px; }"
-        ".pred-row { padding: 3px 4px 5px 34px; }"
-        ".pred-row .pred-text { font-size: 16px; }"
+        ".row { padding: 9px 4px; } .row .label { font-size: 23px; }"
+        ".row .meta2 { width: 150px; }"
+        ".pred-row { padding: 2px 4px 4px 34px; }"
+        ".pred-row .pred-text { font-size: 15px; }"
+        ".no-pred-row { padding: 2px 4px 4px 34px; }"
+        ".section-label { margin: 12px 0 0; font-size: 14px; font-weight: 800;"
+        " letter-spacing: 3px; text-transform: uppercase; color: var(--blue); }"
+        ".record-bar { margin-top: 12px; padding: 8px 18px; font-size: 18px; }"
         "</style></head>",
     )
 
     rows_html = []
-    for fx in fixtures:
-        ctx = html.escape(fx.get("context", ""))
+
+    # ── Today's matches ───────────────────────────────────────────────
+    if fixtures:
+        rows_html.append('<div class="section-label">Today’s matches</div>')
+        for fx in fixtures:
+            ctx = html.escape(fx.get("context", ""))
+            ctx_html = f'<span class="meta2">{ctx}</span>' if ctx else ''
+            rows_html.append(
+                f'<div class="row"><span class="dot"></span>'
+                f'<span class="label">{html.escape(fx["label"])}</span>'
+                f'{ctx_html}</div>'
+            )
+            prediction = fx.get("prediction")
+            if prediction:
+                rows_html.append(
+                    f'<div class="pred-row"><div class="pred-text">'
+                    f'{html.escape(prediction)}</div></div>'
+                )
+    else:
+        rows_html.append('<div class="section-label">No matches today</div>')
+
+    # ── Recent results + graded predictions ──────────────────────────
+    if results:
+        rows_html.append('<div class="section-label">How the model did</div>')
+    for m in (results or []):
+        ctx = html.escape(m.get("context", ""))
         ctx_html = f'<span class="meta2">{ctx}</span>' if ctx else ''
         rows_html.append(
             f'<div class="row"><span class="dot"></span>'
-            f'<span class="label">{html.escape(fx["label"])}</span>'
+            f'<span class="label">{html.escape(m["label"])}</span>'
             f'{ctx_html}</div>'
         )
-        prediction = fx.get("prediction")
-        if prediction:
+        if m.get("prediction"):
+            pred_html = html.escape(m["prediction"])
+            pred_html = pred_html.replace("✓", '<span class="correct">✓</span>')
+            pred_html = pred_html.replace("✗", '<span class="wrong">✗</span>')
             rows_html.append(
-                f'<div class="pred-row"><div class="pred-text">'
-                f'{html.escape(prediction)}</div></div>'
+                f'<div class="pred-row"><div class="pred-text">{pred_html}</div></div>'
             )
+        elif m.get("no_pred"):
+            rows_html.append(
+                '<div class="no-pred-row"><span class="no-pred-text">'
+                '(No prediction on record)</span></div>'
+            )
+
+    # ── Model record bar ──────────────────────────────────────────────
+    if model_record:
+        is_no_data = '0 journaled' in model_record
+        rec_cls = 'record-bar no-data' if is_no_data else 'record-bar'
+        rows_html.append(f'<div class="{rec_cls}">{html.escape(model_record)}</div>')
 
     content_html = f'<div class="rows">{chr(10).join(rows_html)}</div>'
     html_src = (html_src.replace("{{title}}", html.escape(title))

@@ -1333,21 +1333,29 @@ def test_fetch_stats_skips_a_single_failing_match(monkeypatch, capsys):
 
 
 def _seed_fixtures_db(tmp_path: Path) -> str:
-    """Seed two football-data fixtures (no results yet)."""
+    """Seed two football-data fixtures (no results yet).
+
+    Dates are dynamic: one match today, one tomorrow — the matchday
+    preview is now strictly date-to-date (today's local games only).
+    """
+    from datetime import date, timedelta
     from pitch_agent.db import upsert_match
+
+    today = date.today().isoformat()
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
 
     db_path = str(tmp_path / "fixtures.db")
     conn = init_db(db_path)
     upsert_match(conn, {
         "match_id": "M001", "competition_id": "WC",
         "home_team_name": "Mexico", "away_team_name": "South Africa",
-        "date": "2026-06-11", "stage": "GROUP_STAGE", "group": "GROUP_A",
+        "date": today, "stage": "GROUP_STAGE", "group": "GROUP_A",
         "status": "TIMED", "provider_name": "football-data",
     })
     upsert_match(conn, {
         "match_id": "M002", "competition_id": "WC",
         "home_team_name": "Canada", "away_team_name": "Bosnia-H.",
-        "date": "2026-06-12", "stage": "GROUP_STAGE", "group": "GROUP_B",
+        "date": tomorrow, "stage": "GROUP_STAGE", "group": "GROUP_B",
         "status": "TIMED", "provider_name": "football-data",
     })
     conn.commit()
@@ -3450,19 +3458,78 @@ class TestWorldCup26Provider:
 
 
 def test_matchday_preview_excludes_finished(tmp_path):
-    """FINISHED matches must not appear in matchday preview."""
+    """FINISHED matches must not appear in the Today's-matches section.
+
+    Uses an empty journal DB so the 'How the model did' recap section
+    can't reintroduce the finished match.
+    """
+    from datetime import datetime, timezone, timedelta
     from pitch_agent.content import _generate_matchday_preview
+    empty_db = str(tmp_path / "empty.db")
+    init_db(empty_db).close()
+    later_today = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
     fixtures = [
         {"home_team_name": "Mexico", "away_team_name": "South Africa",
          "date": "2026-06-11T19:00:00Z", "status": "FINISHED", "group_name": "Group A",
          "match_id": "537327", "match_label": "Mexico vs South Africa"},
         {"home_team_name": "Korea Republic", "away_team_name": "Czechia",
-         "date": "2099-06-12T02:00:00Z", "status": "TIMED", "group_name": "Group A",
+         "date": later_today, "status": "TIMED", "group_name": "Group A",
          "match_id": "537328", "match_label": "Korea Republic vs Czechia"},
     ]
-    preview = _generate_matchday_preview(fixtures)
+    preview = _generate_matchday_preview(fixtures, db_path=empty_db)
     assert "Mexico" not in preview, "FINISHED match must be excluded"
-    assert "Korea Republic" in preview, "Upcoming match must be included"
+    assert "Korea Republic" in preview, "Today's match must be included"
+
+
+def test_matchday_preview_is_today_only(tmp_path):
+    """Games days in advance must NOT appear — date-to-date only."""
+    from datetime import datetime, timezone, timedelta
+    from pitch_agent.content import _generate_matchday_preview
+    empty_db = str(tmp_path / "empty.db")
+    init_db(empty_db).close()
+    later_today = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    in_three_days = (datetime.now(timezone.utc) + timedelta(days=3)).isoformat()
+    fixtures = [
+        {"home_team_name": "TodayTeam", "away_team_name": "Other",
+         "date": later_today, "status": "TIMED", "group_name": "Group A",
+         "match_id": "T1", "match_label": "TodayTeam vs Other"},
+        {"home_team_name": "FutureTeam", "away_team_name": "Opponent",
+         "date": in_three_days, "status": "TIMED", "group_name": "Group B",
+         "match_id": "T2", "match_label": "FutureTeam vs Opponent"},
+    ]
+    preview = _generate_matchday_preview(fixtures, db_path=empty_db)
+    assert "TodayTeam" in preview
+    assert "FutureTeam" not in preview, "future games must not be previewed in advance"
+
+
+def test_matchday_preview_includes_recent_results(tmp_path):
+    """The matchday post looks back at finished games and the model record."""
+    from datetime import datetime, timezone, timedelta
+    from pitch_agent.content import _generate_matchday_preview
+    from pitch_agent.db import upsert_match
+
+    db_path = str(tmp_path / "recap.db")
+    conn = init_db(db_path)
+    upsert_match(conn, {
+        "match_id": "F1", "competition_id": "WC",
+        "home_team_name": "Mexico", "away_team_name": "South Africa",
+        "home_score": 2, "away_score": 0,
+        "date": "2026-06-11T19:00:00Z", "stage": "GROUP_STAGE", "group": "GROUP_A",
+        "status": "FINISHED", "provider_name": "football-data",
+    })
+    conn.commit()
+    conn.close()
+
+    later_today = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+    fixtures = [
+        {"home_team_name": "TodayTeam", "away_team_name": "Other",
+         "date": later_today, "status": "TIMED", "group_name": "Group B",
+         "match_id": "T1", "match_label": "TodayTeam vs Other"},
+    ]
+    preview = _generate_matchday_preview(fixtures, db_path=db_path)
+    assert "How The Pitch Agent did" in preview
+    assert "Mexico 2-0 South Africa" in preview
+    assert "Model record" in preview
 
 
 def test_matchday_preview_excludes_past_kickoff(tmp_path):

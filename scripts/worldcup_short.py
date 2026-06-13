@@ -297,7 +297,51 @@ def render_scene(scene: dict, index: int, out_dir: Path) -> Path:
     return png_path
 
 
-def generate_voiceover(text: str, out_path: Path) -> Path | None:
+def _elevenlabs_voiceover(text: str, out_path: Path) -> Path | None:
+    """Primary TTS: ElevenLabs professional conversational voice.
+
+    Key comes from secrets.env (ELEVENLABS_API_KEY); voice/model overridable
+    via ELEVENLABS_VOICE_ID / ELEVENLABS_MODEL_ID. Returns None on any
+    failure so the caller can fall back to edge-tts.
+    """
+    import os
+    import requests
+
+    _load_secrets_env()
+    api_key = os.environ.get("ELEVENLABS_API_KEY", "")
+    if not api_key:
+        print("⚠️  ELEVENLABS_API_KEY not set — falling back to edge-tts", file=sys.stderr)
+        return None
+
+    voice_id = os.environ.get("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")  # Adam
+    model_id = os.environ.get("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
+    try:
+        r = requests.post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+            headers={"xi-api-key": api_key, "Content-Type": "application/json"},
+            json={
+                "text": text,
+                "model_id": model_id,
+                # Conversational delivery: a bit of variation and style,
+                # not flat narration.
+                "voice_settings": {"stability": 0.45, "similarity_boost": 0.75, "style": 0.35},
+            },
+            timeout=180,
+        )
+    except requests.RequestException as e:
+        print(f"⚠️  ElevenLabs request failed: {e} — falling back to edge-tts", file=sys.stderr)
+        return None
+    if r.status_code != 200:
+        print(f"⚠️  ElevenLabs HTTP {r.status_code}: {r.text[:200]} — falling back to edge-tts",
+              file=sys.stderr)
+        return None
+    out_path.write_bytes(r.content)
+    print("🎙️  Voiceover: ElevenLabs (professional)")
+    return out_path
+
+
+def _edge_tts_voiceover(text: str, out_path: Path) -> Path | None:
+    """Fallback TTS: edge-tts (free, lower quality)."""
     import shutil
     if not shutil.which("edge-tts"):
         print("⚠️  edge-tts not found — visual-only")
@@ -307,7 +351,14 @@ def generate_voiceover(text: str, out_path: Path) -> Path | None:
     if r.returncode != 0:
         print(f"⚠️  edge-tts failed: {r.stderr[-200:]}", file=sys.stderr)
         return None
+    print("🎙️  Voiceover: edge-tts (fallback)")
     return out_path
+
+
+def generate_voiceover(text: str, out_path: Path) -> Path | None:
+    """ElevenLabs first (professional conversational voice); edge-tts as
+    fallback; visual-only as last resort."""
+    return _elevenlabs_voiceover(text, out_path) or _edge_tts_voiceover(text, out_path)
 
 
 def assemble_video(scene_paths, voice_path, out_video):
