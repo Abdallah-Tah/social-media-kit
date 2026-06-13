@@ -108,15 +108,29 @@ def exchange_code(args):
     refresh = token.get("refresh_token")
     if not refresh:
         raise SystemExit("Google did not return a refresh_token; rerun auth-url and approve with prompt=consent.")
-    _upsert_secret("YOUTUBE_REFRESH_TOKEN", refresh)
-    print("✅ YouTube refresh token saved to config/secrets.env")
+    var = _token_var(getattr(args, "profile", "main"))
+    _upsert_secret(var, refresh)
+    print(f"✅ YouTube refresh token saved to config/secrets.env as {var}")
 
 
-def _access_token():
+# Channel profiles → which refresh-token env var to use. Multiple channels
+# under one Google account each need their OWN token (authorized with that
+# channel selected), or uploads all land on the default channel.
+TOKEN_VARS = {
+    "main": "YOUTUBE_REFRESH_TOKEN",
+    "automationlab": "YOUTUBE_REFRESH_TOKEN_AL",
+}
+
+
+def _token_var(profile: str) -> str:
+    return TOKEN_VARS.get(profile, "YOUTUBE_REFRESH_TOKEN")
+
+
+def _access_token(profile: str = "main"):
     data = {
         "client_id": _require("YOUTUBE_CLIENT_ID"),
         "client_secret": _require("YOUTUBE_CLIENT_SECRET"),
-        "refresh_token": _require("YOUTUBE_REFRESH_TOKEN"),
+        "refresh_token": _require(_token_var(profile)),
         "grant_type": "refresh_token",
     }
     r = requests.post(TOKEN_URL, data=data, timeout=30)
@@ -142,7 +156,7 @@ def upload(args):
             "selfDeclaredMadeForKids": False,
         },
     }
-    token = _access_token()
+    token = _access_token(getattr(args, "profile", "main"))
     start = requests.post(
         UPLOAD_URL,
         params={"uploadType": "resumable", "part": "snippet,status"},
@@ -228,6 +242,8 @@ def main():
     p_code = sub.add_parser("exchange-code", help="Exchange copied OAuth code for a refresh token")
     p_code.add_argument("--code", required=True)
     p_code.add_argument("--redirect-uri", default=DEFAULT_REDIRECT_URI)
+    p_code.add_argument("--profile", default="main", choices=list(TOKEN_VARS.keys()),
+                        help="Which channel this token is for")
     p_code.set_defaults(func=exchange_code)
 
     p_up = sub.add_parser("upload", help="Upload a vertical reel as a YouTube Short")
@@ -237,6 +253,8 @@ def main():
     p_up.add_argument("--privacy", choices=["public", "unlisted", "private"], default="public")
     p_up.add_argument("--tags", default="BuildWithAbdallah,programming,tutorial,shorts")
     p_up.add_argument("--category-id", default="27", help="27=Education, 28=Science & Technology")
+    p_up.add_argument("--profile", default="main", choices=list(TOKEN_VARS.keys()),
+                      help="Which channel to upload to (main = Build With Abdallah)")
     p_up.set_defaults(func=upload)
 
     p_wm = sub.add_parser("set-watermark", help="Set the channel video watermark")
