@@ -62,6 +62,12 @@ PILLARS = [
 # matches table instead of the Form Index leaderboard.
 FIXTURE_PILLARS = ("matchday_preview", "match_recap", "real_data_connected")
 
+# Confidence tiers for predictions. A credible analyst headlines only the
+# games with a real edge and says "too close to call" on coin-flips — that
+# both reads sharper and keeps the public hit-rate honest-but-strong.
+CONFIDENT_PICK = 0.58   # >= this top-outcome prob → a headlined pick
+LEAN_PICK = 0.50        # >= this → a soft lean; below → too close to call
+
 # The four pillars frozen as production-ready for the World Cup launch. Other
 # pillars still run but are not yet considered launch quality.
 PRIORITY_PILLARS = (
@@ -901,11 +907,15 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
             basis_tag = f" (home {home_b}, away {away_b})"
 
         most_likely = top[0]
-        pred_str = (
-            f"Most likely outcome: {outcome_label} ({outcome_prob*100:.0f}%) "
-            f"\u00b7 Most likely score: {most_likely['label']}{basis_tag} — "
-            f"{key_factor}"
-        )
+        pct = outcome_prob * 100
+        # Tier the call by confidence — only headline a real edge.
+        if outcome_prob >= CONFIDENT_PICK:
+            head = f"🎯 Pick: {outcome_label} ({pct:.0f}%) · {most_likely['label']}"
+        elif outcome_prob >= LEAN_PICK:
+            head = f"Lean: {outcome_label} ({pct:.0f}%) · {most_likely['label']}"
+        else:
+            head = f"Too close to call · slight edge {outcome_label} ({pct:.0f}%)"
+        pred_str = f"{head}{basis_tag} — {key_factor}"
         return pred_str
     except Exception:
         import sys

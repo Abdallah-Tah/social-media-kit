@@ -874,29 +874,74 @@ def get_prediction_accuracy(
     }
 
 
+# World Cup K-factor for online Elo updates (FIFA uses ~50-60 for finals).
+ELO_K = 50.0
+
+
+def update_elos_after_result(
+    conn: sqlite3.Connection,
+    home_team_id: str, home_team_name: str,
+    away_team_id: str, away_team_name: str,
+    home_score: int, away_score: int,
+) -> dict[str, Any] | None:
+    """Online Elo update so the model reflects current form for each team's
+    NEXT match. Standard Elo: winner gains, loser loses, scaled by surprise.
+    Margin of victory nudges K up. Idempotent-ish: callers run it once per
+    result. Returns the deltas, or None if a prior is missing.
+    """
+    home = get_team_prior(conn, home_team_id) or get_team_prior(conn, home_team_name)
+    away = get_team_prior(conn, away_team_id) or get_team_prior(conn, away_team_name)
+    if not home or not away:
+        return None
+
+    he, ae = float(home["elo"]), float(away["elo"])
+    exp_home = 1.0 / (1.0 + 10 ** ((ae - he) / 400.0))
+    actual_home = 1.0 if home_score > away_score else (0.5 if home_score == away_score else 0.0)
+    # Goal-difference multiplier (mild): a 3+ goal win counts a bit more.
+    gd = abs(home_score - away_score)
+    k = ELO_K * (1.0 + 0.25 * max(0, gd - 1))
+    delta = k * (actual_home - exp_home)
+
+    new_home, new_away = he + delta, ae - delta
+    upsert_team_prior(conn, {"team_id": home["team_id"], "team_name": home["team_name"],
+                             "elo": new_home, "source": "elo+form"})
+    upsert_team_prior(conn, {"team_id": away["team_id"], "team_name": away["team_name"],
+                             "elo": new_away, "source": "elo+form"})
+    conn.commit()
+    return {"home": home["team_name"], "away": away["team_name"],
+            "home_elo": round(he, 0), "new_home_elo": round(new_home, 0),
+            "away_elo": round(ae, 0), "new_away_elo": round(new_away, 0),
+            "delta": round(delta, 1)}
+
+
 def record_match_result(
     conn: sqlite3.Connection,
     match_id: str,
     home_score: int,
     away_score: int,
     result_source: str = "manual",
+    update_elo: bool = True,
 ) -> dict[str, Any]:
     """Set the result for a match and grade any pending predictions.
 
     Sets ``home_score``, ``away_score``, ``status = 'FINISHED'``, and
     ``result_source`` on the match row, then calls
-    :func:`grade_predictions` to grade any ungraded predictions.
+    :func:`grade_predictions` to grade any ungraded predictions. When
+    ``update_elo`` is set (default), also applies an online Elo update so
+    future predictions for these teams reflect current form.
 
     Returns a dict with the match info and the number of predictions graded.
-    Raises ``ValueError`` if the match does not exist.
+    Raises ``ValueError`` if the match does not exist or was already FINISHED
+    (re-recording would double-apply the Elo update).
     """
     row = conn.execute(
-        "SELECT match_id, home_team_name, away_team_name, home_score, away_score, status "
-        "FROM matches WHERE match_id = ?",
+        "SELECT match_id, home_team_id, home_team_name, away_team_id, away_team_name, "
+        "home_score, away_score, status FROM matches WHERE match_id = ?",
         (match_id,),
     ).fetchone()
     if row is None:
         raise ValueError(f"Match {match_id} not found")
+    already_final = str(row["status"]).strip().upper() == "FINISHED"
 
     conn.execute(
         "UPDATE matches SET home_score = ?, away_score = ?, status = 'FINISHED', "
@@ -906,6 +951,14 @@ def record_match_result(
     conn.commit()
 
     graded = grade_predictions(conn)
+
+    # Only update Elo on the FIRST time a result is recorded — re-recording a
+    # finished match must not double-count the form adjustment.
+    elo = None
+    if update_elo and not already_final:
+        elo = update_elos_after_result(
+            conn, row["home_team_id"], row["home_team_name"],
+            row["away_team_id"], row["away_team_name"], home_score, away_score)
 
     return {
         "match_id": match_id,
@@ -917,4 +970,5 @@ def record_match_result(
         "previous_home_score": row["home_score"],
         "previous_away_score": row["away_score"],
         "predictions_graded": graded,
+        "elo_update": elo,
     }
