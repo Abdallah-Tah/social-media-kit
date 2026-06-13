@@ -147,13 +147,110 @@ def _esc(s):
     return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
 
-def build_spec(slug, title, script):
+# ── Real code on screen (what actually attracts developers) ──────────────
+import html as _html  # noqa: E402
+
+_C_LIKE = {"cpp", "c", "c++", "js", "javascript", "ts", "typescript", "java",
+           "go", "golang", "php", "rust", "cs", "csharp", "swift", "kotlin", "dart"}
+_KEYWORDS = set((
+    "auto break case char class const continue default delete do double else "
+    "enum extern float for friend goto if inline int long namespace new operator "
+    "private protected public return short signed sizeof static struct switch "
+    "template this throw try typedef typename union unsigned using virtual void "
+    "volatile while bool true false nullptr "
+    "function var let def import from export async await yield lambda pass with "
+    "as in is not and or echo print None True False null undefined new "
+    "func package interface map range chan go defer fn impl let mut pub use"
+).split())
+_EXT = {"cpp": "main.cpp", "c": "main.c", "js": "app.js", "javascript": "app.js",
+        "ts": "app.ts", "typescript": "app.ts", "python": "main.py", "py": "main.py",
+        "php": "index.php", "go": "main.go", "rust": "main.rs", "java": "Main.java",
+        "bash": "terminal", "sh": "terminal", "json": "config.json", "yaml": "config.yml"}
+
+
+def _highlight_line(line, lang):
+    """Return one syntax-highlighted, HTML-escaped code line."""
+    lang = (lang or "").lower()
+    clike = lang in _C_LIKE or lang == ""
+    holds = []
+
+    def stash(cls, text):
+        holds.append((cls, text))
+        return chr(0xE000 + len(holds) - 1)  # private-use placeholder
+
+    s = line
+    if clike:
+        s = re.sub(r"^(\s*)(#\s*\w+)", lambda m: m.group(1) + stash("tk-pp", m.group(2)), s)
+        s = re.sub(r"//.*$", lambda m: stash("tk-com", m.group(0)), s)
+        s = re.sub(r"/\*.*?\*/", lambda m: stash("tk-com", m.group(0)), s)
+    else:
+        s = re.sub(r"#.*$", lambda m: stash("tk-com", m.group(0)), s)
+    s = re.sub(r'"(?:[^"\\]|\\.)*"', lambda m: stash("tk-str", m.group(0)), s)
+    s = re.sub(r"'(?:[^'\\]|\\.)*'", lambda m: stash("tk-str", m.group(0)), s)
+    s = _html.escape(s)
+    s = re.sub(r"[A-Za-z_]\w*",
+               lambda m: (f'<span class="tk-kw">{m.group(0)}</span>'
+                          if m.group(0) in _KEYWORDS else m.group(0)), s)
+    s = re.sub(r"\b\d+\.?\d*\b",
+               lambda m: f'<span class="tk-num">{m.group(0)}</span>', s)
+    # Restore stashed strings/comments. Placeholders are private-use code
+    # points so the keyword/number passes above never touch them.
+    s = re.sub("[\ue000-\uf8ff]",
+               lambda m: f'<span class="{holds[ord(m.group(0)) - 0xE000][0]}">'
+                         f'{_html.escape(holds[ord(m.group(0)) - 0xE000][1])}</span>', s)
+    return s or "&nbsp;"
+
+
+def _extract_code(body):
+    """Pick the most illustrative fenced code block. Returns (lang, file, lines) or None."""
+    blocks = re.findall(r"```(\w*)\n(.*?)```", body or "", re.S)
+    best = None
+    for lang, code in blocks:
+        if not lang:  # skip language-less blocks (ascii diagrams, output)
+            continue
+        lines = code.rstrip("\n").split("\n")
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        while lines and not lines[-1].strip():
+            lines.pop()
+        if len(lines) < 3:
+            continue
+        score = -abs(9 - len(lines))  # prefer ~9 lines
+        if best is None or score > best[0]:
+            best = (score, lang, lines[:12])
+    if not best:
+        return None
+    _, lang, lines = best
+    fn = _EXT.get(lang.lower(), f"snippet.{lang.lower()}")
+    if lang.lower() == "cpp" and any("#ifndef" in l or "Q_OBJECT" in l for l in lines):
+        fn = "mainwindow.h"
+    return lang, fn, lines
+
+
+def _editor_html(lang, filename, lines):
+    """Build the dark code-editor window with line numbers + staggered reveal."""
+    rows = []
+    for i, ln in enumerate(lines):
+        delay = 0.45 + i * 0.13
+        rows.append(
+            f'<div class="line" style="animation-delay:{delay:.2f}s">'
+            f'<span class="ln">{i + 1}</span>{_highlight_line(ln, lang)}</div>')
+    return (
+        '<div class="editor"><div class="bar">'
+        '<span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>'
+        f'<span class="file">{_html.escape(filename)}</span></div>'
+        f'<div class="code">{"".join(rows)}</div></div>')
+
+
+def build_spec(slug, title, script, code=None):
     """Map the LLM script onto a video-factory episode spec (single voice).
 
-    Narration roles (set by the prompt): line 0 = hook, lines 1..n-3 = the
-    how, line n-2 = the "my take" editorial, line n-1 = the CTA. Scenes
-    partition [0, n-1] CONTIGUOUSLY — the engine clips audio to video
-    length, so every narration line must be covered by exactly one scene.
+    Narration roles (set by the prompt): line 0 = hook, line 1 = the code
+    (if any), middle lines = the how, line n-2 = the "my take" editorial,
+    line n-1 = the CTA. Scenes partition [0, n-1] CONTIGUOUSLY — the engine
+    clips audio to video length, so every line must be covered once.
+
+    ``code`` is (lang, filename, lines) from _extract_code, or None.
     """
     narration = script["narration"]
     n = len(narration)
@@ -167,11 +264,21 @@ def build_spec(slug, title, script):
          "stat": "⌁ Build With Abdallah · practical dev content"},
     ]
 
-    # Content cards cover the "how" lines [1 .. n-3].
-    how_lo, how_hi = 1, n - 3
+    how_lo = 1
+    # Real code on screen — line 1 narrates it. Only when there's room for
+    # hook+code+take+cta (n>=4) so coverage stays valid.
+    if code and n >= 4:
+        lang, fn, lines = code
+        scenes.append({"segments": [1, 1], "title": "The Code",
+                       "caption": script.get("code_caption", "The part that matters"),
+                       "rows": _editor_html(lang, fn, lines), "stat": ""})
+        how_lo = 2
+
+    # Content card(s) cover the remaining "how" lines [how_lo .. n-3].
+    how_hi = n - 3
     if how_hi >= how_lo:
         span = how_hi - how_lo + 1
-        if span >= 2:
+        if span >= 2 and not code:
             mid = how_lo + span // 2 - 1
             scenes.append({"segments": [how_lo, mid],
                            "title": _esc(c0.get("heading", "Key points")), "caption": "",
@@ -263,10 +370,13 @@ def main():
         print(f"⏭  Already posted a video for '{slug}' — skipping (use --force to override).")
         return 0
 
-    script = write_episode_script(title, post.get("excerpt") or "", post.get("body") or "")
-    print(f"  narration: {len(script['narration'])} lines · hook: {script['hook_title']}")
+    body = post.get("body") or ""
+    script = write_episode_script(title, post.get("excerpt") or "", body)
+    code = _extract_code(body)
+    print(f"  narration: {len(script['narration'])} lines · hook: {script['hook_title']}"
+          + (f" · code: {code[1]} ({len(code[2])} lines)" if code else " · no code block"))
 
-    spec = build_spec(slug, title, script)
+    spec = build_spec(slug, title, script, code=code)
     video = build_episode(spec)
     print(f"✅ video: {video}")
 
