@@ -35,6 +35,7 @@ DRAFTS = os.path.join(KIT, "content", "drafts")
 SITE = "https://buildwithabdallah.com"
 
 NEWS_QUERIES = [
+    # --- existing developer-news coverage (kept) ---
     "developer tools official release news",
     "OpenAI developers API release official blog",
     "Laravel PHP release official news",
@@ -43,6 +44,18 @@ NEWS_QUERIES = [
     ".NET C# developer release official blog",
     "GitHub developer tools release official blog",
     "Docker Kubernetes developer release official blog",
+    # --- expanded AI / tech coverage ---
+    "AI news this week latest models",
+    "new AI tools for developers release",
+    "Anthropic Claude release official blog",
+    "Google Gemini AI release official blog",
+    "open source LLM release news",
+    "AI agents developer tools news",
+    # --- preferred AI sources: Matt Wolfe / Forward Future ---
+    "forwardfuture.ai AI news",
+    "site:forwardfuture.ai latest AI",
+    "Matt Wolfe AI news tools",
+    "Future Tools AI news Matt Wolfe",
 ]
 
 LOW_VALUE_DOMAINS = (
@@ -116,13 +129,17 @@ def recent_titles(n=40):
 
 def collect_candidates():
     seen = set()
-    candidates = []
     year = datetime.date.today().year
+    # Collect per-query so we can interleave round-robin. Otherwise the first
+    # queries fill the pool and later queries (AI / Forward Future) get
+    # truncated out before the story picker ever sees them.
+    per_query = []
     for query in NEWS_QUERIES:
         try:
             results = CR.web_search(f"{query} {year}", count=6)
         except Exception:
             results = []
+        bucket = []
         for item in results:
             url = item.get("url", "")
             title = item.get("title", "").strip()
@@ -132,13 +149,21 @@ def collect_candidates():
             if any(bad in host for bad in LOW_VALUE_DOMAINS):
                 continue
             seen.add(url)
-            candidates.append({
+            bucket.append({
                 "title": title,
                 "url": url,
                 "description": item.get("description", ""),
                 "source": item.get("source", ""),
             })
-    return candidates[:28]
+        per_query.append(bucket)
+
+    # Round-robin interleave so every query is represented in the final pool.
+    candidates = []
+    for rank in range(max((len(b) for b in per_query), default=0)):
+        for bucket in per_query:
+            if rank < len(bucket):
+                candidates.append(bucket[rank])
+    return candidates[:36]
 
 
 def _chat(messages, max_tokens=1200, temperature=0.35, json_mode=False):
@@ -173,6 +198,11 @@ def choose_story(candidates, titles):
         "Pick ONE developer-news story for Build With Abdallah. Prefer official or primary sources, "
         "recent product/framework/API releases, security updates, or platform changes that developers "
         "can act on. Avoid rumors, generic listicles, and duplicate topics.\n\n"
+        "Weight AI and developer-tooling stories highly (new AI models, AI agents, AI dev tools, "
+        "LLM releases). Forward Future (forwardfuture.ai) and Matt Wolfe are trusted AI-roundup "
+        "sources: when one of them covers a concrete AI development, you may pick it and cite the "
+        "forwardfuture.ai URL in source_urls, but always also include the underlying official/primary "
+        "source URL when one is available.\n\n"
         "The headline must name the actual technologies being discussed. Prefer titles like "
         "'Google I/O 2026: Gemini 3.5, Managed Agents, and AI Studio Explained' over vague titles "
         "like 'Google I/O 2026: Key Developer Announcements'.\n\n"
@@ -357,6 +387,12 @@ def main():
     with open(draft_path, "w", encoding="utf-8") as fh:
         fh.write(body)
     print(f"Saved news draft to {draft_path}")
+
+    if "--dry-run" in sys.argv:
+        print("=== DRY RUN — no cover, no site publish, no social ===")
+        print(f"source_urls: {story['source_urls']}")
+        print(f"why_it_matters: {story.get('why_it_matters','')}")
+        return 0
 
     cover = IG.generate_cover(
         story["title"],

@@ -35,26 +35,61 @@ def poisson_prob(lam: float, k: int) -> float:
     return (lam ** k) * math.exp(-lam) / math.factorial(k)
 
 
+# Dixon-Coles low-score dependency correction. tau adjusts only the four
+# lowest scorelines; rho < 0 inflates 0-0 and 1-1 (draws) and deflates
+# 1-0 / 0-1, correcting independent Poisson's well-known draw under-count.
+def _dixon_coles_tau(h: int, a: int, home_xg: float, away_xg: float, rho: float) -> float:
+    if rho == 0.0:
+        return 1.0
+    if h == 0 and a == 0:
+        return 1.0 - home_xg * away_xg * rho
+    if h == 0 and a == 1:
+        return 1.0 + home_xg * rho
+    if h == 1 and a == 0:
+        return 1.0 + away_xg * rho
+    if h == 1 and a == 1:
+        return 1.0 - rho
+    return 1.0
+
+
 def scoreline_distribution(
     home_xg: float,
     away_xg: float,
     max_goals: int = 7,
+    rho: float = 0.0,
 ) -> list[dict[str, Any]]:
     """Return all scorelines with probabilities, sorted by likelihood.
 
     Each entry: ``{"home_goals": h, "away_goals": a,
     "probability": p, "label": "h-a"}``.
+
+    ``rho`` is the Dixon-Coles low-score correction. The default (0.0)
+    reproduces the original independent-Poisson model exactly; a small
+    negative value (literature: ~-0.05 to -0.15) lifts 0-0 and 1-1 draw
+    probability to match real football, fixing the model's structural
+    inability to ever predict a draw. Probabilities are renormalised to
+    sum to 1.
     """
     results: list[dict[str, Any]] = []
+    total = 0.0
     for h in range(max_goals + 1):
         for a in range(max_goals + 1):
-            prob = poisson_prob(home_xg, h) * poisson_prob(away_xg, a)
+            prob = (
+                poisson_prob(home_xg, h)
+                * poisson_prob(away_xg, a)
+                * _dixon_coles_tau(h, a, home_xg, away_xg, rho)
+            )
+            prob = max(prob, 0.0)
+            total += prob
             results.append({
                 "home_goals": h,
                 "away_goals": a,
-                "probability": round(prob, 4),
+                "probability": prob,
                 "label": f"{h}-{a}",
             })
+    if total > 0:
+        for r in results:
+            r["probability"] = round(r["probability"] / total, 4)
     results.sort(key=lambda r: r["probability"], reverse=True)
     return results
 
@@ -63,18 +98,20 @@ def top_scorelines(
     home_xg: float,
     away_xg: float,
     n: int = 3,
+    rho: float = 0.0,
 ) -> list[dict[str, Any]]:
     """Top N most likely scorelines with probabilities."""
-    dist = scoreline_distribution(home_xg, away_xg)
+    dist = scoreline_distribution(home_xg, away_xg, rho=rho)
     return dist[:n]
 
 
 def match_outcome_probs(
     home_xg: float,
     away_xg: float,
+    rho: float = 0.0,
 ) -> dict[str, float]:
     """Home win / draw / away win probabilities from Poisson xG."""
-    dist = scoreline_distribution(home_xg, away_xg)
+    dist = scoreline_distribution(home_xg, away_xg, rho=rho)
     home_win = sum(r["probability"] for r in dist if r["home_goals"] > r["away_goals"])
     draw = sum(r["probability"] for r in dist if r["home_goals"] == r["away_goals"])
     away_win = sum(r["probability"] for r in dist if r["home_goals"] < r["away_goals"])
@@ -88,6 +125,7 @@ def match_outcome_probs(
 def resolve_predicted_outcome(
     outcomes: dict[str, float],
     top_scoreline: dict[str, Any] | None = None,
+    draw_pref_eps: float = 0.0,
 ) -> str:
     """Resolve the predicted outcome from outcome probabilities.
 
@@ -99,9 +137,18 @@ def resolve_predicted_outcome(
     likely scoreline is 1-1 (a draw), the predicted outcome is
     'draw'. If the most likely scoreline is 1-0 (a home win),
     the predicted outcome is 'home'.
+
+    ``draw_pref_eps`` (default 0.0 = off) corrects the residual draw
+    under-prediction: even after Dixon-Coles, the 3-way argmax can
+    almost never land on a draw, yet ~30-38% of WC group games end
+    level. When the draw probability is within ``draw_pref_eps`` of the
+    top outcome (i.e. no side has a clear edge), back the draw.
     """
     probs = {"home": outcomes["home_win"], "draw": outcomes["draw"], "away": outcomes["away_win"]}
     max_prob = max(probs.values())
+    # Even-match draw preference: no clear favourite → most likely to end level.
+    if draw_pref_eps > 0 and probs["draw"] >= max_prob - draw_pref_eps:
+        return "draw"
     # Find all outcomes tied for max
     tied = [k for k, v in probs.items() if v == max_prob]
     if len(tied) == 1:

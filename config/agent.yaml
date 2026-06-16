@@ -35,9 +35,9 @@ nvidia:
 
 ollama:
   # IMPORTANT: pick a model that supports TOOL CALLING (e.g. llama3.1,
-  # qwen2.5, mistral-nemo, kimi-k2.6). Pure "thinking" models that only emit
+  # qwen2.5, mistral-nemo, kimi-k2.7-code). Pure "thinking" models that only emit
   # a reasoning field, and small models like gemma3:4b, won't call tools.
-  model: kimi-k2.6:cloud   # tool-calling capable; routed via the local Ollama daemon
+  model: kimi-k2.7-code:cloud   # tool-calling capable; routed via the local Ollama daemon
   base_url: http://localhost:11434/v1   # local Ollama (proxies *:cloud models)
   max_tokens: 4096
   temperature: 0.4
@@ -45,6 +45,6 @@ ollama:
   # To use ollama.com cloud models instead of local:
   #   1. base_url: https://ollama.com/v1
   #   2. set OLLAMA_API_KEY in config/secrets.env
-  #   3. use the BASE model name WITHOUT a ":cloud" suffix (e.g. kimi-k2.6).
+  #   3. use the BASE model name WITHOUT a ":cloud" suffix (e.g. kimi-k2.7-code).
   #      The ":cloud" alias is an OpenClaw routing convention, not an
   #      ollama.com model name.

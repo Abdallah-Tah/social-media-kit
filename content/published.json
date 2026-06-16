@@ -347,5 +347,18 @@
     "steps": 6,
     "summary": "Created a hands-on tutorial on Loop Engineering, focusing on building autonomous AI coding loops using a 14-step roadmap. Sources included Addy Osmani's blog, MindStudio, and Nick Tune's LinkedIn post. Published to the blog and Facebook successfully. LinkedIn post failed due to revoked access token. Article title: 'Loop Engineering: Build Your First Autonomous AI Coding Loop — the 14-step roadmap from prompter to loop designer'. Draft saved and published where possible.",
     "date": "2026-06-10T03:59:28.464088+00:00"
+  },
+  {
+    "topic": "Correction: GPT-6 did not launch - OpenAI GPT-5.5 Codex Ona fact-check",
+    "profile": "BuildWithAbdallah",
+    "provider": "manual-correction",
+    "channels": [
+      "blog",
+      "facebook",
+      "youtube"
+    ],
+    "steps": 0,
+    "summary": "Unpublished bad GPT-6 article post 104; published corrected article post 105; uploaded YouTube Short EmvCcHzi8cU; Facebook post 1101440786392389_122107944513337140; LinkedIn blocked by credentials.",
+    "date": "2026-06-15T02:46:33.382821+00:00"
   }
 ]

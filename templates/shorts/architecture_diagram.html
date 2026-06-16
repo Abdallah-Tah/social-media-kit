@@ -5,30 +5,30 @@
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap');
     * { box-sizing: border-box; }
-    body { margin: 0; width: 1080px; height: 1920px; background: #0b0f14; color: #f4f7fb; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
-    .frame { position: relative; width: 1080px; height: 1920px; padding: 82px 74px; background: #0b0f14; overflow: hidden; }
-    .top { display: flex; justify-content: space-between; color: #9fb0c3; font-size: 30px; }
+    body { margin: 0; width: 1080px; height: 1920px; background: #f8fbff; color: #081b44; font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
+    .frame { position: relative; width: 1080px; height: 1920px; padding: 82px 74px; background: #f8fbff; overflow: hidden; }
+    .top { display: flex; justify-content: space-between; color: #40527a; font-size: 30px; }
     .brand { font-weight: 800; }
-    .brand-bw { color: #f4f7fb; }
-    .brand-a  { color: #2563eb; }
+    .brand-bw { color: #081b44; }
+    .brand-a  { color: #0866ff; }
     h1 { margin: 82px 0 24px; font-size: 62px; line-height: 1.08; letter-spacing: 0; }
-    .caption { color: #cbd5e1; font-size: 38px; line-height: 1.24; margin-bottom: 50px; }
+    .caption { color: #40527a; font-size: 38px; line-height: 1.24; margin-bottom: 50px; }
     .diagram { display: grid; place-items: center; }
-    .node { width: 780px; min-height: 128px; border-radius: 10px; border: 3px solid #2f4052; background: #111820; box-shadow: 0 6px 24px rgba(0,0,0,.35); display: grid; place-items: center; text-align: center; padding: 24px; color: #f4f7fb; font-size: 42px; font-weight: 800; }
-    .arrow { color: #f4a261; font-size: 64px; line-height: 1.08; margin: 12px 0; font-weight: 900; }
-    .takeaway { position: absolute; left: 74px; right: 74px; bottom: 190px; color: #f4f7fb; border-top: 4px solid #2563eb; padding-top: 30px; font-size: 36px; line-height: 1.22; }
+    .node { width: 780px; min-height: 128px; border-radius: 10px; border: 3px solid #d9e1ec; background: #ffffff; box-shadow: 0 6px 24px rgba(10,42,90,.12); display: grid; place-items: center; text-align: center; padding: 24px; color: #081b44; font-size: 42px; font-weight: 800; }
+    .arrow { color: #0866ff; font-size: 64px; line-height: 1.08; margin: 12px 0; font-weight: 900; }
+    .takeaway { position: absolute; left: 74px; right: 74px; bottom: 190px; color: #081b44; border-top: 4px solid #0866ff; padding-top: 30px; font-size: 36px; line-height: 1.22; }
     .geo-tr { position: absolute; top: 0; right: 0; width: 220px; opacity: .4; }
-    .geo-bl { position: absolute; bottom: 60px; left: 48px; width: 80px; opacity: .25; fill: #2563eb; }
-    .wm { position: absolute; right: 54px; bottom: 48px; display: flex; align-items: center; gap: 12px; color: #8b949e; font-size: 26px; }
+    .geo-bl { position: absolute; bottom: 60px; left: 48px; width: 80px; opacity: .25; fill: #0866ff; }
+    .wm { position: absolute; right: 54px; bottom: 48px; display: flex; align-items: center; gap: 12px; color: #7c8aa5; font-size: 26px; }
     .wm-img { width: 76px; height: 76px; object-fit: contain; }
-    .wm-text { width: 76px; height: 76px; border: 3px solid #2563eb; color: #2563eb; display: grid; place-items: center; font-weight: 900; font-size: 20px; }
+    .wm-text { width: 76px; height: 76px; border: 3px solid #0866ff; color: #0866ff; display: grid; place-items: center; font-weight: 900; font-size: 20px; }
   </style>
 </head>
 <body>
   <div class="frame">
     <svg class="geo-tr" viewBox="0 0 260 220" xmlns="http://www.w3.org/2000/svg">
-      <path d="M260 0 H80 L260 180 Z" fill="#0b2a6b"/>
-      <path d="M260 0 H160 L260 110 Z" fill="#1d6cf2" opacity=".7"/>
+      <path d="M260 0 H80 L260 180 Z" fill="#cfe0ff"/>
+      <path d="M260 0 H160 L260 110 Z" fill="#0866ff" opacity=".7"/>
     </svg>
     <svg class="geo-bl" viewBox="0 0 90 64" xmlns="http://www.w3.org/2000/svg">
       <circle cx="6"  cy="6"  r="3.5"/><circle cx="22" cy="6"  r="3.5"/><circle cx="38" cy="6"  r="3.5"/><circle cx="54" cy="6"  r="3.5"/><circle cx="70" cy="6"  r="3.5"/><circle cx="86" cy="6"  r="3.5"/>

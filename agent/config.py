@@ -34,7 +34,25 @@ def load_env() -> None:
         if path.exists():
             _load_env_file(path)
     _prefer_openclaw_telegram_secrets()
+    _force_authoritative_keys()
     _normalise_env_aliases()
+
+
+# Keys where the secrets FILE is authoritative — a stale/bad value left in the
+# environment must NOT win. ELEVENLABS_API_KEY caused repeated edge-tts
+# fallbacks when an old 401 key was exported in a shell (load_env normally
+# won't clobber). The file value is the source of truth for these.
+_AUTHORITATIVE_KEYS = ("ELEVENLABS_API_KEY",)
+
+
+def _force_authoritative_keys() -> None:
+    for path in SECRETS_CANDIDATES:
+        if not path.exists():
+            continue
+        values = _read_env_values(path)
+        for key in _AUTHORITATIVE_KEYS:
+            if values.get(key):
+                os.environ[key] = values[key]
 
 
 def _load_env_file(path: Path) -> None:

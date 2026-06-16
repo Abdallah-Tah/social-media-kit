@@ -185,8 +185,31 @@ def upload(args):
         raise SystemExit(f"upload finish failed ({finish.status_code}): {finish.text[:500]}")
     data = finish.json()
     vid = data.get("id", "")
+    # Optional custom thumbnail (needs a verified channel; warns if not).
+    thumb = getattr(args, "thumbnail", "")
+    if thumb and vid:
+        _set_thumbnail(vid, thumb, getattr(args, "profile", "main"))
     print(f"✅ YouTube Short uploaded: https://www.youtube.com/shorts/{vid}")
     print(json.dumps({"id": vid, "url": f"https://www.youtube.com/shorts/{vid}"}, indent=2))
+
+
+def _set_thumbnail(video_id: str, image_path: str, profile: str = "main"):
+    img = Path(image_path)
+    if not img.exists():
+        print(f"⚠️  thumbnail not found: {img}", file=sys.stderr)
+        return
+    mime = mimetypes.guess_type(str(img))[0] or "image/png"
+    r = requests.post(
+        f"https://www.googleapis.com/upload/youtube/v3/thumbnails/set",
+        params={"videoId": video_id, "uploadType": "media"},
+        headers={"Authorization": f"Bearer {_access_token(profile)}", "Content-Type": mime},
+        data=img.read_bytes(), timeout=60,
+    )
+    if r.status_code in (200, 201):
+        print(f"✅ thumbnail set for {video_id}")
+    else:
+        print(f"⚠️  thumbnail set failed ({r.status_code}): {r.text[:200]} "
+              "(channel may need verification — set it manually in Studio)", file=sys.stderr)
 
 
 def set_watermark(args):
@@ -255,6 +278,7 @@ def main():
     p_up.add_argument("--category-id", default="27", help="27=Education, 28=Science & Technology")
     p_up.add_argument("--profile", default="main", choices=list(TOKEN_VARS.keys()),
                       help="Which channel to upload to (main = Build With Abdallah)")
+    p_up.add_argument("--thumbnail", default="", help="Custom thumbnail PNG/JPG (needs verified channel)")
     p_up.set_defaults(func=upload)
 
     p_wm = sub.add_parser("set-watermark", help="Set the channel video watermark")

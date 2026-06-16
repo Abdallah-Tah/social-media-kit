@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT / "pitch_agent"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from pitch_agent.form_index import compute_form_index, MODEL_VERSION
+from pitch_agent import MODEL_VERSION_LABEL
 from pitch_agent.db import (
     init_db,
     insert_run,
@@ -1109,7 +1110,7 @@ def _seed_match_context_db(tmp_path: Path) -> str:
 
 
 def test_model_version_label_is_frozen_across_surfaces(tmp_path):
-    """'Form Index v1.1' must appear in breakdown, metadata, transparency, chart."""
+    """The current MODEL_VERSION_LABEL must appear consistently across surfaces."""
     from pitch_agent.transparency import get_methodology
     from pitch_agent.charts import build_chart_subtitle
 
@@ -1117,17 +1118,17 @@ def test_model_version_label_is_frozen_across_surfaces(tmp_path):
         "goals": 1, "minutes": 90, "position": "FWD", "team_result": "WIN",
     })["breakdown"]
     assert breakdown["model_version"] == MODEL_VERSION
-    assert breakdown["model_version_label"] == "Form Index v1.1"
+    assert breakdown["model_version_label"] == MODEL_VERSION_LABEL
 
     db_path = _seed_duplicate_player_leaderboard(tmp_path)
     result = generate_content(
         "form_index_update", mode="fan_mode", db_path=db_path, dry_run=True,
     )
     assert result["metadata"]["model_version"] == MODEL_VERSION
-    assert result["metadata"]["model_version_label"] == "Form Index v1.1"
+    assert result["metadata"]["model_version_label"] == MODEL_VERSION_LABEL
 
-    assert "Form Index v1.1" in get_methodology()
-    assert "Form Index v1.1" in build_chart_subtitle()
+    assert MODEL_VERSION_LABEL in get_methodology()
+    assert MODEL_VERSION_LABEL in build_chart_subtitle()
 
 
 def test_leaderboard_rows_include_match_context(tmp_path):
@@ -1236,7 +1237,7 @@ def test_chart_title_and_subtitle_are_branded():
     subtitle = build_chart_subtitle(
         provider_name="csv", data_quality="basic", as_of_date="2026-06-12",
     )
-    assert "Form Index v1.1" in subtitle
+    assert MODEL_VERSION_LABEL in subtitle
     assert "Basic data" in subtitle
     assert "Demo data only" in subtitle
 
@@ -2358,7 +2359,7 @@ def test_upsert_prediction_and_grade(tmp_path):
 
     # Insert a prediction: Mexico 2-0
     upsert_prediction(conn, {
-        "match_id": "M001", "model_version": "1.1.0",
+        "match_id": "M001", "model_version": MODEL_VERSION,
         "predicted_home": 2, "predicted_away": 0,
         "predicted_outcome": "home",
         "home_win_prob": 0.63, "draw_prob": 0.20, "away_win_prob": 0.17,
@@ -2395,7 +2396,7 @@ def test_incorrect_prediction_graded_as_wrong(tmp_path):
 
     # Predict home win, but away won
     upsert_prediction(conn, {
-        "match_id": "M002", "model_version": "1.1.0",
+        "match_id": "M002", "model_version": MODEL_VERSION,
         "predicted_home": 2, "predicted_away": 1,
         "predicted_outcome": "home",
         "home_win_prob": 0.48, "draw_prob": 0.25, "away_win_prob": 0.27,
@@ -2427,7 +2428,7 @@ def test_draw_prediction_graded_correctly(tmp_path):
     conn.commit()
 
     upsert_prediction(conn, {
-        "match_id": "M003", "model_version": "1.1.0",
+        "match_id": "M003", "model_version": MODEL_VERSION,
         "predicted_home": 1, "predicted_away": 1,
         "predicted_outcome": "draw",
         "home_win_prob": 0.30, "draw_prob": 0.35, "away_win_prob": 0.35,

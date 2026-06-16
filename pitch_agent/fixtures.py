@@ -60,6 +60,44 @@ def get_fixtures(
     return fixtures
 
 
+def get_upcoming_fixtures(
+    db_path: str = "pitch_agent.db",
+    limit: int = 12,
+) -> list[dict[str, Any]]:
+    """Return the NEXT non-finished fixtures (earliest first).
+
+    Unlike :func:`get_fixtures` (which returns the 10 earliest matches of the
+    whole tournament — all in the past once the group stage is underway), this
+    only returns matches that haven't finished, so the matchday preview always
+    sees today's upcoming games no matter how far into the tournament we are.
+    """
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT match_id, date, stage, group_name, home_team_name, "
+            "away_team_name, home_score, away_score, status, provider_name "
+            "FROM matches WHERE status != 'FINISHED' "
+            "ORDER BY date ASC, match_id ASC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        conn.close()
+    except sqlite3.OperationalError:
+        return []
+    fixtures = []
+    for row in rows:
+        home, away = row["home_team_name"], row["away_team_name"]
+        fixtures.append({
+            "match_id": row["match_id"], "date": row["date"], "stage": row["stage"],
+            "group_name": row["group_name"], "home_team_name": home,
+            "away_team_name": away, "home_score": row["home_score"],
+            "away_score": row["away_score"], "status": row["status"],
+            "provider_name": row["provider_name"],
+            "match_label": f"{home} vs {away}" if home and away else "TBD",
+        })
+    return fixtures
+
+
 def get_finished_matches(
     db_path: str = "pitch_agent.db",
     limit: int = 10,

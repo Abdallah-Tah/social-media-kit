@@ -80,6 +80,35 @@
     .wm-text { width: 108px; height: 108px; border: 3px solid var(--blue); color: var(--blue); display: grid;
                place-items: center; font-weight: 900; font-size: 30px; }
 
+    /* ── Match-recap scoreboard ── */
+    .scoreboard { margin-top: 46px; display: flex; align-items: center; justify-content: space-between;
+                  background: #ffffff; border: 2px solid var(--line); border-radius: 26px;
+                  box-shadow: 0 16px 36px rgba(7,26,68,.14); padding: 40px 44px;
+                  animation: fadeUp .7s ease-out .4s both; }
+    .scoreboard .team { flex: 1; text-align: center; }
+    .scoreboard .team .name { font-size: 40px; font-weight: 800; color: var(--navy); line-height: 1.1; }
+    .scoreboard .team .code { font-size: 26px; font-weight: 700; color: var(--muted); letter-spacing: 2px; }
+    .scoreboard .score { font-family: Sora, Inter, sans-serif; font-size: 120px; font-weight: 900;
+                         color: var(--navy); letter-spacing: -4px; padding: 0 30px; line-height: 1; }
+    .scoreboard .score .dash { color: var(--blue); }
+    .ft-badge { display: inline-block; margin-top: 14px; background: var(--blue); color: #fff;
+                font-size: 24px; font-weight: 800; letter-spacing: 3px; padding: 6px 22px; border-radius: 20px; }
+
+    /* ── Goal timeline ── */
+    .timeline { margin-top: 40px; display: flex; flex-direction: column; gap: 22px; }
+    .goal { display: flex; align-items: center; gap: 24px; padding: 20px 28px; background: #ffffff;
+            border-radius: 18px; box-shadow: 0 8px 22px rgba(7,26,68,.08);
+            border-left: 8px solid var(--blue); animation: slideRight .6s cubic-bezier(.2,.9,.3,1) both; }
+    .goal:nth-child(1){animation-delay:.5s} .goal:nth-child(2){animation-delay:.9s}
+    .goal:nth-child(3){animation-delay:1.3s} .goal:nth-child(4){animation-delay:1.7s}
+    .goal:nth-child(5){animation-delay:2.1s} .goal:nth-child(6){animation-delay:2.5s}
+    .goal .min { font-family: Sora, sans-serif; font-size: 40px; font-weight: 900; color: var(--blue);
+                 min-width: 90px; }
+    .goal .scorer { font-size: 36px; font-weight: 800; color: var(--navy); flex: 1; }
+    .goal .who { font-size: 26px; font-weight: 700; color: var(--muted); }
+    .goal.og { border-left-color: var(--muted); }
+    .goal.og .min { color: var(--muted); }
+
     @keyframes slideRight { from { opacity: 0; transform: translateX(-70px); } to { opacity: 1; transform: none; } }
     @keyframes fadeUp    { from { opacity: 0; transform: translateY(46px); }  to { opacity: 1; transform: none; } }
     @keyframes fadeDown  { from { opacity: 0; transform: translateY(-30px); } to { opacity: 1; transform: none; } }

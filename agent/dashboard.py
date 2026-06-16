@@ -10,6 +10,8 @@ don't expose it to the network unless you mean to.
 from __future__ import annotations
 
 import json
+import mimetypes
+import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -18,7 +20,68 @@ from .config import AgentConfig, ROOT, list_profiles, load_profile
 from .orchestrator import run_agent
 from .prompts import build_goal
 
-DRAFTS_DIR = ROOT / "content" / "drafts"
+CONTENT_DIR = ROOT / "content"
+DRAFTS_DIR = CONTENT_DIR / "drafts"
+UPLOADS_DIR = CONTENT_DIR / "uploads"
+
+FILE_CATEGORIES = ("news", "tutorials", "videos", "images", "other")
+MAX_UPLOAD_BYTES = 600 * 1024 * 1024  # 600 MB cap for added files/videos
+
+
+def list_files():
+    """Group deliverable content files by feature for the dashboard."""
+    cats = {c: [] for c in FILE_CATEGORIES}
+
+    def add(cat, p):
+        try:
+            st = p.stat()
+        except OSError:
+            return
+        cats[cat].append({
+            "name": p.name,
+            "path": str(p.relative_to(ROOT)),
+            "size": st.st_size,
+            "mtime": int(st.st_mtime),
+        })
+
+    if DRAFTS_DIR.exists():
+        for p in DRAFTS_DIR.glob("*.md"):
+            add("news" if "_news_" in p.name else "tutorials", p)
+    assets = CONTENT_DIR / "assets"
+    if assets.exists():
+        for p in assets.glob("reel_*.mp4"):
+            add("videos", p)
+        for p in (assets / "shorts").glob("*/*.mp4"):
+            add("videos", p)
+        for p in assets.glob("*.png"):
+            add("images", p)
+    recaps = CONTENT_DIR / "recaps"
+    if recaps.exists():
+        for p in recaps.glob("*.mp4"):
+            add("videos", p)
+    # User-added files live under content/uploads/<category>/
+    if UPLOADS_DIR.exists():
+        for cat in FILE_CATEGORIES:
+            cdir = UPLOADS_DIR / cat
+            if cdir.exists():
+                for p in cdir.iterdir():
+                    if p.is_file():
+                        add(cat, p)
+    for items in cats.values():
+        items.sort(key=lambda x: x["mtime"], reverse=True)
+    return cats
+
+
+def resolve_content_path(relpath):
+    """Resolve a request path to a real file under content/, or None (blocks traversal)."""
+    if not relpath:
+        return None
+    target = (ROOT / relpath).resolve()
+    try:
+        target.relative_to(CONTENT_DIR.resolve())
+    except ValueError:
+        return None
+    return target if target.is_file() else None
 
 PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
@@ -56,6 +119,18 @@ ul{padding-left:18px;margin:6px 0}a{color:#60a5fa}
  </div>
  <div class=card><h3 style=margin-top:0>History <span class=muted id=hcount></span></h3><div id=history class=muted>…</div></div>
  <div class=card><h3 style=margin-top:0>Drafts</h3><div id=drafts class=muted>…</div><pre id=draftview hidden></pre></div>
+ <div class=card><h3 style=margin-top:0>Files <span class=muted>— browse, download, add</span></h3>
+  <div class=row>
+   <div><label>Category</label><select id=upcat>
+    <option value=news>News</option><option value=tutorials>Tutorials</option>
+    <option value=videos>Videos / YouTube</option><option value=images>Images</option>
+    <option value=other>Other</option></select></div>
+   <div><label>Add file or video</label><input type=file id=upfile></div>
+  </div>
+  <button id=upbtn onclick=upload()>Upload</button>
+  <span id=upstatus class=muted></span>
+  <div id=files class=muted style=margin-top:14px>…</div>
+ </div>
 </main>
 <script>
 const $=s=>document.querySelector(s);
@@ -71,7 +146,19 @@ async function go(){go_.disabled=true;status.textContent=' working… (this can 
  try{const r=await (await fetch('/api/run',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})).json();
   out.hidden=false;out.textContent=(r.ok?'✅ ':'❌ ')+(r.summary||r.error||'')+'\\n\\n'+(r.tool_calls||[]).map(t=>'• '+t).join('\\n');
   status.textContent='';load();}catch(e){status.textContent=' error: '+e}go_.disabled=false;}
-window.go_=document.getElementById('go');load();
+function fmtSize(b){return b>=1048576?(b/1048576).toFixed(1)+' MB':b>=1024?(b/1024).toFixed(0)+' KB':b+' B'}
+async function loadFiles(){const f=await (await fetch('/api/files')).json();
+ const labels={news:'📰 News',tutorials:'📘 Tutorials',videos:'🎬 Videos / YouTube',images:'🖼️ Images',other:'📂 Other'};
+ files.innerHTML=Object.keys(labels).map(k=>{const arr=f[k]||[];
+  const rows=arr.length?'<ul>'+arr.slice(0,40).map(x=>`<li><a href="/api/file?path=${encodeURIComponent(x.path)}">${x.name}</a> <span class=muted>${fmtSize(x.size)}</span></li>`).join('')+'</ul>':' <span class=muted>none</span>';
+  return `<div style=margin-bottom:10px><b>${labels[k]}</b> <span class=pill>${arr.length}</span>${rows}</div>`;
+ }).join('');}
+async function upload(){const fl=upfile.files[0];if(!fl){upstatus.textContent=' pick a file first';return}
+ upbtn.disabled=true;upstatus.textContent=' uploading…';
+ try{const r=await (await fetch('/api/upload?category='+upcat.value+'&name='+encodeURIComponent(fl.name),{method:'POST',body:fl})).json();
+  upstatus.textContent=r.ok?' ✅ added: '+r.path:' ❌ '+(r.error||'failed');upfile.value='';loadFiles();}
+ catch(e){upstatus.textContent=' error: '+e}upbtn.disabled=false;}
+window.go_=document.getElementById('go');load();loadFiles();
 </script></body></html>"""
 
 
@@ -107,10 +194,30 @@ def _make_handler():
                     return self._send(200, {"name": name,
                                             "content": f.read_text(encoding="utf-8")})
                 return self._send(404, {"error": "not found"})
+            if path == "/api/files":
+                return self._send(200, list_files())
+            if path == "/api/file":
+                rel = parse_qs(urlparse(self.path).query).get("path", [""])[0]
+                target = resolve_content_path(rel)
+                if not target:
+                    return self._send(404, {"error": "not found"})
+                data = target.read_bytes()
+                ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Disposition",
+                                 f'attachment; filename="{target.name}"')
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
             return self._send(404, {"error": "not found"})
 
         def do_POST(self):
-            if urlparse(self.path).path != "/api/run":
+            path = urlparse(self.path).path
+            if path == "/api/upload":
+                return self._upload()
+            if path != "/api/run":
                 return self._send(404, {"error": "not found"})
             length = int(self.headers.get("Content-Length", 0))
             try:
@@ -122,6 +229,26 @@ def _make_handler():
             except Exception as exc:  # surface any failure to the browser
                 return self._send(200, {"ok": False, "error": str(exc)})
             return self._send(200, result)
+
+        def _upload(self):
+            q = parse_qs(urlparse(self.path).query)
+            cat = (q.get("category", ["other"])[0] or "other").lower()
+            if cat not in FILE_CATEGORIES:
+                cat = "other"
+            raw_name = q.get("name", [""])[0]
+            safe = re.sub(r"[^A-Za-z0-9._-]", "_", raw_name).strip("._") or "upload.bin"
+            length = int(self.headers.get("Content-Length", 0))
+            if length <= 0:
+                return self._send(400, {"ok": False, "error": "empty upload"})
+            if length > MAX_UPLOAD_BYTES:
+                return self._send(413, {"ok": False, "error": "file too large (max 600 MB)"})
+            dest_dir = UPLOADS_DIR / cat
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest = dest_dir / safe
+            data = self.rfile.read(length)
+            dest.write_bytes(data)
+            return self._send(200, {"ok": True, "category": cat,
+                                    "path": str(dest.relative_to(ROOT))})
 
         def _run(self, req):
             profile = load_profile(req.get("profile") or "default")

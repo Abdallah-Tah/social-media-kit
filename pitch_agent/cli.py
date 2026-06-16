@@ -635,8 +635,9 @@ def cmd_predict(args: argparse.Namespace) -> int:
         host_team_ids=host_team_ids,
     )
 
-    outcomes = match_outcome_probs(home_xg, away_xg)
-    top = top_scorelines(home_xg, away_xg, n=args.top)
+    from pitch_agent.content import DRAW_RHO, DRAW_PREF_EPS
+    outcomes = match_outcome_probs(home_xg, away_xg, rho=DRAW_RHO)
+    top = top_scorelines(home_xg, away_xg, n=args.top, rho=DRAW_RHO)
     key_factor = prediction_key_factor(
         home_scores if home_scores else [{"score": home_avg or 50, "goals": 0}],
         away_scores if away_scores else [{"score": away_avg or 50, "goals": 0}],
@@ -646,8 +647,8 @@ def cmd_predict(args: argparse.Namespace) -> int:
     predicted_home = top[0]["home_goals"]
     predicted_away = top[0]["away_goals"]
 
-    # Most likely outcome (argmax with tie-breaking)
-    predicted_outcome = resolve_predicted_outcome(outcomes, top[0])
+    # Most likely outcome (draw-aware: backs the draw on even matches)
+    predicted_outcome = resolve_predicted_outcome(outcomes, top[0], draw_pref_eps=DRAW_PREF_EPS)
     outcome_label = {"home": "Home win", "draw": "Draw", "away": "Away win"}[predicted_outcome]
     outcome_prob = {
         "home": outcomes["home_win"],

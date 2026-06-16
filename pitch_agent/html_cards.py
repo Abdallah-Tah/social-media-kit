@@ -154,19 +154,29 @@ def render_matchday_preview_html_card(
         subtitle = f"{day.strftime('%B %d, %Y')} · today's matches & model accountability"
 
     html_src = (_TEMPLATES_DIR / "match_recap_wide.html").read_text()
-    # Compact rows: two sections plus the record bar need tighter spacing
-    # than the recap layout to clear the footer.
+
+    # Scale row density to total content rows so the record bar + footer
+    # never get clipped. Each fixture has 2 rows (match + pred); each result
+    # has 2 rows; plus 2 section labels + record bar ≈ the budget.
+    total_rows = len(fixtures or []) * 2 + len(results or []) * 2 + 3
+    if total_rows >= 12:
+        row_pad, label_size, pred_size, sec_margin, rec_margin = "5px 4px", "20px", "13px", "8px 0 0", "8px"
+    elif total_rows >= 9:
+        row_pad, label_size, pred_size, sec_margin, rec_margin = "7px 4px", "21px", "14px", "10px 0 0", "10px"
+    else:
+        row_pad, label_size, pred_size, sec_margin, rec_margin = "9px 4px", "23px", "15px", "12px 0 0", "12px"
+
     html_src = html_src.replace(
         "</head>",
         "<style>"
-        ".row { padding: 9px 4px; } .row .label { font-size: 23px; }"
+        f".row {{ padding: {row_pad}; }} .row .label {{ font-size: {label_size}; }}"
         ".row .meta2 { width: 150px; }"
-        ".pred-row { padding: 2px 4px 4px 34px; }"
-        ".pred-row .pred-text { font-size: 15px; }"
-        ".no-pred-row { padding: 2px 4px 4px 34px; }"
-        ".section-label { margin: 12px 0 0; font-size: 14px; font-weight: 800;"
+        f".pred-row {{ padding: 2px 4px 3px 34px; }}"
+        f".pred-row .pred-text {{ font-size: {pred_size}; }}"
+        ".no-pred-row { padding: 2px 4px 3px 34px; }"
+        f".section-label {{ margin: {sec_margin}; font-size: 12px; font-weight: 800;"
         " letter-spacing: 3px; text-transform: uppercase; color: var(--blue); }"
-        ".record-bar { margin-top: 12px; padding: 8px 18px; font-size: 18px; }"
+        f".record-bar {{ margin-top: {rec_margin}; padding: 7px 18px; font-size: 16px; }}"
         "</style></head>",
     )
 

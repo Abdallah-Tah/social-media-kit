@@ -11,8 +11,8 @@ __version__ = "1.1.0"
 # human-facing name used in charts, content metadata, and the methodology page.
 # v1.1 changes: minutes=-1 (unknown) handling instead of fabricated 90/0,
 # and the unknown-minutes multiplier is configurable.
-MODEL_VERSION = "1.1.0"
-MODEL_VERSION_LABEL = "Form Index v1.1"
+MODEL_VERSION = "1.2.0"
+MODEL_VERSION_LABEL = "Form Index v1.2 · draw-calibrated"
 
 FORM_INDEX_PUBLIC_EXPLANATION = (
     "Form Index v1.1 is a simple 0–100 player performance score based on "

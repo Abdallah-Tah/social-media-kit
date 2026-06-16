@@ -23,6 +23,10 @@ import requests
 
 from .config import ROOT, load_env
 
+# Prefer the system ffmpeg — the PATH ffmpeg on this Pi lacks the drawtext
+# filter (so caption burn silently fails); /usr/bin/ffmpeg has libass+drawtext.
+FFMPEG = "/usr/bin/ffmpeg" if Path("/usr/bin/ffmpeg").exists() else "ffmpeg"
+
 ALLOWED_SHORT_TYPES = {
     "before_after_code",
     "terminal_workflow",
@@ -204,6 +208,7 @@ def publish_short(provider: str, video: str | Path, plan_path: str | Path | None
     description = metadata.get("description") or ""
     tags = ",".join(metadata.get("tags") or ["BuildWithAbdallah", "Programming", "Shorts"])
     category = str(metadata.get("category_id") or "28")
+    thumbnail = str(metadata.get("thumbnail") or metadata.get("thumbnail_path") or "").strip()
     cmd = [
         sys.executable,
         str(ROOT / "scripts" / "youtube_shorts_publisher.py"),
@@ -215,6 +220,8 @@ def publish_short(provider: str, video: str | Path, plan_path: str | Path | None
         "--tags", tags,
         "--category-id", category,
     ]
+    if thumbnail:
+        cmd += ["--thumbnail", thumbnail]
     res = subprocess.run(cmd, cwd=str(ROOT), text=True)
     if res.returncode != 0:
         raise ShortsError("YouTube Shorts upload failed")
@@ -487,56 +494,66 @@ def _voiceover_audio(plan: dict[str, Any], out_dir: Path) -> Path | None:
         return None
 
 
+def _kenburns(idx: int, dur: float, fps: int = 30) -> str:
+    """A per-scene Ken Burns pan so no scene is ever a static frame.
+
+    Uses a moving CROP window over a slightly-upscaled card (NOT zoompan —
+    zoompan is ~28x slower and times out on the Pi). The card is scaled to
+    1206x2144 (~1.12x) giving 126px/224px of slack to pan through; the 1080x1920
+    crop window slides across it. Direction alternates per scene. Label [z{idx}].
+    """
+    d = f"{dur:.2f}"
+    cx, cy = "63", "112"  # centered window (slack/2)
+    moves = [
+        (f"126*t/{d}", cy),               # pan right
+        (cx, f"224*t/{d}"),               # pan down
+        (f"126*(1-t/{d})", cy),           # pan left
+        (cx, f"224*(1-t/{d})"),           # pan up
+        (f"126*t/{d}", f"224*t/{d}"),     # diagonal
+        (f"126*(1-t/{d})", cy),           # pan left
+    ]
+    xexpr, yexpr = moves[idx % len(moves)]
+    return (
+        f"[{idx}:v]scale=1206:2144,"
+        f"crop=1080:1920:x='{xexpr}':y='{yexpr}',setsar=1[z{idx}]"
+    )
+
+
 def _assemble_video(
     scene_paths: list[tuple[Path, float]], out_video: Path, voice_path: Path | None,
 ) -> None:
-    """Assemble scene PNGs into a vertical MP4 with xfade crossfades between scenes."""
+    """Assemble scene PNGs into an ANIMATED vertical MP4: each scene gets a
+    Ken Burns zoom/pan, scenes are joined with xfade crossfades."""
     has_voice = bool(voice_path and voice_path.exists())
-    xfade_dur = 0.3  # seconds per crossfade
-    scale_vf = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2"
+    xfade_dur = 0.4  # seconds per crossfade
+    n = len(scene_paths)
 
-    if len(scene_paths) == 1:
-        # Single scene — simple encode, no xfade needed.
-        png, dur = scene_paths[0]
-        cmd = ["ffmpeg", "-y", "-loop", "1", "-t", f"{dur:.2f}", "-i", str(png)]
-        if has_voice:
-            cmd += ["-stream_loop", "-1", "-i", str(voice_path)]
-        cmd += ["-vf", scale_vf, "-r", "30", "-c:v", "libx264", "-pix_fmt", "yuv420p"]
-        if has_voice:
-            cmd += ["-c:a", "aac", "-b:a", "128k", "-shortest"]
-        cmd += [str(out_video)]
-        res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=180)
-        if res.returncode != 0:
-            raise ShortsError("ffmpeg failed:\n" + (res.stderr[-1200:] or res.stdout[-1200:]))
-        return
-
-    # Multiple scenes — build with xfade transitions.
-    # Input flags: one -loop 1 -t <dur> -i <png> per scene.
     inputs: list[str] = []
     for png, dur in scene_paths:
         inputs += ["-loop", "1", "-t", f"{dur:.2f}", "-i", str(png)]
 
-    # Build xfade filter chain with scale embedded.
-    # ffmpeg forbids mixing -filter_complex and -vf for the same stream,
-    # so we apply scale+pad as the final filter after the last xfade.
-    fc_parts: list[str] = []
-    cumulative = 0.0
-    prev = "[0:v]"
-    for i in range(1, len(scene_paths)):
-        cumulative += scene_paths[i - 1][1] - xfade_dur
-        out_label = f"[v{i}]" if i < len(scene_paths) - 1 else "[voutscale]"
-        fc_parts.append(
-            f"{prev}[{i}:v]xfade=transition=fade:duration={xfade_dur}:offset={cumulative:.3f}{out_label}"
-        )
-        prev = out_label
-    # Append scale+pad to the final xfade output.
-    fc_parts.append(f"[voutscale]{scale_vf}[vout]")
-    filter_complex = ";".join(fc_parts)
+    fc_parts = [_kenburns(i, dur) for i, (_, dur) in enumerate(scene_paths)]
 
-    cmd = ["ffmpeg", "-y"] + inputs
+    if n == 1:
+        fc_parts.append("[z0]null[vout]")
+        filter_complex = ";".join(fc_parts)
+    else:
+        cumulative = 0.0
+        prev = "[z0]"
+        for i in range(1, n):
+            cumulative += scene_paths[i - 1][1] - xfade_dur
+            out_label = f"[v{i}]" if i < n - 1 else "[vout]"
+            fc_parts.append(
+                f"{prev}[z{i}]xfade=transition=fade:duration={xfade_dur}"
+                f":offset={cumulative:.3f}{out_label}"
+            )
+            prev = out_label
+        filter_complex = ";".join(fc_parts)
+
+    cmd = [FFMPEG, "-y"] + inputs
     if has_voice:
         cmd += ["-stream_loop", "-1", "-i", str(voice_path)]
-    audio_idx = len(scene_paths)
+    audio_idx = n
     cmd += [
         "-filter_complex", filter_complex,
         "-map", "[vout]",
@@ -547,7 +564,7 @@ def _assemble_video(
     if has_voice:
         cmd += ["-map", f"{audio_idx}:a", "-c:a", "aac", "-b:a", "128k", "-shortest"]
     cmd += [str(out_video)]
-    res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=300)
+    res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=420)
     if res.returncode != 0:
         raise ShortsError("ffmpeg failed:\n" + (res.stderr[-1200:] or res.stdout[-1200:]))
 
@@ -555,8 +572,12 @@ def _assemble_video(
 def _burn_captions(
     in_video: Path, out_video: Path, captions: list[str], durations: list[float],
 ) -> None:
-    """Burn timed caption text into the video with ffmpeg drawtext (non-fatal)."""
-    if not captions or not shutil.which("ffmpeg"):
+    """Burn timed caption text into the video with ffmpeg drawtext (non-fatal).
+
+    Styled for the white light_brand theme: a brand-blue rounded caption bar
+    with white bold text, with a quick fade-in per caption so it feels animated.
+    """
+    if not captions:
         return
     # Find a fallback font that's likely present on Linux.
     font_candidates = [
@@ -573,18 +594,21 @@ def _burn_captions(
         end = t + dur
         # Escape single quotes and colons for ffmpeg drawtext.
         safe = cap.replace("\\", "\\\\").replace("'", "’").replace(":", r"\:")
+        fade = 0.25  # quick fade-in so the caption animates on
+        # white bold text on a brand-blue pill (box) — readable on light bg
         filters.append(
             f"drawtext=text='{safe}'{font_opt}"
-            f":fontsize=54:fontcolor=white@0.95"
-            f":borderw=3:bordercolor=black@0.65"
-            f":x=(w-text_w)/2:y=h-200"
+            f":fontsize=52:fontcolor=white"
+            f":box=1:boxcolor=0x0866ff@0.92:boxborderw=26"
+            f":x=(w-text_w)/2:y=h-330"
+            f":alpha='if(lt(t,{t:.2f}+{fade}),(t-{t:.2f})/{fade},1)'"
             f":enable='between(t\\,{t:.2f}\\,{end:.2f})'"
         )
         t = end
 
     tmp = out_video.with_suffix(".cap_tmp.mp4")
     cmd = [
-        "ffmpeg", "-y", "-i", str(in_video),
+        FFMPEG, "-y", "-i", str(in_video),
         "-vf", ",".join(filters),
         "-c:v", "libx264", "-pix_fmt", "yuv420p",
         "-c:a", "copy", str(tmp),

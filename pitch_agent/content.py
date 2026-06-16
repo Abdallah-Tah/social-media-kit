@@ -11,6 +11,11 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
+
+# All audience-facing game times are shown in New York time (ET), pinned
+# explicitly so they're correct regardless of the server's timezone.
+NY_TZ = ZoneInfo("America/New_York")
 
 import requests
 
@@ -67,6 +72,13 @@ FIXTURE_PILLARS = ("matchday_preview", "match_recap", "real_data_connected")
 # both reads sharper and keeps the public hit-rate honest-but-strong.
 CONFIDENT_PICK = 0.58   # >= this top-outcome prob → a headlined pick
 LEAN_PICK = 0.50        # >= this → a soft lean; below → too close to call
+
+# Draw calibration (model v1.2). Independent Poisson under-counts draws and the
+# 3-way argmax can almost never pick one, yet ~30-38% of WC group games draw.
+# DRAW_RHO = Dixon-Coles low-score correction; DRAW_PREF_EPS backs the draw when
+# no side has a clear edge. Tunable via pitch_agent/backtest.py as data grows.
+DRAW_RHO = -0.13
+DRAW_PREF_EPS = 0.06
 
 # The four pillars frozen as production-ready for the World Cup launch. Other
 # pillars still run but are not yet considered launch quality.
@@ -291,8 +303,10 @@ def _generate_content_impl(
         data = get_finished_matches(db_path=db_path, limit=10, match_id=match_id)
     elif pillar in FIXTURE_PILLARS:
         scope = "fixtures"
-        from pitch_agent.fixtures import get_fixtures
-        data = get_fixtures(db_path=db_path, limit=10)
+        # Upcoming (non-finished) fixtures — get_fixtures returns the 10 earliest
+        # of the whole tournament, which are all past once underway.
+        from pitch_agent.fixtures import get_upcoming_fixtures
+        data = get_upcoming_fixtures(db_path=db_path, limit=12)
     else:
         scope = _default_scope_for_pillar(pillar, leaderboard_scope)
         data = _fetch_pillar_data(pillar, db_path, position, match_id, scope)
@@ -678,7 +692,7 @@ def _upcoming_fixtures(
     """
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
-    today_local = now.astimezone().date()
+    today_local = now.astimezone(NY_TZ).date()  # "today" = today in New York
     upcoming = []
     for fx in fixtures:
         if str(fx.get("status", "")).strip().upper() == "FINISHED":
@@ -699,7 +713,7 @@ def _upcoming_fixtures(
         if kickoff is not None and has_time and kickoff < now:
             continue
         if today_only:
-            if kickoff is None or kickoff.astimezone().date() != today_local:
+            if kickoff is None or kickoff.astimezone(NY_TZ).date() != today_local:
                 continue
         upcoming.append(fx)
     return upcoming[:limit]
@@ -726,7 +740,7 @@ def _matchday_preview_card_data(
             kickoff = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
             if len(date_str) <= 10:  # date-only — midnight isn't a kickoff time
                 raise ValueError
-            date = kickoff.astimezone().strftime("%-I:%M %p")
+            date = kickoff.astimezone(NY_TZ).strftime("%-I:%M %p ET")
         except (ValueError, TypeError):
             date = _short_date(date_str)
         group = _fixture_context(fx)
@@ -854,8 +868,8 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
             host_team_ids=cfg.host_team_ids,
         )
 
-        outcomes = match_outcome_probs(home_xg, away_xg)
-        top = top_scorelines(home_xg, away_xg, n=1)
+        outcomes = match_outcome_probs(home_xg, away_xg, rho=DRAW_RHO)
+        top = top_scorelines(home_xg, away_xg, n=1, rho=DRAW_RHO)
 
         # Determine host advantage for key_factor disclosure
         host_nations_set = set(cfg.host_nations)
@@ -883,8 +897,8 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
             is_host_advantage=is_home_advantage,
         )
 
-        # Most likely outcome (with tie-breaking)
-        predicted_outcome = resolve_predicted_outcome(outcomes, top[0])
+        # Most likely outcome (draw-aware: backs the draw on even matches)
+        predicted_outcome = resolve_predicted_outcome(outcomes, top[0], draw_pref_eps=DRAW_PREF_EPS)
         outcome_label = {"home": "Home win", "draw": "Draw", "away": "Away win"}[predicted_outcome]
         outcome_prob = {
             "home": outcomes["home_win"],
@@ -909,7 +923,9 @@ def _match_prediction(fixture: dict[str, Any]) -> str | None:
         most_likely = top[0]
         pct = outcome_prob * 100
         # Tier the call by confidence — only headline a real edge.
-        if outcome_prob >= CONFIDENT_PICK:
+        if predicted_outcome == "draw":
+            head = f"Lean: Draw ({pct:.0f}%) · {most_likely['label']} — too even to split"
+        elif outcome_prob >= CONFIDENT_PICK:
             head = f"🎯 Pick: {outcome_label} ({pct:.0f}%) · {most_likely['label']}"
         elif outcome_prob >= LEAN_PICK:
             head = f"Lean: {outcome_label} ({pct:.0f}%) · {most_likely['label']}"

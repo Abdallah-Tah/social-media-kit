@@ -36,8 +36,47 @@ def _font(size, bold=True):
     return ImageFont.load_default()
 
 
+def _elevenlabs_tts(text, out_path, voice=None):
+    """ElevenLabs TTS -> mp3. Returns out_path or None."""
+    key = os.environ.get("ELEVENLABS_API_KEY", "")
+    if not key or os.environ.get("ELEVENLABS_SKIP") == "1":
+        return None
+    # Brand narrator = Jarnathan (c6SfcYrb2t09NHXiT80T, "Confident & Versatile"),
+    # the same ElevenLabs voice used across the football video pipeline. Was Adam.
+    voice_id = voice or os.environ.get("ELEVENLABS_VOICE_ID", "c6SfcYrb2t09NHXiT80T")
+    model_id = os.environ.get("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
+    try:
+        r = requests.post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+            headers={"xi-api-key": key, "Accept": "audio/mpeg", "Content-Type": "application/json"},
+            json={
+                "text": text,
+                "model_id": model_id,
+                "voice_settings": {
+                    "stability": 0.42,
+                    "similarity_boost": 0.82,
+                    "style": 0.32,
+                    "use_speaker_boost": True,
+                },
+            },
+            timeout=120,
+        )
+        if r.ok:
+            with open(out_path, "wb") as f:
+                f.write(r.content)
+            print("✅ Voiceover generated via ElevenLabs")
+            return out_path
+        print(f"❌ ElevenLabs TTS error ({r.status_code}): {r.text[:200]}")
+    except requests.RequestException as e:
+        print(f"❌ ElevenLabs TTS request failed: {e}")
+    return None
+
+
 def tts(text, out_path, voice=None):
-    """OpenAI TTS -> mp3. Returns out_path or None."""
+    """ElevenLabs first, then OpenAI TTS, then edge-tts. Returns out_path or None."""
+    elevenlabs = _elevenlabs_tts(text, out_path, voice=voice)
+    if elevenlabs:
+        return elevenlabs
     key = os.environ.get("OPENAI_API_KEY", "")
     if key:
         try:
