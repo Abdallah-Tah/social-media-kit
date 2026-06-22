@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -17,6 +18,8 @@ from . import __version__, history
 from .config import AgentConfig, list_profiles, load_env, load_profile
 from .orchestrator import run_agent
 from .prompts import build_goal
+
+from .intelligence import run_intelligence
 
 LLM_PROVIDERS = ["anthropic", "openai", "nvidia", "ollama"]
 
@@ -390,6 +393,123 @@ def cmd_shorts_publish(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_intelligence(args: argparse.Namespace) -> int:
+    """Run the Content Intelligence Engine (phase 1: no content generation)."""
+    sources = args.audience_source if args.audience_source else None
+    audience_live = args.audience_live if args.audience_live else None
+    audience_text = args.audience_text if args.audience_text else None
+    enable_content_gap = args.content_gap if args.content_gap else None
+    enable_pitch_agent = args.pitch_agent if args.pitch_agent else None
+    enable_newsletter_mining = args.newsletter_mining if args.newsletter_mining else None
+    report_path = run_intelligence(
+        report_path=args.out,
+        top_n=args.top,
+        dry_run=args.dry_run,
+        min_authority_score=args.min_authority,
+        audience_live=audience_live,
+        audience_text=audience_text,
+        audience_sources=sources,
+        enable_content_gap=enable_content_gap,
+        sitemap_url=args.sitemap_url,
+        existing_content_file=args.existing_content_file,
+        enable_pitch_agent=enable_pitch_agent,
+        enable_newsletter_mining=enable_newsletter_mining,
+    )
+    print(f"\n✅ Content intelligence report: {report_path}")
+    return 0
+
+
+def cmd_pitch_report(args: argparse.Namespace) -> int:
+    """Generate a standalone Pitch Agent / World Cup performance report."""
+    from .intelligence.performance_sources.pitch_agent import generate_pitch_report
+    out = Path(args.out) if args.out else None
+    path = generate_pitch_report(report_path=out)
+    print(f"\n✅ Pitch Agent performance report: {path}")
+    return 0
+
+
+def cmd_pitch_bracket_video(args: argparse.Namespace) -> int:
+    """Render an animated Pitch Agent bracket prediction video."""
+    root = Path(__file__).resolve().parents[1]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from pitch_agent.bracket_video import (
+        BracketVideoError,
+        load_payload,
+        render_bracket_video,
+        send_telegram_review,
+    )
+
+    try:
+        payload = load_payload(args.input)
+        result = render_bracket_video(
+            payload,
+            args.out,
+            dry_run=args.dry_run,
+            fps=args.fps,
+            duration=args.duration,
+            workdir=args.workdir,
+            style=args.style,
+            audio=args.audio,
+        )
+    except (OSError, json.JSONDecodeError, BracketVideoError) as exc:
+        print(f"❌ {exc}")
+        return 1
+
+    print("✅ Bracket payload validation passed")
+    print(f"   HTML: {result.html}")
+    if result.video:
+        print(f"   MP4: {result.video}")
+    if result.preview:
+        print(f"   Preview: {result.preview}")
+    if args.dry_run:
+        print("   Dry run: no MP4 rendered")
+    if args.telegram_review:
+        command = (
+            f"smkit pitch-bracket-video --input {args.input} "
+            f"--out {args.out or ''}".strip()
+        )
+        send_telegram_review(result, payload, command)
+        print("✅ Telegram review sent")
+    return 0
+
+
+def cmd_calendar(args: argparse.Namespace) -> int:
+    """Generate a weekly content opportunity calendar."""
+    from .intelligence.opportunity_calendar import run_calendar_pipeline
+    path = run_calendar_pipeline(
+        days=args.days,
+        report_path=args.out,
+        include_pitch_agent=args.include_pitch_agent,
+        include_newsletter=args.include_newsletter,
+        include_audience=args.include_audience,
+        top_n=args.top,
+    )
+    print(f"\n✅ Content opportunity calendar: {path}")
+    return 0
+
+
+def cmd_newsletter_report(args: argparse.Namespace) -> int:
+    """Generate a standalone newsletter / release mining report."""
+    from .intelligence.config import IntelligenceConfig
+    from .intelligence.content_gap import load_existing_content
+    from .intelligence.knowledge import load_knowledge_base
+    from .intelligence.newsletter_mining import (
+        collect_newsletter_items,
+        generate_newsletter_report,
+        score_newsletter_items,
+    )
+    config = IntelligenceConfig()
+    existing_content = load_existing_content(config)
+    items = score_newsletter_items(
+        collect_newsletter_items(), load_knowledge_base(), existing_content=existing_content
+    )
+    out = Path(args.out) if args.out else None
+    path = generate_newsletter_report(items, report_path=out)
+    print(f"\n✅ Newsletter mining report: {path}")
+    return 0
+
+
 # ── Helpers ─────────────────────────────────────────────────────────────
 def _looks_truncated(value: str) -> str | None:
     """Heuristics for a credential that was truncated when copied."""
@@ -557,6 +677,86 @@ def build_parser() -> argparse.ArgumentParser:
     p_short_publish.add_argument("--plan", help="Optional short_plan.json for metadata")
     p_short_publish.add_argument("--yes", "-y", action="store_true", help="Confirm preview approval")
     p_short_publish.set_defaults(func=cmd_shorts_publish)
+
+    # Content Intelligence Engine
+    p_intelligence = sub.add_parser(
+        "intelligence",
+        help="Run the Content Intelligence Engine: discover and score content opportunities",
+    )
+    intelligence_sub = p_intelligence.add_subparsers(dest="intelligence_command", required=True)
+
+    p_int_run = intelligence_sub.add_parser(
+        "run",
+        help="Run the full intelligence pipeline and write the report",
+    )
+    p_int_run.add_argument("--out", help="Report output path")
+    p_int_run.add_argument("--top", type=int, default=10, help="Number of opportunities to include")
+    p_int_run.add_argument("--min-authority", type=int, default=50, help="Minimum authority score (0-100)")
+    p_int_run.add_argument("--dry-run", action="store_true", help="Run without writing the report")
+    p_int_run.add_argument("--audience-live", action="store_true", help="Enable live audience data sources")
+    p_int_run.add_argument("--audience-text", action="store_true", help="Enable text-file audience fallback")
+    p_int_run.add_argument(
+        "--audience-source",
+        action="append",
+        choices=["youtube", "telegram", "website"],
+        help="Specific audience source to use (can be given multiple times)",
+    )
+    p_int_run.add_argument("--content-gap", action="store_true", help="Enable content gap detection (default on)")
+    p_int_run.add_argument("--sitemap-url", help="URL to website sitemap.xml")
+    p_int_run.add_argument("--existing-content-file", help="Path to local existing_content.json index")
+    p_int_run.add_argument("--pitch-agent", action="store_true", help="Enable Pitch Agent / World Cup performance signals")
+    p_int_run.add_argument("--newsletter-mining", action="store_true", help="Enable newsletter / release mining")
+    p_int_run.set_defaults(func=cmd_intelligence)
+
+    # Pitch Agent standalone report
+    p_pitch_report = sub.add_parser(
+        "pitch-report",
+        help="Generate a standalone Pitch Agent / World Cup performance report",
+    )
+    p_pitch_report.add_argument("--out", help="Report output path")
+    p_pitch_report.set_defaults(func=cmd_pitch_report)
+
+    # Pitch Agent animated bracket video
+    p_pitch_bracket = sub.add_parser(
+        "pitch-bracket-video",
+        help="Render an animated World Cup-style bracket prediction video",
+    )
+    p_pitch_bracket.add_argument("--input", required=True, help="Bracket JSON payload")
+    p_pitch_bracket.add_argument("--out", help="Output MP4 path")
+    p_pitch_bracket.add_argument("--dry-run", action="store_true", help="Validate and write HTML only")
+    p_pitch_bracket.add_argument("--telegram-review", action="store_true", help="Send video/preview packet to Telegram")
+    p_pitch_bracket.add_argument(
+        "--style",
+        choices=["viral-bracket-v2", "classic-v1"],
+        default="viral-bracket-v2",
+        help="Visual template style",
+    )
+    p_pitch_bracket.add_argument("--audio", help="Optional local audio file to mux into the MP4")
+    p_pitch_bracket.add_argument("--fps", type=int, default=24, help="Frame rate for deterministic capture")
+    p_pitch_bracket.add_argument("--duration", type=float, default=20.0, help="Video duration in seconds")
+    p_pitch_bracket.add_argument("--workdir", help="Render work directory")
+    p_pitch_bracket.set_defaults(func=cmd_pitch_bracket_video)
+
+    # Newsletter mining standalone report
+    p_newsletter_report = sub.add_parser(
+        "newsletter-report",
+        help="Generate a standalone newsletter / release mining report",
+    )
+    p_newsletter_report.add_argument("--out", help="Report output path")
+    p_newsletter_report.set_defaults(func=cmd_newsletter_report)
+
+    # Opportunity calendar
+    p_calendar = sub.add_parser(
+        "calendar",
+        help="Generate a weekly content opportunity calendar",
+    )
+    p_calendar.add_argument("--days", type=int, default=7, help="Number of days to plan (default 7)")
+    p_calendar.add_argument("--out", help="Report output path")
+    p_calendar.add_argument("--top", type=int, default=20, help="Number of top opportunities to consider")
+    p_calendar.add_argument("--include-pitch-agent", action="store_true", default=True, help="Include Pitch Agent signal (default on)")
+    p_calendar.add_argument("--include-newsletter", action="store_true", default=True, help="Include newsletter mining (default on)")
+    p_calendar.add_argument("--include-audience", action="store_true", default=True, help="Include audience pain signals (default on)")
+    p_calendar.set_defaults(func=cmd_calendar)
 
     return parser
 

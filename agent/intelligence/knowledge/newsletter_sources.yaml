@@ -1,0 +1,59 @@
+# Build With Abdallah — Newsletter / Release Sources
+# Monitored by agent/intelligence/newsletter_mining.py
+
+sources:
+  - name: Laravel News
+    url: https://laravel-news.com/feed
+    type: rss
+    category: laravel
+    priority: 90
+    enabled: true
+
+  - name: OpenAI Blog
+    url: https://openai.com/news/
+    type: html
+    category: ai
+    priority: 80
+    enabled: true
+
+  - name: Anthropic News
+    url: https://www.anthropic.com/news
+    type: html
+    category: ai
+    priority: 80
+    enabled: true
+
+  - name: GitHub Blog
+    url: https://github.blog/feed/
+    type: rss
+    category: developer-tools
+    priority: 75
+    enabled: true
+
+  - name: Vercel Blog
+    url: https://vercel.com/blog
+    type: html
+    category: frontend
+    priority: 60
+    enabled: true
+
+  - name: Python Software Foundation News
+    url: https://pyfound.blogspot.com/feeds/posts/default
+    type: rss
+    category: python
+    priority: 70
+    enabled: true
+
+  - name: Hacker News — Launch / AI / Python / Laravel
+    url: https://news.ycombinator.com/rss
+    type: rss
+    category: hacker-news
+    priority: 85
+    enabled: true
+
+  - name: Product Hunt — Developer Tools
+    url: https://www.producthunt.com/feed?topic=developer-tools
+    type: rss
+    category: developer-tools
+    priority: 55
+    enabled: false

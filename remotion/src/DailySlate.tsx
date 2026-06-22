@@ -4,9 +4,11 @@ import {
   interpolate, spring, useCurrentFrame, useVideoConfig,
 } from "remotion";
 import { THEME, FONT } from "./theme";
+import { BrandFrame } from "./brand/BrandFrame";
 
 // ============================================================================
 // "Today at the World Cup" — full-screen, image-rich daily slate Short.
+// Chrome comes from the shared <BrandFrame>; scenes render their body inside it.
 // ============================================================================
 
 export type Match = { home: string; away: string; homeFlag: string; awayFlag: string; time: string; lean: string };
@@ -32,51 +34,21 @@ const useIn = (delay = 0, damping = 13) => {
   return spring({ frame: f - delay, fps, config: { damping, mass: 0.7 } });
 };
 
-const Corner: React.FC = () => (
-  <>
-    <div style={{ position: "absolute", top: 0, right: 0, width: 0, height: 0, borderTop: "230px solid #0b2a6b", borderLeft: "230px solid transparent", opacity: 0.9 }} />
-    <div style={{ position: "absolute", top: 0, right: 0, width: 0, height: 0, borderTop: "145px solid " + THEME.blue, borderLeft: "145px solid transparent" }} />
-    <div style={{ position: "absolute", bottom: 0, left: 0, width: 0, height: 0, borderBottom: "180px solid rgba(8,102,255,.10)", borderRight: "180px solid transparent" }} />
-    <div style={{ position: "absolute", left: 70, bottom: 150, display: "grid", gridTemplateColumns: "repeat(6,16px)", gap: 12, opacity: 0.35 }}>
-      {Array.from({ length: 24 }).map((_, i) => <div key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: THEME.blue }} />)}
-    </div>
-  </>
-);
-
-const Branding: React.FC = () => (
-  <div style={{ position: "absolute", top: safeTop, left: 80, right: 80, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-    <div>
-      <div style={{ fontFamily: FONT, fontWeight: 800, fontSize: 40, color: THEME.ink }}>Build With <span style={{ color: THEME.blue }}>Abdallah</span></div>
-      <div style={{ fontFamily: FONT, fontWeight: 800, fontSize: 19, letterSpacing: 3, color: THEME.muted, marginTop: 6 }}>THE PITCH AGENT • INDEPENDENT FOOTBALL ANALYTICS</div>
-    </div>
-    <div style={{ width: 88, height: 88, borderRadius: 20, background: "#fff", border: `4px solid ${THEME.blue}`, display: "grid", placeItems: "center", fontFamily: FONT, fontWeight: 900, fontSize: 46, color: THEME.navy }}>A</div>
-  </div>
-);
-
-const Footer: React.FC<{ credit?: string }> = ({ credit }) => (
-  <div style={{ position: "absolute", bottom: 64, left: 0, right: 0, textAlign: "center", fontFamily: FONT, fontSize: credit ? 19 : 22, color: THEME.muted, opacity: 0.85, padding: "0 60px" }}>
-    {credit ? credit : "The Pitch Agent by BuildWithAbdallah  |  Independent analytics  |  Not affiliated with FIFA"}
-  </div>
-);
-
 const Label: React.FC<{ text: string; delay?: number }> = ({ text, delay = 0 }) => {
   const o = interpolate(useIn(delay), [0, 1], [0, 1]);
   return <div style={{ fontFamily: FONT, fontWeight: 900, fontSize: 30, letterSpacing: 6, color: THEME.blue, opacity: o }}>{text}</div>;
 };
 
 const Frame: React.FC<{ children: React.ReactNode; bg?: string | null; credit?: string }> = ({ children, bg, credit }) => (
-  <AbsoluteFill style={{ background: THEME.bgGrad, fontFamily: FONT }}>
+  <BrandFrame footer={credit}>
     {bg ? (
       <AbsoluteFill>
-        <OffthreadVideo src={staticFile(bg)} muted loop style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        <OffthreadVideo src={staticFile(bg)} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         <AbsoluteFill style={{ background: "rgba(244,248,255,0.84)" }} />
       </AbsoluteFill>
     ) : null}
-    <Corner />
-    <Branding />
     {children}
-    <Footer credit={credit} />
-  </AbsoluteFill>
+  </BrandFrame>
 );
 
 const FlagImg: React.FC<{ src: string; w?: number; h?: number }> = ({ src, w = 150, h = 100 }) => (

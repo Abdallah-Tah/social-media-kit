@@ -1,0 +1,43 @@
+# Build With Abdallah — Core Expertise
+# Used by the Content Intelligence Engine to score authority and brand fit.
+
+expertise:
+  - name: Laravel
+    aliases: [laravel, livewire, filament, eloquent, nova, horizon, sail]
+    weight: 30
+  - name: PHP
+    aliases: [php]
+    weight: 25
+  - name: Python
+    aliases: [python, django, fastapi, flask, pandas, numpy, pip]
+    weight: 30
+  - name: AI Agents
+    aliases: [ai agent, agentic, multi-agent, autonomous agent, agent workflow]
+    weight: 30
+  - name: AI Automation
+    aliases: [automation, workflow automation, n8n, zapier, pipeline, cron job]
+    weight: 25
+  - name: Raspberry Pi
+    aliases: [raspberry pi, rpi, gpio, pi 5, pi4, embedded, arm]
+    weight: 25
+  - name: Software Engineering
+    aliases: [software engineering, clean architecture, testing, devops, ci/cd]
+    weight: 20
+  - name: APIs
+    aliases: [api, rest api, graphql, api design, webhooks]
+    weight: 20
+  - name: SQL Server
+    aliases: [sql server, t-sql, mssql]
+    weight: 15
+  - name: MySQL
+    aliases: [mysql, mariadb]
+    weight: 15
+  - name: Developer Tools
+    aliases: [developer tools, devtools, cli, sdk, tooling]
+    weight: 20
+  - name: Linux
+    aliases: [linux, ubuntu, debian, systemd, bash, shell]
+    weight: 15
+  - name: Manufacturing Software
+    aliases: [manufacturing, work center, erp, mes, production system]
+    weight: 15

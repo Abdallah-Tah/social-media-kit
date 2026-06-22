@@ -344,7 +344,14 @@ def publish_social(title, body, url, cover):
             urllib.request.urlretrieve(cover["url"], image_path)
         except Exception:
             image_path = None
-    return bool(LI.post_org(text, image_path=image_path, title=title[:90], token=token, author=author))
+    return bool(LI.post_org(
+        text,
+        image_path=image_path,
+        title=title[:90],
+        token=token,
+        author=author,
+        post_kind="news",
+    ))
 
 
 def linkedin_person_urn(token):

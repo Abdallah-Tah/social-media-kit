@@ -1,12 +1,15 @@
 import React from "react";
 import {
   AbsoluteFill,
+  Img,
   interpolate,
   spring,
+  staticFile,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
 import { THEME, FONT } from "./theme";
+import { BRAND } from "./brand/tokens";
 
 // ---- shared chrome (header / watermark / progress / caption) ----------------
 
@@ -51,13 +54,14 @@ const Watermark: React.FC = () => (
       display: "grid",
       placeItems: "center",
       boxShadow: "0 10px 26px rgba(8,42,96,.16)",
-      fontFamily: FONT,
-      fontWeight: 900,
-      fontSize: 56,
-      color: THEME.navy,
+      overflow: "hidden",
     }}
   >
-    A
+    <img
+      src={staticFile(BRAND.logoFile)}
+      alt="Build With Abdallah"
+      style={{ width: "78%", height: "78%", objectFit: "contain" }}
+    />
   </div>
 );
 
@@ -141,6 +145,7 @@ export type Scene = {
   caption?: string;
   takeaway?: string;
   diagram?: string[];
+  image?: string;
 };
 
 const useIn = (delay = 0, damping = 14) => {
@@ -248,8 +253,32 @@ const CtaCard: React.FC<{ s: Scene; index: number; total: number; caption?: stri
   );
 };
 
+const ImageCard: React.FC<{ s: Scene; index: number; total: number; caption?: string }> = ({ s, index, total, caption }) => {
+  const head = useIn(4);
+  return (
+    <Frame index={index} total={total} caption={caption}>
+      {s.image ? (
+        <AbsoluteFill>
+          <Img
+            src={staticFile(s.image)}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+          <AbsoluteFill style={{ background: "rgba(248,251,255,0.0)" }} />
+        </AbsoluteFill>
+      ) : null}
+      <div style={{ position: "absolute", top: 280, left: 80, right: 80, textAlign: "center", opacity: head, transform: `translateY(${interpolate(head, [0, 1], [40, 0])}px)` }}>
+        <h1 style={{ margin: 0, fontSize: 78, lineHeight: 1.05, letterSpacing: -2, color: THEME.navy, fontWeight: 900, textShadow: "0 4px 20px rgba(255,255,255,.9)" }}>{s.title}</h1>
+        {s.caption ? (
+          <div style={{ marginTop: 24, fontSize: 44, lineHeight: 1.22, color: THEME.ink, fontWeight: 800, textShadow: "0 3px 16px rgba(255,255,255,.9)" }}>{s.caption}</div>
+        ) : null}
+      </div>
+    </Frame>
+  );
+};
+
 export const SceneView: React.FC<{ scene: Scene; index: number; total: number; caption?: string; url: string }> = ({ scene, index, total, caption, url }) => {
   const k = scene.kind;
+  if (k === "image_card") return <ImageCard s={scene} index={index} total={total} caption={caption} />;
   if (k === "architecture_diagram") return <DiagramCard s={scene} index={index} total={total} caption={caption} />;
   if (k === "mistake_fix") return <MistakeFix s={scene} index={index} total={total} caption={caption} />;
   if (k === "cta_card") return <CtaCard s={scene} index={index} total={total} caption={caption} url={url} />;

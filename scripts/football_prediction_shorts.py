@@ -16,6 +16,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import signal
 import subprocess
 import sys
 import urllib.request
@@ -31,6 +33,9 @@ PUBLIC = REMOTION / "public"
 OUT_DIR = KIT / "content" / "assets" / "shorts" / "predictions_auto"
 POSTED = KIT / "content" / "prediction_shorts_posted.json"
 NODE = "/home/linuxbrew/.linuxbrew/bin/node" if Path("/home/linuxbrew/.linuxbrew/bin/node").exists() else "node"
+RENDER_TIMEOUT_SECS = int(os.environ.get("PRED_SHORT_RENDER_TIMEOUT_SECS", "1200"))
+UPLOAD_TIMEOUT_SECS = int(os.environ.get("PRED_SHORT_UPLOAD_TIMEOUT_SECS", "600"))
+MIN_VIDEO_BYTES = int(os.environ.get("PRED_SHORT_MIN_VIDEO_BYTES", "1000000"))
 
 # team name -> ISO-3166 alpha-2 (flagcdn); England/Scotland use GB subdivisions
 FLAG = {
@@ -148,20 +153,47 @@ def fetch_flag(code: str, dest: Path) -> bool:
         return False
 
 
-def build_props(p: dict) -> dict:
+def compute_ledger() -> dict | None:
+    """Continuity stats from the IMMUTABLE accuracy CLI (never backfill/fake).
+
+    Source of truth: `pitch_agent.cli accuracy` → "Outcome: 16/26 correct (61.5%)".
+    Returns {"banner": "Ledger 16-10 · 61.5%", "correct": 16, "total": 26,
+    "pct": "61.5"} or None if no graded predictions yet. Streak/last-five are
+    intentionally omitted: graded_at is batch-identical, so no honest
+    chronological order exists.
+    """
+    try:
+        r = _run_with_timeout(
+            ["/usr/bin/python3", "-m", "pitch_agent.cli", "accuracy"],
+            cwd=KIT, timeout=60, capture_output=True, text=True)
+        if r.returncode != 0:
+            return None
+        m = re.search(r"Outcome:\s+(\d+)/(\d+)\s+correct\s+\(([\d.]+)%\)", r.stdout or "")
+        if not m:
+            return None
+        correct, total, pct = int(m.group(1)), int(m.group(2)), m.group(3)
+        if total <= 0:
+            return None
+        return {"banner": f"Ledger {correct}-{total - correct} · {pct}%",
+                "correct": correct, "total": total, "pct": pct}
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def build_props(p: dict, ledger: dict | None = None, next_match: str | None = None) -> dict:
     home, away = p["home"], p["away"]
-    score = p["scoreline"].replace("–", " – ")
     outcome = p["outcome"]
     winner = home if outcome == "home" else away if outcome == "away" else None
     lead = p["lead_prob"]
+    # Outcome-only output — call the winner, never a scoreline.
     if outcome == "draw":
         confidence = "Too even to split"
-        lean = f"{home}  {score}  {away}"
+        lean = "Model leans a draw"
         hook = "This matchup is closer than it looks."
     else:
         strong = lead >= 55
         confidence = f"{'Strong' if strong else 'Slight'} {winner} edge"
-        lean = f"{home} {score} {away}"
+        lean = f"{winner} to win"
         hook = "Our model sees one clear edge." if strong else "The model does not see this as a walkover."
     leader = home if p["probs"]["homeP"] >= p["probs"]["awayP"] else away
     other = away if leader == home else home
@@ -173,13 +205,19 @@ def build_props(p: dict) -> dict:
         f"{leader} rate higher in our model",
         f"{other} can threaten in transition",
     ]
-    final = f"{home} {p['scoreline']}" if outcome != "draw" else f"{p['scoreline']} draw"
+    final = f"{winner} to win" if outcome != "draw" else "Too close — draw"
+    # Ledger-led "bridge" hook (Meta growth advice, brand-safe — analytics only,
+    # no betting/bookie framing). Falls back to the per-match hook pre-ledger.
+    if ledger:
+        hook = f"{ledger['correct']} of {ledger['total']} calls right — here's the next one."
     return {
         "home": home, "away": away, "competition": "World Cup 2026",
         "hook": hook, "lean": lean, "confidence": confidence,
         "reasons": reasons, "probs": p["probs"], "factors": factors,
         "finalCall": final, "durations": [4, 6, 6, 6, 5],
         "homeFlag": "flag_home.png", "awayFlag": "flag_away.png",
+        **({"ledger": ledger["banner"]} if ledger else {}),
+        **({"nextMatch": next_match} if next_match else {}),
     }
 
 
@@ -187,18 +225,69 @@ def voiceover(props: dict, out: Path) -> Path | None:
     import reel_generator  # type: ignore
     h, a = props["home"], props["away"]
     text = (
-        f"Match prediction. {h} versus {a} at the World Cup. {props['hook']} "
-        f"The model leans {props['lean']} — {props['confidence'].lower()}. "
+        f"{props['hook']} {h} versus {a} at the World Cup. "
+        f"The model's read: {props['confidence'].lower()}. "
         f"On the numbers, here is the win probability for {h}, the draw, and {a}. "
         "The key factors: group stage pressure, the first goal changing the game, and where the edge sits. "
-        f"Final model call, {props['finalCall']}. An independent model prediction. "
-        "Comment your score, and follow for daily World Cup model calls."
+        f"Final model call — {props['finalCall']}. An independent model prediction. "
+        "Comment who you've got winning, and follow to see if the model gets it right."
     )
     r = reel_generator.tts(text, str(out))
     return Path(r) if r and Path(r).exists() else None
 
 
-def publish_match(fx: dict, privacy: str, dry_run: bool) -> bool:
+def _run_with_timeout(
+    cmd: list[str],
+    *,
+    cwd: Path | None = None,
+    timeout: int,
+    capture_output: bool = False,
+    text: bool = False,
+) -> subprocess.CompletedProcess:
+    stdout = subprocess.PIPE if capture_output else None
+    stderr = subprocess.PIPE if capture_output else None
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        stdout=stdout,
+        stderr=stderr,
+        text=text,
+        start_new_session=True,
+    )
+    try:
+        out, err = proc.communicate(timeout=timeout)
+        return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+    except KeyboardInterrupt:
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.communicate()
+        raise
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            out, err = proc.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            out, err = proc.communicate()
+        return subprocess.CompletedProcess(cmd, 124, out, err)
+
+
+def publish_match(fx: dict, privacy: str, dry_run: bool, next_fx: dict | None = None) -> bool:
     data = predict(fx)
     if not data:
         print(f"[pred-short] no model data for {fx.get('home_team_name')} vs {fx.get('away_team_name')} — skip")
@@ -211,38 +300,73 @@ def publish_match(fx: dict, privacy: str, dry_run: bool) -> bool:
         print(f"[pred-short] missing flag for {home}/{away} — skip")
         return False
 
-    props = build_props(data)
+    next_match = None
+    if next_fx:
+        nh = next_fx.get("home_team_name", "")
+        na = next_fx.get("away_team_name", "")
+        if nh and na:
+            next_match = f"{nh} vs {na}"
+    props = build_props(data, ledger=compute_ledger(), next_match=next_match)
     props_path = OUT_DIR / "props.json"
     props_path.write_text(json.dumps(props, indent=2))
     vo = voiceover(props, OUT_DIR / "voiceover.mp3")
 
     out = OUT_DIR / f"{fx['match_id']}.mp4"
+    tmp_out = out.with_suffix(".tmp.mp4")
+    if tmp_out.exists():
+        tmp_out.unlink()
     cmd = [NODE, str(REMOTION / "render.mjs"), "--id", "Prediction",
-           "--props", str(props_path), "--out", str(out)]
+           "--props", str(props_path), "--out", str(tmp_out)]
     if vo:
         cmd += ["--audio", str(vo)]
     print(f"[pred-short] {home} vs {away} — rendering full-screen prediction")
     if dry_run:
         print("[pred-short] DRY RUN — not rendering/uploading.")
         return False
-    if subprocess.run(cmd, cwd=str(REMOTION)).returncode != 0:
-        print("[pred-short] render failed")
+    render = _run_with_timeout(cmd, cwd=REMOTION, timeout=RENDER_TIMEOUT_SECS)
+    if render.returncode == 124:
+        print(f"[pred-short] render timed out after {RENDER_TIMEOUT_SECS}s")
+        tmp_out.unlink(missing_ok=True)
         return False
+    if render.returncode != 0:
+        print("[pred-short] render failed")
+        tmp_out.unlink(missing_ok=True)
+        return False
+    if not tmp_out.exists() or tmp_out.stat().st_size < MIN_VIDEO_BYTES:
+        size = tmp_out.stat().st_size if tmp_out.exists() else 0
+        print(f"[pred-short] render output invalid ({size} bytes)")
+        tmp_out.unlink(missing_ok=True)
+        return False
+    tmp_out.replace(out)
+    try:
+        from worldcup_thumbnail import generate_thumbnail
+        thumb = generate_thumbnail(
+            OUT_DIR / f"{fx['match_id']}_thumb.jpg",
+            title=f"{home} vs {away}",
+            kind="AI PREDICTION",
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[pred-short] thumbnail failed (non-fatal): {exc}")
+        thumb = None
 
     title = f"{home} vs {away} — AI Prediction \U0001F3C6 World Cup 2026"[:100]
     desc = (f"{home} vs {away} — our independent model's World Cup 2026 read: model lean, "
             f"win probability, and key factors. Analytics only, not affiliated with FIFA.\n\n"
-            "Comment your score prediction. Follow for daily World Cup model calls.\n\n"
+            "Comment who you've got winning. Follow to see if the model gets it right.\n\n"
             "#WorldCup2026 #WorldCup #Football #Soccer #FIFAWorldCup #AIPredictions #footballpredictions #Shorts")
-    up = subprocess.run(
+    up = _run_with_timeout(
         ["/usr/bin/python3", str(KIT / "scripts" / "youtube_shorts_publisher.py"), "upload",
          "--video", str(out), "--title", title, "--description", desc,
          "--privacy", privacy, "--profile", "main", "--category-id", "17",
-         "--tags", "WorldCup2026,WorldCup,football,soccer,FIFAWorldCup,AIpredictions,footballpredictions,shorts"],
-        capture_output=True, text=True)
-    print(up.stdout[-300:])
+         "--tags", "WorldCup2026,WorldCup,football,soccer,FIFAWorldCup,AIpredictions,footballpredictions,shorts"]
+        + (["--thumbnail", str(thumb)] if thumb else []),
+        timeout=UPLOAD_TIMEOUT_SECS, capture_output=True, text=True)
+    print((up.stdout or "")[-300:])
+    if up.returncode == 124:
+        print(f"[pred-short] upload timed out after {UPLOAD_TIMEOUT_SECS}s")
+        return False
     if up.returncode != 0:
-        print(f"[pred-short] upload failed: {up.stderr[-300:]}")
+        print(f"[pred-short] upload failed: {(up.stderr or '')[-300:]}")
         return False
     import re
     m = re.search(r"https://www\.youtube\.com/shorts/[\w-]+", up.stdout)
@@ -275,9 +399,11 @@ def main() -> int:
         print("[pred-short] no new upcoming matches today")
         return 0
     n = 0
-    for fx in matches[: args.max]:
+    batch = matches[: args.max]
+    for i, fx in enumerate(batch):
+        next_fx = batch[i + 1] if i + 1 < len(batch) else None
         try:
-            if publish_match(fx, args.privacy, args.dry_run) and not args.dry_run:
+            if publish_match(fx, args.privacy, args.dry_run, next_fx=next_fx) and not args.dry_run:
                 _mark(fx["match_id"])
                 n += 1
         except Exception as exc:  # noqa: BLE001

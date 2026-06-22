@@ -20,6 +20,7 @@ import os
 import sys
 import argparse
 import requests
+import linkedin_policy
 
 ORG_URN_DEFAULT = "urn:li:organization:119694084"
 LI_API = "https://api.linkedin.com/v2"
@@ -78,8 +79,13 @@ def fetch_org_token():
     return token, author
 
 
-def post_org(text, image_path=None, title="", description="", token=None, author=None):
+def post_org(text, image_path=None, title="", description="", token=None, author=None,
+             post_kind=None):
     """Publish a UGC share to the LinkedIn organization page."""
+    ok, reason = linkedin_policy.allowed(post_kind)
+    if not ok:
+        print(f"⏸️ {reason}")
+        return None
     if token is None:
         token, author = fetch_org_token()
         if not token:
@@ -145,6 +151,7 @@ def post_org(text, image_path=None, title="", description="", token=None, author
     resp = requests.post(f"{LI_API}/ugcPosts", json=payload, headers=headers, timeout=30)
     if resp.status_code == 201:
         post_id = resp.headers.get("x-restli-id") or resp.json().get("id", "")
+        linkedin_policy.mark_posted(post_kind, post_id)
         print(f"✅ Posted to LinkedIn org page: {post_id}")
         return {"id": post_id}
     print(f"❌ ugcPosts failed ({resp.status_code}): {resp.text[:300]}")

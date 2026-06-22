@@ -24,6 +24,7 @@ sys.path.insert(0, str(KIT / "scripts"))
 from agent.config import load_env  # noqa: E402
 load_env()
 from worldcup_atmosphere_short import build_atmosphere_short  # noqa: E402
+from football_prediction_shorts import compute_ledger, FLAG  # noqa: E402
 
 RECAP_DIR = KIT / "content" / "recaps"
 RECAP_DIR.mkdir(parents=True, exist_ok=True)
@@ -59,6 +60,67 @@ def _latest_finished(db_path):
     return dict(row) if row else None
 
 
+_FLAG_URI_CACHE: dict[str, str] = {}
+
+
+def _flag_uri(code):
+    """Download a flag and inline it as a base64 data URI.
+
+    The frame renderer loads the panel with waitUntil=networkidle, so a remote
+    <img> can hang the headless browser. Embedding the bytes removes all
+    browser-side network for flags.
+    """
+    if code in _FLAG_URI_CACHE:
+        return _FLAG_URI_CACHE[code]
+    import base64
+    import urllib.request
+    try:
+        req = urllib.request.Request(f"https://flagcdn.com/w160/{code}.png",
+                                     headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            uri = "data:image/png;base64," + base64.b64encode(r.read()).decode()
+    except Exception:  # noqa: BLE001
+        uri = ""
+    _FLAG_URI_CACHE[code] = uri
+    return uri
+
+
+def _flag_img(team_name):
+    """Real flag (base64-embedded) for the scoreboard, or '' if unavailable."""
+    code = FLAG.get(team_name, "")
+    if not code:
+        return ""
+    uri = _flag_uri(code)
+    if not uri:
+        return ""
+    return (f'<img src="{uri}" '
+            'style="width:150px;height:auto;border-radius:12px;'
+            'box-shadow:0 10px 24px rgba(8,42,96,.20);margin:0 auto 16px;display:block">')
+
+
+def _outcome_label(outcome, h, a):
+    return {"home": f"{h} to win", "away": f"{a} to win", "draw": "a draw"}.get(outcome, "")
+
+
+def _prediction(mid, db_path):
+    """The model's own pre-match call + grade for this match (or None).
+
+    Read-only from the IMMUTABLE predictions/prediction_results tables — never
+    backfilled. Returns {"predicted_outcome", "correct"} for the latest
+    prediction on this match that has been graded.
+    """
+    from pitch_agent.db import get_connection
+    conn = get_connection(db_path)
+    try:
+        row = conn.execute(
+            "SELECT p.predicted_outcome AS predicted_outcome, pr.correct AS correct "
+            "FROM predictions p JOIN prediction_results pr ON pr.prediction_id = p.id "
+            "WHERE p.match_id = ? ORDER BY p.id DESC LIMIT 1", (str(mid),)).fetchone()
+    finally:
+        conn.close()
+    return dict(row) if row else None
+
+
 def _goal_rows(goals):
     out = []
     for g in goals:
@@ -85,36 +147,73 @@ def build_recap(match, db_path):
     winner = h if hs > as_ else (a if as_ > hs else None)
     verdict = f"{winner} take it" if winner else "Honours even"
 
+    # ── Scene 1 — full-time scoreboard with flags + group badge ──
     scoreboard = (
         '<div class="scoreboard">'
-        f'<div class="team"><div class="name">{h}</div></div>'
+        f'<div class="team">{_flag_img(h)}<div class="name">{h}</div></div>'
         f'<div class="score">{hs} <span class="dash">-</span> {as_}</div>'
-        f'<div class="team"><div class="name">{a}</div></div></div>'
+        f'<div class="team">{_flag_img(a)}<div class="name">{a}</div></div></div>'
         f'<div style="text-align:center"><span class="ft-badge">FULL TIME{" · " + grp if grp else ""}</span></div>'
     )
-
-    # Dialogue: 1-line intro, goals (if any), verdict + CTA.
-    dialogue = [("host", f"Full time. {h} {hs}, {a} {as_}. {verdict}.")]
+    dialogue = [("host", f"Full time at the World Cup. {h} {hs}, {a} {as_}. {verdict}.")]
     scenes = [{"segments": (0, 0), "title": "FULL TIME",
                "caption": f"How {h} vs {a} unfolded", "rows": scoreboard,
                "stat": "", "sfx": [(0.5, "ding")]}]
+    idx = 1  # next free dialogue segment / scene index
 
+    # ── Scene 2 — goal timeline (needs per-match minutes from content/recaps/<id>.json;
+    #    the free API tier exposes scorers/counts but not minutes or cards) ──
     if goals:
         dialogue.append(("analyst",
                          "Here's how the goals went in. " +
                          ", ".join(f"{g['min']} minutes, {g['scorer']}" for g in goals[:5]) + "."))
-        scenes.append({"segments": (1, 1), "title": "The Goals", "caption": "",
+        scenes.append({"segments": (idx, idx), "title": "The Goals", "caption": "",
                        "rows": _goal_rows(goals),
                        "stat": extra.get("stat", ""), "sfx": [(1.0, "ding")]})
-        cta_seg = 2
-    else:
-        cta_seg = 1
+        idx += 1
 
+    # ── Scene 3 — the model's call vs the result + running ledger (the
+    #    self-grading loop; real data only, never backfilled) ──
+    pred = _prediction(mid, db_path)
+    if pred and pred.get("predicted_outcome") and pred.get("correct") is not None:
+        pred_label = _outcome_label(pred["predicted_outcome"], h, a)
+        ok = bool(pred["correct"])
+        result_label = f"{winner} won" if winner else "It finished level"
+        rows = (
+            '<div class="timeline">'
+            '<div class="goal"><span class="min">CALL</span>'
+            f'<span class="scorer">{pred_label}<span class="who">  the model\'s pick</span></span></div>'
+            f'<div class="goal{"" if ok else " og"}"><span class="min">{"✓" if ok else "✗"}</span>'
+            f'<span class="scorer">{result_label}<span class="who">  full-time result</span></span></div>'
+            '</div>'
+        )
+        dialogue.append(("analyst",
+                         (f"And the model called it. We backed {pred_label}, and that's exactly how it finished."
+                          if ok else
+                          f"The model backed {pred_label}. It didn't land this time — and that goes on the record too.")))
+        led = compute_ledger()
+        if led:
+            wins, losses = led["correct"], led["total"] - led["correct"]
+            dialogue.append(("host",
+                             f"That puts our record at {wins} and {losses}, "
+                             f"{led['pct']} percent across the tournament."))
+            scenes.append({"segments": (idx, idx + 1), "title": "THE MODEL'S CALL",
+                           "caption": "AI prediction vs the real result", "rows": rows,
+                           "stat": f"Model record now {wins}-{losses} · {led['pct']}%",
+                           "sfx": [(0.4, "ding")]})
+            idx += 2
+        else:
+            scenes.append({"segments": (idx, idx), "title": "THE MODEL'S CALL",
+                           "caption": "AI prediction vs the real result", "rows": rows,
+                           "stat": "", "sfx": [(0.4, "ding")]})
+            idx += 1
+
+    # ── Final scene — CTA tied to the self-grading loop ──
     dialogue.append(("host",
-                     f"{winner or 'Both sides'} will be happy with that. "
-                     "What did you make of it? Drop it in the comments."))
-    scenes.append({"segments": (cta_seg, cta_seg), "title": "FULL TIME",
-                   "caption": "Daily World Cup recaps — every result, every day.",
+                     "We grade every single call, win or lose. "
+                     "Follow to see if the model gets the next one right."))
+    scenes.append({"segments": (idx, idx), "title": "EVERY CALL, GRADED",
+                   "caption": "Daily World Cup predictions & recaps",
                    "rows": "",
                    "stat": "▶ buildwithabdallah.com/newsletter"})
 
@@ -163,6 +262,7 @@ def main():
         return 0
 
     import youtube_shorts_publisher as YT
+    from worldcup_thumbnail import generate_thumbnail
     h, a = match["home_team_name"], match["away_team_name"]
     hs, as_ = match["home_score"], match["away_score"]
     # Proven high-view title format (Mexico vs South Africa — AI Prediction
@@ -176,10 +276,15 @@ def main():
             "#AIPredictions #footballpredictions #Shorts\n\n"
             "Independent football content. Not affiliated with FIFA.\n"
             "https://buildwithabdallah.com/newsletter")
+    thumb = generate_thumbnail(
+        video.parent / f"{mid}_thumb.jpg",
+        title=f"{h} {hs}-{as_} {a}",
+        kind="MATCH RECAP",
+    )
     sys.argv = ["yt", "upload", "--video", str(video), "--title", title[:99],
                 "--description", desc, "--privacy", "public",
                 "--tags", "WorldCup2026,WorldCup,football,soccer,FIFAWorldCup,AIpredictions,recap",
-                "--category-id", "17"]
+                "--category-id", "17", "--thumbnail", str(thumb)]
     import io
     import contextlib
     buf = io.StringIO()

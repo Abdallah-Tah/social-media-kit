@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1080, initial-scale=1" />
+  <title>Bracket Prediction</title>
+  <style>
+    :root {
+      --bg: #080a0f;
+      --panel: #151a23;
+      --line: rgba(121, 199, 255, 0.58);
+      --blue: #4fb4ff;
+      --green: #43d17a;
+      --gold: #f4c95d;
+      --text: #f7fafc;
+      --muted: #9aa7b8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      width: 1080px;
+      height: 1920px;
+      overflow: hidden;
+      background: #080a0f;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      color: var(--text);
+    }
+    .stage {
+      position: relative;
+      width: 1080px;
+      height: 1920px;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 50% 68%, rgba(79, 180, 255, 0.18), transparent 28%),
+        radial-gradient(circle at 50% 28%, rgba(67, 209, 122, 0.10), transparent 28%),
+        linear-gradient(180deg, #111722 0%, #080a0f 58%, #050609 100%);
+      animation: bgIn 20s linear both;
+    }
+    .grain {
+      position: absolute;
+      inset: 0;
+      opacity: 0.14;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+      background-size: 54px 54px;
+      mask-image: linear-gradient(180deg, transparent, #000 12%, #000 88%, transparent);
+    }
+    header {
+      position: absolute;
+      top: 38px;
+      left: 54px;
+      right: 54px;
+      height: 214px;
+      text-align: center;
+      animation: headerIn 1.2s ease-out both;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 18px;
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.055);
+      color: #dfefff;
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+    .brand-mark {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--blue), var(--green));
+      box-shadow: 0 0 28px rgba(79,180,255,.45);
+    }
+    h1 {
+      margin: 22px auto 0;
+      max-width: 930px;
+      font-size: 62px;
+      line-height: 1.02;
+      letter-spacing: 0;
+      font-weight: 950;
+    }
+    .round-label {
+      position: absolute;
+      top: 254px;
+      left: 0;
+      right: 0;
+      height: 86px;
+      text-align: center;
+    }
+    .round-label span {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      font-size: 38px;
+      line-height: 1;
+      font-weight: 950;
+      letter-spacing: 0;
+      color: var(--gold);
+      opacity: 0;
+      text-shadow: 0 0 26px rgba(244,201,93,.35);
+    }
+    .round-label .r0 { animation: label0 20s linear both; }
+    .round-label .r1 { animation: label1 20s linear both; }
+    .round-label .r2 { animation: label2 20s linear both; }
+    .round-label .r3 { animation: label3 20s linear both; }
+    .round-label .r4 { animation: label4 20s linear both; }
+    .round-label .r5 { animation: label5 20s linear both; }
+    .agent {
+      position: absolute;
+      top: 302px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      color: #b9c6d8;
+      font-size: 27px;
+      font-weight: 800;
+    }
+    svg.lines {
+      position: absolute;
+      inset: 0;
+      width: 1080px;
+      height: 1920px;
+      pointer-events: none;
+    }
+    .line-path {
+      fill: none;
+      stroke: var(--line);
+      stroke-width: 4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: 1500;
+      stroke-dashoffset: 1500;
+      filter: drop-shadow(0 0 10px rgba(79,180,255,.25));
+      animation: drawPath 20s cubic-bezier(.2,.8,.2,1) both;
+    }
+    .line-path:nth-child(2n) {
+      stroke: rgba(67,209,122,.48);
+      filter: drop-shadow(0 0 10px rgba(67,209,122,.22));
+    }
+    #teams {
+      position: absolute;
+      inset: 0;
+    }
+    .team {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 176px;
+      height: 62px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transform: translate(var(--x0), var(--y0)) scale(.8);
+      opacity: 0;
+      animation: teamPath 20s cubic-bezier(.2,.8,.2,1) both;
+      will-change: transform, opacity;
+    }
+    .team.right {
+      flex-direction: row-reverse;
+      text-align: right;
+    }
+    .flag {
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      overflow: hidden;
+      background: linear-gradient(135deg, #222b38, #111720);
+      border: 3px solid rgba(255,255,255,.72);
+      box-shadow: 0 7px 20px rgba(0,0,0,.34), 0 0 0 2px rgba(79,180,255,.16);
+      color: #fff;
+      font-size: 20px;
+      font-weight: 950;
+    }
+    .flag img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .team-name {
+      max-width: 108px;
+      color: #dce7f5;
+      font-size: 17px;
+      font-weight: 850;
+      line-height: 1.03;
+      text-shadow: 0 2px 5px rgba(0,0,0,.5);
+      white-space: normal;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .trophy-wrap {
+      position: absolute;
+      left: 350px;
+      top: 1268px;
+      width: 380px;
+      height: 334px;
+      display: grid;
+      place-items: center;
+      opacity: 0;
+      animation: trophyIn 20s ease-out both;
+    }
+    .trophy-glow {
+      position: absolute;
+      width: 310px;
+      height: 310px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(244,201,93,.34), transparent 62%);
+      animation: pulse 2.2s ease-in-out infinite;
+    }
+    .trophy {
+      position: relative;
+      width: 220px;
+      height: 270px;
+      filter: drop-shadow(0 18px 32px rgba(0,0,0,.42));
+    }
+    .champion-card {
+      position: absolute;
+      left: 246px;
+      top: 1116px;
+      width: 588px;
+      min-height: 166px;
+      border-radius: 26px;
+      border: 1px solid rgba(244,201,93,.62);
+      background: linear-gradient(135deg, rgba(244,201,93,.24), rgba(79,180,255,.13)), rgba(12,16,23,.92);
+      box-shadow: 0 28px 80px rgba(0,0,0,.42), 0 0 45px rgba(244,201,93,.18);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      opacity: 0;
+      transform: translateY(26px) scale(.92);
+      animation: championCard 20s ease-out both;
+      text-align: left;
+      padding: 24px 34px;
+    }
+    .champion-card .flag {
+      width: 82px;
+      height: 82px;
+      font-size: 28px;
+      border-color: rgba(244,201,93,.9);
+    }
+    .champion-kicker {
+      color: var(--gold);
+      font-size: 21px;
+      font-weight: 950;
+      letter-spacing: 0;
+    }
+    .champion-name {
+      margin-top: 4px;
+      font-size: 46px;
+      line-height: 1;
+      font-weight: 950;
+    }
+    .champion-confidence {
+      margin-top: 8px;
+      color: #b8c4d3;
+      font-size: 21px;
+      font-weight: 750;
+    }
+    .hero-silhouette {
+      position: absolute;
+      left: 412px;
+      top: 1005px;
+      width: 256px;
+      height: 300px;
+      opacity: 0;
+      animation: silhouetteIn 20s ease-out both;
+    }
+    .cta {
+      position: absolute;
+      left: 124px;
+      right: 124px;
+      bottom: 166px;
+      text-align: center;
+      opacity: 0;
+      animation: ctaIn 20s ease-out both;
+    }
+    .cta div {
+      color: #edf5ff;
+      font-size: 32px;
+      line-height: 1.24;
+      font-weight: 900;
+    }
+    footer {
+      position: absolute;
+      left: 54px;
+      right: 54px;
+      bottom: 42px;
+      display: flex;
+      justify-content: space-between;
+      gap: 22px;
+      color: #aab7c8;
+      font-size: 24px;
+      font-weight: 750;
+    }
+    .confetti {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0;
+      animation: confettiOn 20s linear both;
+    }
+    .confetti i {
+      position: absolute;
+      top: -30px;
+      width: 9px;
+      height: 20px;
+      border-radius: 4px;
+      background: var(--gold);
+      animation: fall 2.8s linear infinite;
+    }
+    @keyframes bgIn { 0% { filter: brightness(.72); } 10%,100% { filter: brightness(1); } }
+    @keyframes headerIn { from { opacity: 0; transform: translateY(-28px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes drawPath {
+      0%, 10% { stroke-dashoffset: 1500; opacity: 0; }
+      18% { opacity: .8; }
+      84%, 100% { stroke-dashoffset: 0; opacity: .62; }
+    }
+    @keyframes teamPath {
+      0% { opacity: 0; transform: translate(var(--x0), var(--y0)) scale(.76); }
+      10%, 18% { opacity: 1; transform: translate(var(--x0), var(--y0)) scale(1); }
+      28%, 38% { opacity: var(--op1); transform: translate(var(--x1), var(--y1)) scale(var(--sc1)); }
+      50%, 58% { opacity: var(--op2); transform: translate(var(--x2), var(--y2)) scale(var(--sc2)); }
+      68%, 74% { opacity: var(--op3); transform: translate(var(--x3), var(--y3)) scale(var(--sc3)); }
+      82% { opacity: var(--op4); transform: translate(var(--x4), var(--y4)) scale(var(--sc4)); }
+      90%, 100% { opacity: var(--op5); transform: translate(var(--x5), var(--y5)) scale(var(--sc5)); }
+    }
+    @keyframes trophyIn {
+      0%, 5% { opacity: 0; transform: translateY(26px) scale(.94); }
+      12%, 100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes pulse { 0%,100% { transform: scale(.94); opacity: .58; } 50% { transform: scale(1.06); opacity: 1; } }
+    @keyframes championCard {
+      0%, 88% { opacity: 0; transform: translateY(26px) scale(.92); }
+      94%, 100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes silhouetteIn {
+      0%, 86% { opacity: 0; transform: translateY(22px); }
+      95%,100% { opacity: .22; transform: translateY(0); }
+    }
+    @keyframes ctaIn {
+      0%, 90% { opacity: 0; transform: translateY(18px); }
+      96%,100% { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes confettiOn { 0%, 86% { opacity: 0; } 90%, 100% { opacity: 1; } }
+    @keyframes fall { from { transform: translateY(-40px) rotate(0deg); } to { transform: translateY(2020px) rotate(540deg); } }
+    @keyframes label0 { 0%, 29% { opacity: 1; transform: translateY(0); } 31%,100% { opacity: 0; transform: translateY(-8px); } }
+    @keyframes label1 { 0%, 29% { opacity: 0; } 31%, 45% { opacity: 1; } 47%,100% { opacity: 0; } }
+    @keyframes label2 { 0%, 45% { opacity: 0; } 47%, 60% { opacity: 1; } 62%,100% { opacity: 0; } }
+    @keyframes label3 { 0%, 60% { opacity: 0; } 62%, 74% { opacity: 1; } 76%,100% { opacity: 0; } }
+    @keyframes label4 { 0%, 74% { opacity: 0; } 76%, 88% { opacity: 1; } 90%,100% { opacity: 0; } }
+    @keyframes label5 { 0%, 88% { opacity: 0; } 91%,100% { opacity: 1; } }
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <div class="grain"></div>
+    <header>
+      <div class="brand"><span class="brand-mark"></span><span id="brand"></span></div>
+      <h1 id="title"></h1>
+    </header>
+    <section class="round-label" id="roundLabels"></section>
+    <div class="agent" id="agent"></div>
+    <svg class="lines" viewBox="0 0 1080 1920" id="lines"></svg>
+    <section id="teams"></section>
+    <svg class="hero-silhouette" viewBox="0 0 120 150" aria-hidden="true">
+      <path d="M60 8c19 0 34 15 34 34S79 76 60 76 26 61 26 42 41 8 60 8Z" fill="#d8e6f7"/>
+      <path d="M18 146c4-42 22-62 42-62s38 20 42 62H18Z" fill="#d8e6f7"/>
+    </svg>
+    <section class="champion-card" id="championCard"></section>
+    <section class="trophy-wrap">
+      <div class="trophy-glow"></div>
+      <svg class="trophy" viewBox="0 0 220 270" aria-hidden="true">
+        <path d="M72 42h76v38c0 38-17 66-38 66S72 118 72 80V42Z" fill="#f4c95d"/>
+        <path d="M82 52h56v28c0 30-12 50-28 50S82 110 82 80V52Z" fill="#ffe08a"/>
+        <path d="M72 58H34c0 40 18 67 48 77" fill="none" stroke="#d9a932" stroke-width="16" stroke-linecap="round"/>
+        <path d="M148 58h38c0 40-18 67-48 77" fill="none" stroke="#d9a932" stroke-width="16" stroke-linecap="round"/>
+        <path d="M98 146h24v46H98z" fill="#d9a932"/>
+        <path d="M70 194h80l16 34H54z" fill="#f4c95d"/>
+        <path d="M38 228h144v26H38z" fill="#b88728"/>
+      </svg>
+    </section>
+    <section class="cta">
+      <div>AI simulated this bracket.</div>
+      <div>Code, data, and football logic.</div>
+      <div>Follow Build With Abdallah for the full system.</div>
+    </section>
+    <section class="confetti" id="confetti"></section>
+    <footer>
+      <span id="disclaimer"></span>
+      <span id="site"></span>
+    </footer>
+  </main>
+  <script>
+    const DATA = __BRACKET_DATA__;
+    const byId = (id) => document.getElementById(id);
+    byId("brand").textContent = DATA.brand || "Build With Abdallah";
+    byId("title").textContent = DATA.title || "World Cup 2026 Prediction Bracket";
+    byId("agent").textContent = DATA.subtitle || "The Pitch Agent";
+    byId("disclaimer").textContent = DATA.disclaimer || "Educational prediction model — not betting advice";
+    byId("site").textContent = DATA.site || "buildwithabdallah.com";
+
+    const labels = byId("roundLabels");
+    (DATA.roundLabels || []).forEach((label, i) => {
+      const span = document.createElement("span");
+      span.className = `r${i}`;
+      span.textContent = label;
+      labels.appendChild(span);
+    });
+
+    const lines = byId("lines");
+    (DATA.paths || []).forEach((pathData, i) => {
+      const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      p.setAttribute("d", pathData.d);
+      p.setAttribute("class", "line-path");
+      p.style.animationDelay = `${Math.min(2.2 + i * 0.04, 5.2)}s`;
+      lines.appendChild(p);
+    });
+
+    function flagNode(team, big = false) {
+      const flag = document.createElement("div");
+      flag.className = "flag";
+      if (team.flagSrc) {
+        const img = document.createElement("img");
+        img.src = team.flagSrc;
+        img.alt = team.code || team.name;
+        flag.appendChild(img);
+      } else {
+        flag.textContent = team.code || String(team.name || "?").slice(0, 3).toUpperCase();
+      }
+      if (big) flag.classList.add("big");
+      return flag;
+    }
+
+    const teams = byId("teams");
+    (DATA.teams || []).forEach((team) => {
+      const el = document.createElement("div");
+      el.className = `team ${team.side || ""}`;
+      team.positions.forEach((pos, i) => {
+        el.style.setProperty(`--x${i}`, `${pos.x}px`);
+        el.style.setProperty(`--y${i}`, `${pos.y}px`);
+      });
+      (team.opacityStops || [1,1,1,1,1,1]).forEach((op, i) => el.style.setProperty(`--op${i}`, op));
+      (team.scaleStops || [1,1,1,1,1,1]).forEach((sc, i) => el.style.setProperty(`--sc${i}`, sc));
+      el.appendChild(flagNode(team));
+      const name = document.createElement("div");
+      name.className = "team-name";
+      name.textContent = team.name;
+      el.appendChild(name);
+      teams.appendChild(el);
+    });
+
+    const champ = DATA.champion || {};
+    const card = byId("championCard");
+    card.appendChild(flagNode(champ, true));
+    const copy = document.createElement("div");
+    const confidence = champ.confidence ? `Model confidence: ${champ.confidence}%` : "Model champion path";
+    copy.innerHTML = `<div class="champion-kicker">CHAMPION REVEAL</div><div class="champion-name"></div><div class="champion-confidence"></div>`;
+    copy.querySelector(".champion-name").textContent = champ.name || "Champion";
+    copy.querySelector(".champion-confidence").textContent = confidence;
+    card.appendChild(copy);
+
+    const confetti = byId("confetti");
+    const colors = ["#f4c95d", "#4fb4ff", "#43d17a", "#ffffff"];
+    for (let i = 0; i < 42; i++) {
+      const piece = document.createElement("i");
+      piece.style.left = `${30 + ((i * 71) % 1020)}px`;
+      piece.style.background = colors[i % colors.length];
+      piece.style.animationDelay = `${(i % 9) * 0.16}s`;
+      piece.style.animationDuration = `${2.2 + (i % 5) * 0.22}s`;
+      confetti.appendChild(piece);
+    }
+  </script>
+</body>
+</html>

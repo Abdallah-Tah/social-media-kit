@@ -9,6 +9,7 @@ import sys
 import json
 import argparse
 import requests
+import linkedin_policy
 
 ACCESS_TOKEN = os.environ.get("LINKEDIN_ACCESS_TOKEN", "")
 PERSON_ID = os.environ.get("LINKEDIN_PERSON_ID", "")
@@ -91,8 +92,12 @@ def _upload_image(token, author, image_path):
     return asset
 
 
-def post_text(text, visibility="PUBLIC", image_path=None):
+def post_text(text, visibility="PUBLIC", image_path=None, post_kind=None):
     """Post a text (or image) update to LinkedIn."""
+    ok, reason = linkedin_policy.allowed(post_kind)
+    if not ok:
+        print(f"⏸️ {reason}")
+        return None
     token = load_token()
     if not token:
         return None
@@ -135,6 +140,8 @@ def post_text(text, visibility="PUBLIC", image_path=None):
     )
 
     if resp.status_code in (200, 201):
+        post_id = resp.headers.get("x-restli-id", "")
+        linkedin_policy.mark_posted(post_kind, post_id)
         print(f"✅ Posted to LinkedIn")
         return resp.json()
     else:

@@ -12,7 +12,7 @@ from typing import Any
 # pitch_agent.MODEL_VERSION. Every journal row is stamped with it, and
 # `agent_journal proposals approve` bumps the patch number whenever a
 # learned rule is applied — do not edit by hand.
-PROMPT_VERSION = "1.0.1"
+PROMPT_VERSION = "1.0.2"
 
 
 def _load_learned_rules() -> str:

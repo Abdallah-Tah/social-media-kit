@@ -93,7 +93,7 @@ def review_via_telegram(video: Path, caption: str, safety: str) -> None:
     print("📨 Sent to Telegram for review.")
 
 
-def distribute(video: Path, caption: str, platforms: list[str]) -> dict:
+def distribute(video: Path, caption: str, platforms: list[str], pillar: str) -> dict:
     """Auto-publish to the requested platforms; skip unconfigured ones."""
     import subprocess
     results = {}
@@ -126,9 +126,20 @@ def distribute(video: Path, caption: str, platforms: list[str]) -> dict:
             results["tiktok"] = f"error: {e}"
 
     if "yt" in platforms:
+        try:
+            from worldcup_thumbnail import generate_thumbnail
+            thumb = generate_thumbnail(
+                video.with_name(video.stem + "_thumb.jpg"),
+                title=title,
+                kind=pillar.replace("_", " ").upper(),
+            )
+        except Exception as e:
+            print(f"[wc-orchestrate] thumbnail failed (non-fatal): {e}")
+            thumb = None
         r = subprocess.run(
             [sys.executable, str(SCRIPTS / "youtube_shorts_publisher.py"),
-             "upload", "--video", str(video), "--title", title, "--description", caption],
+             "upload", "--video", str(video), "--title", title, "--description", caption]
+            + (["--thumbnail", str(thumb)] if thumb else []),
             capture_output=True, text=True, timeout=600,
         )
         results["youtube_shorts"] = "ok" if r.returncode == 0 else f"failed: {r.stderr[-160:]}"
@@ -156,7 +167,7 @@ def main():
     if auto:
         platforms = [p.strip() for p in args.platforms.split(",") if p.strip()]
         print(f"🚀 Auto-publishing FACTUAL pillar to: {', '.join(platforms)}")
-        results = distribute(video, caption, platforms)
+        results = distribute(video, caption, platforms, args.pillar)
         for plat, status in results.items():
             print(f"   {plat}: {status}")
         # Mirror a copy to Telegram so you see what went out.

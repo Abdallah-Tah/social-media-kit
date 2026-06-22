@@ -1,22 +1,28 @@
-// Build With Abdallah — single white light_brand theme (matches
-// templates/shorts/match_recap_wide.html + pitch_agent cards).
+// Compatibility shim — THEME now DERIVES from the single source of truth
+// (brand/tokens.ts BRAND). Do not edit palette values here; change them in
+// remotion/src/brand/tokens.ts. Kept so existing comps importing THEME/FONT
+// keep working while they migrate onto BrandFrame.
+import { BRAND, CANVAS } from "./brand/tokens";
+
 export const THEME = {
-  bg: "#f8fbff",
-  bgGrad: "linear-gradient(160deg,#ffffff 0%,#f3f8ff 55%,#e9f1ff 100%)",
-  ink: "#081b44",
-  navy: "#071a44",
-  blue: "#0866ff",
-  muted: "#40527a",
-  line: "#d9e1ec",
-  soft: "rgba(8,42,96,0.06)",
-  red: "#d83a2f",
+  bg: BRAND.bg,
+  bgGrad: BRAND.bgGradient,
+  ink: BRAND.text,
+  navy: BRAND.navy,
+  navy2: BRAND.navy2,
+  blue: BRAND.blue,
+  muted: BRAND.muted,
+  line: BRAND.line,
+  soft: BRAND.soft,
+  red: BRAND.red,
+  green: BRAND.green,
+  // Remotion-only tints (no card equivalent) — kept for the existing panels
   redSoft: "#fff5f5",
   blueSoft: "#eef4ff",
 };
 
-export const FONT =
-  '"Inter","Segoe UI",Roboto,"Helvetica Neue",Arial,"DejaVu Sans",sans-serif';
+export const FONT = BRAND.font;
 
-export const W = 1080;
-export const H = 1920;
+export const W = CANVAS.W;
+export const H = CANVAS.H;
 export const FPS = 30;

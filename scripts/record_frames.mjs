@@ -4,7 +4,7 @@
 // Usage: node record_frames.mjs <input.html> <outdir> <seconds> <fps> [w] [h]
 
 import path from "node:path";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 function loadPlaywright() {
@@ -50,13 +50,21 @@ try {
     for (const a of document.getAnimations()) a.pause();
   });
 
+  // Capture via CDP with fromSurface:false. On a headless Pi there is no GPU
+  // compositor surface, so Playwright's page.screenshot() (and even the default
+  // CDP capture) blocks forever waiting for a surface frame. fromSurface:false
+  // reads the renderer's bitmap directly and returns instantly.
+  const cdp = await page.context().newCDPSession(page);
   for (let i = 0; i < frames; i++) {
     const t = (i / fps) * 1000; // ms
     await page.evaluate((ms) => {
       for (const a of document.getAnimations()) a.currentTime = ms;
     }, t);
     const name = path.join(outDir, `f_${String(i).padStart(5, "0")}.png`);
-    await page.screenshot({ path: name });
+    const shot = await cdp.send("Page.captureScreenshot", {
+      format: "png", fromSurface: false, captureBeyondViewport: false,
+    });
+    writeFileSync(name, Buffer.from(shot.data, "base64"));
   }
   console.log(`Rendered ${frames} frames @ ${fps}fps -> ${outDir}`);
 } finally {

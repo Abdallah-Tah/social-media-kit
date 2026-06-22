@@ -234,11 +234,22 @@ def main() -> int:
             "Comment your score predictions. Follow for daily World Cup model calls.\n\n"
             "#WorldCup2026 #WorldCup #Football #Soccer #FIFAWorldCup #AIPredictions #footballpredictions #Shorts"
             + credit_line)
+    try:
+        from worldcup_thumbnail import generate_thumbnail
+        thumb = generate_thumbnail(
+            OUT_DIR / f"daily_{day}_thumb.jpg",
+            title=f"Today at the World Cup {props['date']}",
+            kind="TODAY'S MATCHES",
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[daily-wc] thumbnail failed (non-fatal): {exc}")
+        thumb = None
     up = subprocess.run(
         ["/usr/bin/python3", str(KIT / "scripts" / "youtube_shorts_publisher.py"), "upload",
          "--video", str(out), "--title", title, "--description", desc,
          "--privacy", args.privacy, "--profile", "main", "--category-id", "17",
-         "--tags", "WorldCup2026,WorldCup,football,soccer,FIFAWorldCup,AIpredictions,footballpredictions,shorts"],
+         "--tags", "WorldCup2026,WorldCup,football,soccer,FIFAWorldCup,AIpredictions,footballpredictions,shorts"]
+        + (["--thumbnail", str(thumb)] if thumb else []),
         capture_output=True, text=True)
     print(up.stdout[-300:])
     if up.returncode != 0:

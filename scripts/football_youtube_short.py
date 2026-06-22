@@ -186,6 +186,16 @@ def title_and_description(text: str) -> tuple[str, str]:
 
 def upload(video: Path, title: str, desc: str, privacy: str, profile: str = "main") -> tuple[int, str]:
     """Upload to YouTube; return (exit_code, video_url)."""
+    try:
+        from worldcup_thumbnail import generate_thumbnail
+        thumb = generate_thumbnail(
+            video.with_name(video.stem + "_thumb.jpg"),
+            title=title.replace("🏆", "").replace("World Cup 2026", "").strip(" —-"),
+            kind="AI PREDICTION",
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[football-yt] thumbnail failed (non-fatal): {exc}")
+        thumb = None
     cmd = [
         "/usr/bin/python3", str(KIT / "scripts" / "youtube_shorts_publisher.py"),
         "upload", "--video", str(video), "--title", title,
@@ -193,6 +203,8 @@ def upload(video: Path, title: str, desc: str, privacy: str, profile: str = "mai
         "--tags", "WorldCup2026,WorldCup,football,soccer,FIFAWorldCup,AIpredictions,footballpredictions,shorts",
         "--category-id", "17",  # 17 = Sports
     ]
+    if thumb:
+        cmd += ["--thumbnail", str(thumb)]
     res = subprocess.run(cmd, capture_output=True, text=True)
     print(res.stdout, end="")
     if res.stderr:

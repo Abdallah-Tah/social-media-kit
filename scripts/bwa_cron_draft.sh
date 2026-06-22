@@ -175,34 +175,10 @@ if [ -n "$AFTER" ] && [ "$AFTER" != "$BEFORE" ]; then
     || { GH="⚠️ GitHub failed"; echo "$GH_OUT"; }
   GH_URL="$(printf '%s\n' "$GH_OUT" | sed -n 's/^GitHub repo ready: //p' | tail -1)"
 
-  LI="✅ LinkedIn"
-  python3 "$KIT/scripts/linkedin_from_article.py" --latest \
-    || { LI="⚠️ LinkedIn failed"; echo "linkedin failed"; }
+  LI="⏸️ LinkedIn disabled for non-news posts"
 
-  REEL="✅ Reel"
-  REEL_OUT="$(python3 "$KIT/scripts/reel_from_article.py" --latest --publish 2>&1)" \
-    || { REEL="⚠️ Reel failed"; echo "$REEL_OUT"; echo "reel failed"; }
-  [ -z "${REEL_OUT:-}" ] || echo "$REEL_OUT"
-
-  YT="✅ YouTube"
-  if [ "$REEL" = "✅ Reel" ]; then
-    REEL_PATH="$KIT/content/assets/reel_${SLUG:0:40}.mp4"
-    YT_TITLE="${TITLE:0:82} #Shorts"
-    YT_DESC="${TITLE}
-${URL}
-
-#Shorts #BuildWithAbdallah"
-    python3 "$KIT/scripts/youtube_shorts_publisher.py" upload \
-      --video "$REEL_PATH" \
-      --title "$YT_TITLE" \
-      --description "$YT_DESC" \
-      --privacy public \
-      --tags "BuildWithAbdallah,Programming,Tutorial,Shorts" \
-      --category-id 28 \
-      || { YT="⚠️ YouTube failed"; echo "youtube failed"; }
-  else
-    YT="⚠️ YouTube skipped"
-  fi
+  REEL="⏸️ Tutorial video disabled"
+  YT="⏸️ YouTube tutorial video disabled"
 
   notify_telegram "Post-publish automation complete:
 ${TITLE}

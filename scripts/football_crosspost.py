@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Cross-post football content (preview / recap) to Facebook + LinkedIn,
+"""Cross-post football content (preview / recap) to Facebook only,
 with the YouTube URL embedded in the post.
 
-Reuses the existing posters (fb_poster, linkedin_org_poster). Each platform
-is independent and non-fatal: a failure on one never blocks the other or the
-caller (the YouTube upload has already succeeded by the time this runs).
+LinkedIn is intentionally disabled for this pillar. The account policy is one
+LinkedIn post per day, news only.
 
   python3 scripts/football_crosspost.py --text "..." \
       --youtube-url https://youtube.com/shorts/XXXX --image card.png
@@ -47,27 +46,8 @@ def crosspost(text: str, youtube_url: str = "", image_path: str | None = None,
         results["facebook"] = False
         print(f"[crosspost] facebook error: {exc}")
 
-    # ── LinkedIn (personal feed) ──────────────────────────────────────
-    # The org page (showcase 119694084) needs w_organization_social, which the
-    # current token lacks (403 on /author) — pending a LinkedIn reconnect. The
-    # personal feed works with w_member_social, so post there. Reuse post_org's
-    # image+ugcPost machinery but pass token + person author explicitly (post_org
-    # only respects `author` when `token` is also supplied).
-    try:
-        import linkedin_org_poster as LI
-        from linkedin_from_article import person_urn
-        token, _org = LI.fetch_org_token()
-        if token:
-            r = LI.post_org(text=caption, image_path=img,
-                            token=token, author=person_urn(token), title=title)
-            results["linkedin"] = bool(r)
-            print(f"[crosspost] linkedin (personal): {'✅' if r else '❌'}")
-        else:
-            results["linkedin"] = False
-            print("[crosspost] linkedin: no token")
-    except Exception as exc:  # noqa: BLE001
-        results["linkedin"] = False
-        print(f"[crosspost] linkedin error: {exc}")
+    results["linkedin"] = False
+    print("[crosspost] linkedin skipped: news-only daily policy")
 
     return results
 

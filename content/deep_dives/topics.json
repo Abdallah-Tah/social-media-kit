@@ -1,0 +1,115 @@
+{
+  "topics": [
+    {
+      "id": "knockout-bracket-chaos",
+      "title": "I Simulated the 2026 World Cup Knockout Stage 10,000 Times",
+      "title_lines": [
+        "I Simulated the 2026",
+        "World Cup Knockout Stage",
+        "10,000 Times"
+      ],
+      "thumbnail_title": "10,000 BRACKET SIMS",
+      "kind": "BRACKET CHAOS",
+      "hook": "A single missed penalty can rewrite the entire tournament path.",
+      "titles": [
+        "I Simulated the 2026 World Cup Knockout Stage 10,000 Times",
+        "Modeling Every Possible 2026 World Cup Bracket Path",
+        "Who Actually Wins the 2026 World Cup? A Simulation View",
+        "The 2026 World Cup Bracket Is More Chaotic Than You Think"
+      ],
+      "outline": [
+        "The expanded 48-team format creates more knockout volatility.",
+        "Baseline team strength only explains part of the bracket.",
+        "Early upsets compound because they reshape every later matchup.",
+        "Penalty swings become tournament-shaping inflection points."
+      ],
+      "beats": [
+        "We simulate the knockout stage ten thousand times.",
+        "Each run stress-tests favorites, dark horses, and penalty swings.",
+        "The key question is where one result changes the entire bracket."
+      ],
+      "stat_cards": [
+        { "label": "Iterations", "value": "10K" },
+        { "label": "Format", "value": "48 teams" },
+        { "label": "Chaos zone", "value": "R32" },
+        { "label": "Swing event", "value": "penalties" }
+      ],
+      "final_call": "The first knockout round is where the tournament becomes mathematically fragile.",
+      "thumbnail_ideas": [
+        "A bracket tree splitting around a penalty spot with one route highlighted.",
+        "A dark green pitch background with bold '10,000 SIMS' and a trophy silhouette.",
+        "Favorites on one side, dark-horse path on the other, connected by a single penalty."
+      ]
+    },
+    {
+      "id": "dark-horse-paths",
+      "title": "The Dark-Horse Paths That Could Break the 2026 World Cup Bracket",
+      "thumbnail_title": "DARK HORSE PATHS",
+      "kind": "UPSET MAP",
+      "hook": "The bracket does not need ten upsets to break. Sometimes it only needs one.",
+      "titles": [
+        "The Dark-Horse Paths That Could Break the 2026 World Cup Bracket",
+        "Which Underdogs Have a Real World Cup Path?",
+        "The Upset Routes Hidden Inside the 2026 World Cup Bracket"
+      ],
+      "outline": [
+        "Dark horses need path quality, not just one great performance.",
+        "Avoiding a top seed early can matter more than raw team strength.",
+        "A single upset can open a favorable quarterfinal route.",
+        "The model ranks paths by compounding probability, not hype."
+      ],
+      "beats": [
+        "We are not asking who is most popular.",
+        "We are mapping which underdogs get a bracket path that can breathe.",
+        "The surprise team usually needs one upset plus one avoided giant."
+      ],
+      "stat_cards": [
+        { "label": "Path edge", "value": "draw" },
+        { "label": "Key round", "value": "R32" },
+        { "label": "Upset need", "value": "1-2" },
+        { "label": "Risk", "value": "stacked" }
+      ],
+      "final_call": "A dark horse becomes dangerous when the bracket removes one giant before they meet.",
+      "thumbnail_ideas": [
+        "A small team path cutting through a bracket while favorites collide elsewhere.",
+        "Bold 'DARK HORSE?' over a split football bracket graphic.",
+        "A highlighted green route through a knockout tree."
+      ]
+    },
+    {
+      "id": "penalty-swing-model",
+      "title": "How One Penalty Shootout Can Change the Entire World Cup",
+      "thumbnail_title": "ONE PENALTY CHANGES IT",
+      "kind": "SWING POINT",
+      "hook": "A shootout is not just one match. It can rewrite every future matchup.",
+      "titles": [
+        "How One Penalty Shootout Can Change the Entire World Cup",
+        "The Penalty Swing That Can Break a World Cup Bracket",
+        "Why Penalties Create World Cup Chaos"
+      ],
+      "outline": [
+        "Knockout probabilities compound after every elimination.",
+        "A penalty result can remove a favorite without changing their underlying strength.",
+        "The replacement path changes opponent strength for multiple teams.",
+        "The simulation tracks the downstream bracket shock."
+      ],
+      "beats": [
+        "Penalties look like a finish, but mathematically they are a fork.",
+        "One shootout can remove a favorite and open two routes behind it.",
+        "That is why bracket simulations care about swing points."
+      ],
+      "stat_cards": [
+        { "label": "Swing", "value": "50/50" },
+        { "label": "Impact", "value": "multi-round" },
+        { "label": "Volatility", "value": "high" },
+        { "label": "Watch", "value": "R16" }
+      ],
+      "final_call": "The biggest World Cup swing may not be the best team. It may be one shootout.",
+      "thumbnail_ideas": [
+        "Penalty spot in the center of a bracket explosion.",
+        "Goal, ball, and two split futures labeled favorite path and chaos path.",
+        "Large 'ONE PENALTY' text with a bracket splitting behind it."
+      ]
+    }
+  ]
+}

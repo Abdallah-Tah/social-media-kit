@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1080, initial-scale=1" />
+  <title>World Cup Bracket Simulation</title>
+  <style>
+    :root {
+      --cyan: #39d5ff;
+      --blue: #2878ff;
+      --green: #36e68a;
+      --gold: #ffd76a;
+      --gold-deep: #c98d18;
+      --text: #f7fbff;
+      --muted: #a9b8cb;
+      --ink: #07101c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      width: 1080px;
+      height: 1920px;
+      overflow: hidden;
+      background: #05070c;
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    }
+    .stage {
+      position: relative;
+      width: 1080px;
+      height: 1920px;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 50% 79%, rgba(255, 215, 106, .26), transparent 23%),
+        radial-gradient(circle at 50% 48%, rgba(57, 213, 255, .24), transparent 36%),
+        radial-gradient(circle at 18% 28%, rgba(40, 120, 255, .20), transparent 26%),
+        radial-gradient(circle at 84% 36%, rgba(54, 230, 138, .14), transparent 24%),
+        linear-gradient(180deg, #111b2a 0%, #07101c 48%, #03050a 100%);
+    }
+    .stage::before {
+      content: "BWA";
+      position: absolute;
+      left: -56px;
+      top: 492px;
+      font-size: 360px;
+      line-height: 1;
+      font-weight: 1000;
+      color: rgba(255,255,255,.025);
+      transform: rotate(-90deg);
+    }
+    .pitch-lines {
+      position: absolute;
+      inset: 218px 26px 258px;
+      border: 2px solid rgba(255,255,255,.055);
+      border-radius: 42px;
+      background-image:
+        linear-gradient(rgba(255,255,255,.040) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.030) 1px, transparent 1px);
+      background-size: 78px 78px;
+      box-shadow: inset 0 0 80px rgba(57,213,255,.07);
+      opacity: .9;
+    }
+    .pitch-lines::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 0;
+      bottom: 0;
+      border-left: 2px solid rgba(255,255,255,.055);
+    }
+    .pitch-lines::after {
+      content: "";
+      position: absolute;
+      left: 354px;
+      top: 450px;
+      width: 320px;
+      height: 320px;
+      border: 2px solid rgba(255,255,255,.045);
+      border-radius: 50%;
+    }
+    .particles {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      opacity: .78;
+    }
+    .particles i {
+      position: absolute;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: rgba(57,213,255,.9);
+      box-shadow: 0 0 18px rgba(57,213,255,.65);
+      animation: drift 7s linear infinite;
+    }
+    header {
+      position: absolute;
+      top: 22px;
+      left: 42px;
+      right: 42px;
+      height: 190px;
+      text-align: center;
+      z-index: 5;
+    }
+    .brand-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 14px;
+      padding: 9px 18px;
+      border: 1px solid rgba(255,255,255,.15);
+      border-radius: 999px;
+      background: rgba(5, 12, 22, .68);
+      box-shadow: 0 10px 34px rgba(0,0,0,.28);
+      font-size: 25px;
+      font-weight: 900;
+    }
+    .brand-dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--cyan), var(--green));
+      box-shadow: 0 0 28px rgba(57,213,255,.52);
+    }
+    .agent-line {
+      margin-top: 8px;
+      color: #c2d2e6;
+      font-size: 20px;
+      font-weight: 850;
+      letter-spacing: 0;
+    }
+    h1 {
+      margin: 10px auto 0;
+      max-width: 940px;
+      font-size: 43px;
+      line-height: .98;
+      font-weight: 1000;
+      letter-spacing: 0;
+      text-shadow: 0 18px 42px rgba(0,0,0,.42);
+    }
+    .round-label {
+      position: absolute;
+      top: 212px;
+      left: 0;
+      right: 0;
+      height: 58px;
+      text-align: center;
+      z-index: 5;
+    }
+    .round-label span {
+      position: absolute;
+      inset: 0;
+      color: var(--gold);
+      font-size: 36px;
+      font-weight: 1000;
+      letter-spacing: 0;
+      opacity: 0;
+      text-shadow: 0 0 28px rgba(255,215,106,.58), 0 8px 22px rgba(0,0,0,.45);
+    }
+    .round-label .r0 { animation: label0 20s ease-out both; }
+    .round-label .r1 { animation: label1 20s ease-out both; }
+    .round-label .r2 { animation: label2 20s ease-out both; }
+    .round-label .r3 { animation: label3 20s ease-out both; }
+    .round-label .r4 { animation: label4 20s ease-out both; }
+    .round-label .r5 { animation: label5 20s ease-out both; }
+    .bracket-vignette {
+      position: absolute;
+      inset: 222px 14px 246px;
+      border-radius: 46px;
+      background: linear-gradient(90deg, rgba(57,213,255,.08), transparent 24%, transparent 76%, rgba(54,230,138,.08));
+      pointer-events: none;
+      z-index: 1;
+    }
+    svg.lines {
+      position: absolute;
+      inset: 0;
+      width: 1080px;
+      height: 1920px;
+      pointer-events: none;
+      z-index: 2;
+    }
+    .line-path {
+      fill: none;
+      stroke: rgba(144, 210, 255, .42);
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: 1800;
+      stroke-dashoffset: 0;
+      filter: drop-shadow(0 0 7px rgba(57,213,255,.16));
+      animation: baseLine 20s linear both;
+    }
+    .line-path.active {
+      stroke: rgba(57,213,255,.95);
+      stroke-width: 5;
+      stroke-dashoffset: 1800;
+      filter: drop-shadow(0 0 12px rgba(57,213,255,.75));
+      animation: activePath 20s cubic-bezier(.16,.84,.24,1) both;
+    }
+    .line-path.champion {
+      stroke: rgba(255,215,106,.98);
+      filter: drop-shadow(0 0 18px rgba(255,215,106,.82));
+    }
+    .stage-1.active { animation-delay: 1.8s; }
+    .stage-2.active { animation-delay: 5.1s; }
+    .stage-3.active { animation-delay: 8.1s; }
+    .stage-4.active { animation-delay: 11.1s; }
+    .stage-5.active { animation-delay: 14.4s; }
+    #teams {
+      position: absolute;
+      inset: 0;
+      z-index: 4;
+      transition: opacity .4s ease;
+      animation: dimTeams 20s ease both;
+    }
+    .team {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 210px;
+      height: 74px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      transform: translate(var(--x0), var(--y0)) scale(.96);
+      opacity: 1;
+      animation: teamPath 20s cubic-bezier(.22,1.34,.36,1) both;
+      will-change: transform, opacity, filter;
+    }
+    .team.right {
+      flex-direction: row-reverse;
+      text-align: right;
+    }
+    .flag {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      flex: 0 0 auto;
+      color: #fff;
+      font-size: 27px;
+      font-weight: 1000;
+      border: 3px solid rgba(255,255,255,.92);
+      box-shadow: 0 10px 26px rgba(0,0,0,.45), 0 0 0 2px rgba(57,213,255,.20);
+      background: linear-gradient(135deg, #253348, #0d1522);
+      position: relative;
+    }
+    .flag img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .flag .emoji {
+      font-size: 33px;
+      line-height: 1;
+      filter: saturate(1.25);
+    }
+    .flag .code {
+      font-size: 18px;
+      letter-spacing: 0;
+      text-shadow: 0 2px 8px rgba(0,0,0,.48);
+    }
+    .flag-art.flag-de { background: linear-gradient(#111 0 33%, #dd1f26 33% 66%, #ffc928 66%); }
+    .flag-art.flag-za { background: linear-gradient(135deg,#00843d 0 32%,#ffb81c 32% 42%,#111 42% 58%,#fff 58% 65%,#0072ce 65%); }
+    .flag-art.flag-jp { background: radial-gradient(circle at 50% 50%, #bc002d 0 28%, #fff 29%); }
+    .flag-art.flag-ma { background: radial-gradient(circle at 50% 50%, #006233 0 12%, transparent 13%), #c1272d; }
+    .flag-art.flag-ar { background: linear-gradient(#74acdf 0 33%,#fff 33% 66%,#74acdf 66%); }
+    .flag-art.flag-no { background: linear-gradient(90deg,transparent 0 30%,#fff 30% 42%,#00205b 42% 56%,#fff 56% 68%,transparent 68%), linear-gradient(#ba0c2f 0 38%,#fff 38% 46%,#00205b 46% 58%,#fff 58% 66%,#ba0c2f 66%); }
+    .flag-art.flag-us { background: linear-gradient(#b22234 0 8%,#fff 8% 16%,#b22234 16% 24%,#fff 24% 32%,#b22234 32% 40%,#fff 40% 48%,#b22234 48% 56%,#fff 56% 64%,#b22234 64% 72%,#fff 72% 80%,#b22234 80% 88%,#fff 88%); }
+    .flag-art.flag-hr { background: linear-gradient(#f00 0 33%,#fff 33% 66%,#171796 66%); }
+    .flag-art.flag-es { background: linear-gradient(#c60b1e 0 25%,#ffc400 25% 75%,#c60b1e 75%); }
+    .flag-art.flag-gh { background: linear-gradient(#ce1126 0 33%,#fcd116 33% 66%,#006b3f 66%); }
+    .flag-art.flag-uy { background: linear-gradient(#fff 0 12%,#0038a8 12% 24%,#fff 24% 36%,#0038a8 36% 48%,#fff 48% 60%,#0038a8 60% 72%,#fff 72% 84%,#0038a8 84%); }
+    .flag-art.flag-kr { background: radial-gradient(circle at 50% 44%, #cd2e3a 0 23%, transparent 24%), radial-gradient(circle at 50% 56%, #0047a0 0 23%, transparent 24%), #fff; }
+    .flag-art.flag-eng { background: linear-gradient(90deg,transparent 0 42%,#c8102e 42% 58%,transparent 58%), linear-gradient(transparent 0 42%,#c8102e 42% 58%,transparent 58%), #fff; }
+    .flag-art.flag-ca { background: linear-gradient(90deg,#d52b1e 0 25%,#fff 25% 75%,#d52b1e 75%); }
+    .flag-art.flag-nl { background: linear-gradient(#ae1c28 0 33%,#fff 33% 66%,#21468b 66%); }
+    .flag-art.flag-eg { background: linear-gradient(#ce1126 0 33%,#fff 33% 66%,#000 66%); }
+    .flag-art.flag-br { background: radial-gradient(circle at 50% 50%, #002776 0 21%, transparent 22%), linear-gradient(135deg, transparent 29%, #ffdf00 30% 70%, transparent 71%), #009b3a; }
+    .flag-art.flag-qa { background: linear-gradient(90deg,#fff 0 28%,#8a1538 28%); }
+    .flag-art.flag-mx { background: linear-gradient(90deg,#006847 0 33%,#fff 33% 66%,#ce1126 66%); }
+    .flag-art.flag-sn { background: linear-gradient(90deg,#00853f 0 33%,#fdef42 33% 66%,#e31b23 66%); }
+    .flag-art.flag-pt { background: linear-gradient(90deg,#006600 0 42%,#ff0000 42%); }
+    .flag-art.flag-co { background: linear-gradient(#fcd116 0 50%,#003893 50% 75%,#ce1126 75%); }
+    .flag-art.flag-be { background: linear-gradient(90deg,#000 0 33%,#fae042 33% 66%,#ed2939 66%); }
+    .flag-art.flag-au { background: linear-gradient(135deg,#012169,#0a2d82); }
+    .flag-art.flag-fr { background: linear-gradient(90deg,#0055a4 0 33%,#fff 33% 66%,#ef4135 66%); }
+    .flag-art.flag-sco { background: linear-gradient(135deg,transparent 0 43%,#fff 43% 57%,transparent 57%), linear-gradient(45deg,transparent 0 43%,#fff 43% 57%,transparent 57%), #0065bd; }
+    .flag-art.flag-it { background: linear-gradient(90deg,#009246 0 33%,#fff 33% 66%,#ce2b37 66%); }
+    .flag-art.flag-ng { background: linear-gradient(90deg,#008751 0 33%,#fff 33% 66%,#008751 66%); }
+    .flag-art.flag-dk { background: linear-gradient(90deg,transparent 0 31%,#fff 31% 43%,transparent 43%), linear-gradient(transparent 0 42%,#fff 42% 57%,transparent 57%), #c60c30; }
+    .flag-art.flag-cl { background: linear-gradient(#fff 0 50%,#d52b1e 50%); }
+    .flag-art.flag-ch { background: linear-gradient(#d52b1e,#d52b1e); }
+    .flag-art.flag-ci { background: linear-gradient(90deg,#f77f00 0 33%,#fff 33% 66%,#009e60 66%); }
+    .team-name {
+      max-width: 132px;
+      color: #ecf4ff;
+      font-size: 18px;
+      line-height: 1.05;
+      font-weight: 900;
+      text-shadow: 0 3px 10px rgba(0,0,0,.74);
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .team.right .team-name { max-width: 132px; }
+    .trail {
+      position: absolute;
+      width: 120px;
+      height: 4px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, transparent, rgba(57,213,255,.95));
+      filter: blur(.5px) drop-shadow(0 0 10px rgba(57,213,255,.7));
+      opacity: 0;
+      animation: trailFlash 20s linear both;
+    }
+    .trophy-wrap {
+      position: absolute;
+      left: 350px;
+      top: 1340px;
+      width: 380px;
+      height: 356px;
+      display: grid;
+      place-items: center;
+      z-index: 3;
+      animation: trophyPulse 20s ease both;
+    }
+    .trophy-glow {
+      position: absolute;
+      width: 410px;
+      height: 410px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,215,106,.48), rgba(255,215,106,.16) 42%, transparent 70%);
+      animation: trophyGlow 2.15s ease-in-out infinite;
+    }
+    .trophy {
+      position: relative;
+      width: 280px;
+      height: 330px;
+      filter: drop-shadow(0 24px 34px rgba(0,0,0,.48));
+    }
+    .champion-focus {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 58%, rgba(255,215,106,.22), rgba(5,7,12,.28) 36%, rgba(0,0,0,.62) 74%);
+      opacity: 0;
+      z-index: 6;
+      animation: championFocus 20s ease both;
+      pointer-events: none;
+    }
+    .champion-card {
+      position: absolute;
+      left: 150px;
+      top: 1010px;
+      width: 780px;
+      min-height: 262px;
+      border-radius: 34px;
+      border: 2px solid rgba(255,215,106,.74);
+      background:
+        radial-gradient(circle at 18% 24%, rgba(255,255,255,.18), transparent 26%),
+        linear-gradient(135deg, rgba(255,215,106,.28), rgba(57,213,255,.12) 52%, rgba(9,15,25,.96));
+      box-shadow: 0 40px 110px rgba(0,0,0,.56), 0 0 70px rgba(255,215,106,.26);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 34px;
+      padding: 32px 44px;
+      opacity: 0;
+      transform: translateY(44px) scale(.88);
+      animation: championCard 20s cubic-bezier(.22,1.18,.32,1) both;
+      z-index: 8;
+    }
+    .champion-card .flag {
+      width: 118px;
+      height: 118px;
+      font-size: 48px;
+      border-width: 5px;
+      border-color: rgba(255,255,255,.98);
+      box-shadow: 0 16px 42px rgba(0,0,0,.46), 0 0 0 4px rgba(255,215,106,.28), 0 0 36px rgba(255,215,106,.42);
+    }
+    .champion-kicker {
+      color: var(--gold);
+      font-size: 32px;
+      line-height: 1;
+      font-weight: 1000;
+      text-shadow: 0 0 28px rgba(255,215,106,.52);
+    }
+    .champion-name {
+      margin-top: 8px;
+      font-size: 74px;
+      line-height: .95;
+      font-weight: 1000;
+    }
+    .champion-confidence {
+      margin-top: 14px;
+      color: #d6e2f1;
+      font-size: 28px;
+      font-weight: 850;
+    }
+    .cta {
+      position: absolute;
+      left: 112px;
+      right: 112px;
+      bottom: 126px;
+      text-align: center;
+      z-index: 8;
+      opacity: 0;
+      transform: translateY(18px);
+      animation: ctaIn 20s ease both;
+    }
+    .cta div {
+      color: #f4f8ff;
+      font-size: 27px;
+      line-height: 1.22;
+      font-weight: 900;
+      text-shadow: 0 6px 20px rgba(0,0,0,.42);
+    }
+    footer {
+      position: absolute;
+      left: 44px;
+      right: 44px;
+      bottom: 34px;
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      color: rgba(214,226,241,.78);
+      font-size: 18px;
+      line-height: 1.15;
+      font-weight: 800;
+      z-index: 9;
+    }
+    .confetti {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9;
+      opacity: 0;
+      animation: confettiOn 20s linear both;
+    }
+    .confetti i {
+      position: absolute;
+      top: -48px;
+      width: 10px;
+      height: 24px;
+      border-radius: 999px;
+      background: var(--gold);
+      animation: fall 3s linear infinite;
+    }
+    @keyframes drift {
+      from { transform: translate3d(0, 0, 0); opacity: .1; }
+      35% { opacity: .8; }
+      to { transform: translate3d(18px, 120px, 0); opacity: .1; }
+    }
+    @keyframes baseLine {
+      0%,100% { opacity: .34; }
+      88%,100% { opacity: .13; }
+    }
+    @keyframes activePath {
+      0%, 8% { stroke-dashoffset: 1800; opacity: 0; }
+      18%, 82% { stroke-dashoffset: 0; opacity: .98; }
+      92%, 100% { stroke-dashoffset: 0; opacity: .26; }
+    }
+    @keyframes teamPath {
+      0%, 10% { opacity: 1; transform: translate(var(--x0), var(--y0)) scale(.96); filter: drop-shadow(0 0 0 rgba(57,213,255,0)); }
+      24% { opacity: var(--op1); transform: translate(var(--x1), var(--y1)) scale(calc(var(--sc1) * 1.08)); filter: drop-shadow(0 0 22px rgba(57,213,255,.78)); }
+      31% { opacity: var(--op1); transform: translate(var(--x1), var(--y1)) scale(var(--sc1)); filter: drop-shadow(0 0 10px rgba(57,213,255,.35)); }
+      45% { opacity: var(--op2); transform: translate(var(--x2), var(--y2)) scale(calc(var(--sc2) * 1.08)); filter: drop-shadow(0 0 22px rgba(57,213,255,.78)); }
+      52% { opacity: var(--op2); transform: translate(var(--x2), var(--y2)) scale(var(--sc2)); }
+      62% { opacity: var(--op3); transform: translate(var(--x3), var(--y3)) scale(calc(var(--sc3) * 1.08)); filter: drop-shadow(0 0 24px rgba(57,213,255,.78)); }
+      69% { opacity: var(--op3); transform: translate(var(--x3), var(--y3)) scale(var(--sc3)); }
+      79% { opacity: var(--op4); transform: translate(var(--x4), var(--y4)) scale(calc(var(--sc4) * 1.08)); filter: drop-shadow(0 0 24px rgba(255,215,106,.64)); }
+      86% { opacity: var(--op4); transform: translate(var(--x4), var(--y4)) scale(var(--sc4)); }
+      91%, 100% { opacity: var(--op5); transform: translate(var(--x5), var(--y5)) scale(var(--sc5)); filter: drop-shadow(0 0 28px rgba(255,215,106,.74)); }
+    }
+    @keyframes dimTeams {
+      0%, 85% { opacity: 1; }
+      91%, 100% { opacity: .28; }
+    }
+    @keyframes trailFlash {
+      0%, 19%, 34%, 55%, 73%, 88%, 100% { opacity: 0; }
+      24%, 45%, 63%, 80% { opacity: .78; }
+    }
+    @keyframes trophyPulse {
+      0%, 75% { transform: translateY(0) scale(.96); }
+      82%, 100% { transform: translateY(-36px) scale(1.17); }
+    }
+    @keyframes trophyGlow {
+      0%,100% { transform: scale(.94); opacity: .52; }
+      50% { transform: scale(1.06); opacity: 1; }
+    }
+    @keyframes championFocus {
+      0%, 82% { opacity: 0; }
+      91%, 100% { opacity: 1; }
+    }
+    @keyframes championCard {
+      0%, 82% { opacity: 0; transform: translateY(44px) scale(.88); }
+      88% { opacity: 1; transform: translateY(-8px) scale(1.035); }
+      92%, 100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes ctaIn {
+      0%, 87% { opacity: 0; transform: translateY(18px); }
+      94%,100% { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes confettiOn { 0%, 84% { opacity: 0; } 88%, 100% { opacity: 1; } }
+    @keyframes fall {
+      from { transform: translateY(-80px) rotate(0deg); }
+      to { transform: translateY(2060px) rotate(680deg); }
+    }
+    @keyframes label0 { 0%, 27% { opacity: 1; transform: scale(1); } 30%,100% { opacity: 0; transform: scale(.92); } }
+    @keyframes label1 { 0%, 29% { opacity: 0; transform: scale(.82); } 32%, 45% { opacity: 1; transform: scale(1); } 48%,100% { opacity: 0; transform: scale(.92); } }
+    @keyframes label2 { 0%, 46% { opacity: 0; transform: scale(.82); } 49%, 59% { opacity: 1; transform: scale(1); } 62%,100% { opacity: 0; transform: scale(.92); } }
+    @keyframes label3 { 0%, 60% { opacity: 0; transform: scale(.82); } 63%, 73% { opacity: 1; transform: scale(1); } 76%,100% { opacity: 0; transform: scale(.92); } }
+    @keyframes label4 { 0%, 74% { opacity: 0; transform: scale(.82); } 77%, 84% { opacity: 1; transform: scale(1); } 87%,100% { opacity: 0; transform: scale(.92); } }
+    @keyframes label5 { 0%, 85% { opacity: 0; transform: scale(.82); } 89%,100% { opacity: 1; transform: scale(1); } }
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <div class="pitch-lines"></div>
+    <div class="particles" id="particles"></div>
+    <header>
+      <div class="brand-row"><span class="brand-dot"></span><span id="brand"></span></div>
+      <div class="agent-line" id="agent"></div>
+      <h1 id="title"></h1>
+    </header>
+    <section class="round-label" id="roundLabels"></section>
+    <div class="bracket-vignette"></div>
+    <svg class="lines" viewBox="0 0 1080 1920" id="lines"></svg>
+    <section id="teams"></section>
+    <section class="trophy-wrap">
+      <div class="trophy-glow"></div>
+      <svg class="trophy" viewBox="0 0 260 320" aria-hidden="true">
+        <defs>
+          <linearGradient id="cupGold" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0" stop-color="#fff1a6"/>
+            <stop offset=".42" stop-color="#ffd76a"/>
+            <stop offset="1" stop-color="#b97813"/>
+          </linearGradient>
+          <linearGradient id="cupShadow" x1="0" x2="1">
+            <stop offset="0" stop-color="#8e5e10"/>
+            <stop offset="1" stop-color="#ffd76a"/>
+          </linearGradient>
+        </defs>
+        <path d="M74 44h112v52c0 54-25 94-56 94S74 150 74 96V44Z" fill="url(#cupGold)" stroke="#ffe493" stroke-width="5"/>
+        <path d="M91 61h78v37c0 38-17 66-39 66S91 136 91 98V61Z" fill="rgba(255,255,255,.26)"/>
+        <path d="M75 67H30c0 54 25 93 70 107" fill="none" stroke="url(#cupShadow)" stroke-width="19" stroke-linecap="round"/>
+        <path d="M185 67h45c0 54-25 93-70 107" fill="none" stroke="url(#cupShadow)" stroke-width="19" stroke-linecap="round"/>
+        <path d="M115 188h30v52h-30z" fill="#d79620"/>
+        <path d="M80 240h100l18 42H62z" fill="url(#cupGold)"/>
+        <path d="M44 282h172v28H44z" fill="#a56f17"/>
+        <path d="M110 50c16 22 11 74-14 104" fill="none" stroke="#fff3b0" stroke-width="8" stroke-linecap="round" opacity=".55"/>
+      </svg>
+    </section>
+    <div class="champion-focus"></div>
+    <section class="champion-card" id="championCard"></section>
+    <section class="cta">
+      <div>AI simulated this bracket.</div>
+      <div>Code, data, and football logic.</div>
+      <div>Follow Build With Abdallah for the full system.</div>
+    </section>
+    <section class="confetti" id="confetti"></section>
+    <footer>
+      <span id="disclaimer"></span>
+      <span id="site"></span>
+    </footer>
+  </main>
+  <script>
+    const DATA = __BRACKET_DATA__;
+    const $ = (id) => document.getElementById(id);
+    $("brand").textContent = DATA.brand || "Build With Abdallah";
+    $("agent").textContent = DATA.subtitle || "The Pitch Agent";
+    $("title").textContent = DATA.title || "World Cup 2026 Bracket Simulation";
+    $("disclaimer").textContent = DATA.disclaimer || "Educational prediction model — not betting advice";
+    $("site").textContent = DATA.site || "buildwithabdallah.com";
+
+    const labels = $("roundLabels");
+    (DATA.roundLabels || []).forEach((label, i) => {
+      const span = document.createElement("span");
+      span.className = `r${i}`;
+      span.textContent = label;
+      labels.appendChild(span);
+    });
+
+    const lines = $("lines");
+    (DATA.paths || []).forEach((pathData) => {
+      const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      p.setAttribute("d", pathData.d);
+      p.setAttribute("class", [
+        "line-path",
+        `stage-${pathData.stage || 1}`,
+        pathData.active ? "active" : "",
+        pathData.champion ? "champion" : "",
+      ].filter(Boolean).join(" "));
+      lines.appendChild(p);
+    });
+
+    function flagNode(team) {
+      const flag = document.createElement("div");
+      flag.className = `flag flag-art ${team.flagClass || "flag-generic"}`;
+      if (team.flagSrc) {
+        const img = document.createElement("img");
+        img.src = team.flagSrc;
+        img.alt = team.code || team.name || "flag";
+        flag.appendChild(img);
+      } else if (team.flagEmoji) {
+        const emoji = document.createElement("span");
+        emoji.className = "emoji";
+        emoji.textContent = team.flagEmoji;
+        flag.appendChild(emoji);
+      } else {
+        const code = document.createElement("span");
+        code.className = "code";
+        code.textContent = team.code || String(team.name || "?").slice(0, 3).toUpperCase();
+        flag.appendChild(code);
+      }
+      return flag;
+    }
+
+    const teams = $("teams");
+    (DATA.teams || []).forEach((team, idx) => {
+      const el = document.createElement("div");
+      el.className = `team ${team.side || ""}`;
+      team.positions.forEach((pos, i) => {
+        el.style.setProperty(`--x${i}`, `${pos.x}px`);
+        el.style.setProperty(`--y${i}`, `${pos.y}px`);
+      });
+      (team.opacityStops || [1,1,1,1,1,1]).forEach((op, i) => el.style.setProperty(`--op${i}`, op));
+      (team.scaleStops || [1,1,1,1,1,1]).forEach((sc, i) => el.style.setProperty(`--sc${i}`, sc));
+      el.style.animationDelay = `${(idx % 2) * .04}s`;
+      el.appendChild(flagNode(team));
+      const name = document.createElement("div");
+      name.className = "team-name";
+      name.textContent = team.name;
+      el.appendChild(name);
+      teams.appendChild(el);
+    });
+
+    const champion = DATA.champion || {};
+    const card = $("championCard");
+    card.appendChild(flagNode(champion));
+    const copy = document.createElement("div");
+    copy.innerHTML = `<div class="champion-kicker">CHAMPION</div><div class="champion-name"></div><div class="champion-confidence"></div>`;
+    copy.querySelector(".champion-name").textContent = champion.name || "Champion";
+    copy.querySelector(".champion-confidence").textContent = champion.confidence ? `Model confidence: ${champion.confidence}%` : "Model champion path";
+    card.appendChild(copy);
+
+    const particles = $("particles");
+    for (let i = 0; i < 58; i++) {
+      const dot = document.createElement("i");
+      dot.style.left = `${(i * 67) % 1080}px`;
+      dot.style.top = `${220 + ((i * 109) % 1240)}px`;
+      dot.style.animationDelay = `${(i % 11) * .23}s`;
+      dot.style.background = i % 5 === 0 ? "rgba(255,215,106,.9)" : "rgba(57,213,255,.85)";
+      particles.appendChild(dot);
+    }
+
+    const confetti = $("confetti");
+    const colors = ["#ffd76a", "#39d5ff", "#36e68a", "#ffffff", "#2878ff"];
+    for (let i = 0; i < 72; i++) {
+      const piece = document.createElement("i");
+      piece.style.left = `${18 + ((i * 83) % 1044)}px`;
+      piece.style.background = colors[i % colors.length];
+      piece.style.animationDelay = `${(i % 12) * .12}s`;
+      piece.style.animationDuration = `${2.1 + (i % 7) * .17}s`;
+      confetti.appendChild(piece);
+    }
+  </script>
+</body>
+</html>

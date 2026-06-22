@@ -64,20 +64,25 @@ const probeDur = (p) => {
 let hasAudio = false;
 const publicDir = path.join(__dirname, "public");
 mkdirSync(publicDir, { recursive: true });
+// Ensure the brand logo is available to staticFile() (public/ is gitignored;
+// the committed master lives in remotion/assets/).
+{
+  const logoPublic = path.join(publicDir, "brand_logo.jpg");
+  const logoMaster = path.join(__dirname, "assets", "brand_logo.jpg");
+  if (!existsSync(logoPublic) && existsSync(logoMaster)) copyFileSync(logoMaster, logoPublic);
+}
 const audioFile = "voiceover.mp3";
 if (audioPath && existsSync(audioPath)) {
   copyFileSync(audioPath, path.join(publicDir, audioFile));
   hasAudio = true;
   const aDur = probeDur(audioPath);
   const sceneSum = durations.reduce((a, b) => a + b, 0);
-  // Stretch scene timing to cover the full narration (+0.6s tail), keeping
-  // relative pacing, so the detailed script is never cut off.
+  // Scale scene timing to MATCH the narration (+0.6s tail), keeping relative
+  // pacing — both directions, so the script is never cut off AND there is no
+  // long silent tail when the VO is shorter than the scene budget.
   if (aDur > 0 && sceneSum > 0) {
-    const target = aDur + 0.6;
-    if (target > sceneSum) {
-      const k = target / sceneSum;
-      durations = durations.map((d) => Math.round(d * k * 100) / 100);
-    }
+    const k = (aDur + 0.6) / sceneSum;
+    durations = durations.map((d) => Math.round(d * k * 100) / 100);
   }
   console.log(`[remotion] audio ${aDur.toFixed(1)}s -> scenes ${durations.reduce((a, b) => a + b, 0).toFixed(1)}s`);
 }
@@ -103,7 +108,7 @@ await renderMedia({
   jpegQuality: 90,
   concurrency: 2,
   browserExecutable: existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined,
-  chromiumOptions: { gl: "swiftshader" },
+  chromiumOptions: { gl: "swiftshader", enableMultiProcessOnLinux: true },
   timeoutInMilliseconds: 120000,
 });
 console.log("✅ Remotion render complete:", outPath);

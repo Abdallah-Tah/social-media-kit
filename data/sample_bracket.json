@@ -1,0 +1,40 @@
+{
+  "title": "World Cup 2026 Bracket Simulation",
+  "subtitle": "The Pitch Agent",
+  "brand": "Build With Abdallah",
+  "site": "buildwithabdallah.com",
+  "disclaimer": "Educational prediction model — not betting advice",
+  "rounds": [
+    {
+      "name": "Round of 32",
+      "matches": [
+        {"teamA": {"name": "Germany", "code": "DE", "flag": "germany.png"}, "teamB": {"name": "South Africa", "code": "ZA", "flag": "south-africa.png"}, "winner": "Germany", "confidence": 61},
+        {"teamA": {"name": "Japan", "code": "JP", "flag": "japan.png"}, "teamB": {"name": "Morocco", "code": "MA", "flag": "morocco.png"}, "winner": "Morocco", "confidence": 54},
+        {"teamA": {"name": "Argentina", "code": "AR", "flag": "argentina.png"}, "teamB": {"name": "Norway", "code": "NO", "flag": "norway.png"}, "winner": "Argentina", "confidence": 64},
+        {"teamA": {"name": "USA", "code": "US", "flag": "usa.png"}, "teamB": {"name": "Croatia", "code": "HR", "flag": "croatia.png"}, "winner": "Croatia", "confidence": 52},
+        {"teamA": {"name": "Spain", "code": "ES", "flag": "spain.png"}, "teamB": {"name": "Ghana", "code": "GH", "flag": "ghana.png"}, "winner": "Spain", "confidence": 66},
+        {"teamA": {"name": "Uruguay", "code": "UY", "flag": "uruguay.png"}, "teamB": {"name": "Korea Rep.", "code": "KR", "flag": "korea.png"}, "winner": "Uruguay", "confidence": 57},
+        {"teamA": {"name": "England", "code": "ENG", "flag": "england.png"}, "teamB": {"name": "Canada", "code": "CA", "flag": "canada.png"}, "winner": "England", "confidence": 62},
+        {"teamA": {"name": "Netherlands", "code": "NL", "flag": "netherlands.png"}, "teamB": {"name": "Egypt", "code": "EG", "flag": "egypt.png"}, "winner": "Netherlands", "confidence": 58},
+        {"teamA": {"name": "Brazil", "code": "BR", "flag": "brazil.png"}, "teamB": {"name": "Qatar", "code": "QA", "flag": "qatar.png"}, "winner": "Brazil", "confidence": 71},
+        {"teamA": {"name": "Mexico", "code": "MX", "flag": "mexico.png"}, "teamB": {"name": "Senegal", "code": "SN", "flag": "senegal.png"}, "winner": "Senegal", "confidence": 51},
+        {"teamA": {"name": "Portugal", "code": "PT", "flag": "portugal.png"}, "teamB": {"name": "Colombia", "code": "CO", "flag": "colombia.png"}, "winner": "Portugal", "confidence": 59},
+        {"teamA": {"name": "Belgium", "code": "BE", "flag": "belgium.png"}, "teamB": {"name": "Australia", "code": "AU", "flag": "australia.png"}, "winner": "Belgium", "confidence": 56},
+        {"teamA": {"name": "France", "code": "FR", "flag": "france.png"}, "teamB": {"name": "Scotland", "code": "SCO", "flag": "scotland.png"}, "winner": "France", "confidence": 69},
+        {"teamA": {"name": "Italy", "code": "IT", "flag": "italy.png"}, "teamB": {"name": "Nigeria", "code": "NG", "flag": "nigeria.png"}, "winner": "Italy", "confidence": 55},
+        {"teamA": {"name": "Denmark", "code": "DK", "flag": "denmark.png"}, "teamB": {"name": "Chile", "code": "CL", "flag": "chile.png"}, "winner": "Denmark", "confidence": 53},
+        {"teamA": {"name": "Switzerland", "code": "CH", "flag": "switzerland.png"}, "teamB": {"name": "Ivory Coast", "code": "CI", "flag": "ivory-coast.png"}, "winner": "Switzerland", "confidence": 52}
+      ]
+    },
+    {"name": "Round of 16", "matches": []},
+    {"name": "Quarterfinals", "matches": []},
+    {"name": "Semifinals", "matches": []},
+    {"name": "Final", "matches": []}
+  ],
+  "champion": {
+    "name": "Brazil",
+    "code": "BR",
+    "flag": "brazil.png",
+    "confidence": 18
+  }
+}

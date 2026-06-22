@@ -1,0 +1,76 @@
+# Build With Abdallah — Completed / Active Projects
+# Used to boost opportunities directly related to things Abdallah has shipped.
+
+projects:
+  - name: SMKit
+    slug: smkit
+    description: Social media content engine for BuildWithAbdallah
+    repo: https://github.com/abdaltm86/social-media-kit
+    topics: [python, laravel, ai agents, automation, developer tools, telegram bot, smkit]
+    weight: 25
+    urls: []
+
+  - name: Pitch Agent
+    slug: pitch-agent
+    description: World Cup 2026 prediction and video pipeline
+    repo: https://github.com/abdaltm86/social-media-kit
+    topics: [python, ai agents, automation, raspberry pi, ffmpeg, remotion, youtube, world cup]
+    weight: 25
+    urls: []
+
+  - name: BuildWithAbdallah.com
+    slug: buildwithabdallah-website
+    description: Laravel tutorial website with Sanctum API publishing
+    repo: null
+    topics: [laravel, php, livewire, mysql, tailwind, alpinejs, apis]
+    weight: 25
+    urls:
+      - https://buildwithabdallah.com
+
+  - name: Djib-Payroll
+    slug: djib-payroll
+    description: Payroll system built with Laravel
+    repo: null
+    topics: [laravel, php, mysql, software engineering]
+    weight: 20
+    urls: []
+
+  - name: Laravel Manufacturing Work-Center System
+    slug: manufacturing-work-center
+    description: Internal manufacturing/production floor system at Kyocera AVX
+    repo: null
+    topics: [laravel, php, manufacturing software, sql server, software engineering]
+    weight: 20
+    urls: []
+
+  - name: Raspberry Pi Automation Pipeline
+    slug: rpi-automation
+    description: Raspberry Pi running OpenClaw, Telegram bot, and content pipelines
+    repo: null
+    topics: [raspberry pi, python, automation, linux, telegram bot, ai agents]
+    weight: 25
+    urls: []
+
+  - name: Telegram Approval Workflow
+    slug: telegram-approval
+    description: Native approvals and command routing through Telegram bot
+    repo: null
+    topics: [telegram bot, python, automation, apis]
+    weight: 20
+    urls: []
+
+  - name: KDP Book Production Pipeline
+    slug: kdp-pipeline
+    description: Automated paperback interior and cover generation for Amazon KDP
+    repo: null
+    topics: [python, automation, pdf, developer tools]
+    weight: 15
+    urls: []
+
+  - name: World Cup Prediction Card Pipeline
+    slug: worldcup-cards
+    description: Automated prediction Shorts with Remotion and ElevenLabs voice
+    repo: null
+    topics: [python, ai agents, remotion, ffmpeg, youtube, shorts, world cup]
+    weight: 20
+    urls: []

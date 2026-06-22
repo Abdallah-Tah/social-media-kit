@@ -1,0 +1,61 @@
+# Build With Abdallah — Technology Stack
+# Used to boost opportunities that fit the actual tools Abdallah uses daily.
+
+stack:
+  - name: Laravel
+    aliases: [laravel, livewire, filament, nova, horizon, sail]
+    weight: 20
+  - name: PHP
+    aliases: [php]
+    weight: 15
+  - name: Python
+    aliases: [python, pip, venv, uv]
+    weight: 20
+  - name: Playwright
+    aliases: [playwright, browser automation]
+    weight: 15
+  - name: ffmpeg
+    aliases: [ffmpeg, video processing]
+    weight: 15
+  - name: Telegram Bot API
+    aliases: [telegram bot, telegram api, bot api]
+    weight: 15
+  - name: Raspberry Pi
+    aliases: [raspberry pi, rpi, gpio]
+    weight: 20
+  - name: SQL Server
+    aliases: [sql server, mssql, t-sql]
+    weight: 15
+  - name: MySQL
+    aliases: [mysql, mariadb]
+    weight: 15
+  - name: Tailwind CSS
+    aliases: [tailwind, tailwindcss]
+    weight: 10
+  - name: AlpineJS
+    aliases: [alpinejs, alpine]
+    weight: 10
+  - name: OpenAI
+    aliases: [openai, gpt, chatgpt]
+    weight: 15
+  - name: Anthropic Claude
+    aliases: [claude, anthropic]
+    weight: 15
+  - name: Local LLMs
+    aliases: [ollama, local llm, self-hosted llm, llama.cpp]
+    weight: 15
+  - name: Remotion
+    aliases: [remotion, react video]
+    weight: 15
+  - name: ElevenLabs
+    aliases: [elevenlabs, tts, voice]
+    weight: 10
+  - name: GitHub Actions
+    aliases: [github actions, ci/cd, automation]
+    weight: 10
+  - name: Docker
+    aliases: [docker, container]
+    weight: 10
+  - name: Node.js
+    aliases: [node, nodejs, npm]
+    weight: 10

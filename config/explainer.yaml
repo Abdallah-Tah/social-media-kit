@@ -1,0 +1,18 @@
+# Explainer pillar — publish target is SEPARATE from the main football channel
+# (newcomer rules-explainer sub-niche). Parametrized so it never posts to the
+# main account by accident. Until a dedicated channel/token is wired, runs stay
+# local (no publish) regardless of --publish.
+publish:
+  # 2026-06-16: Abdallah chose to use the MAIN Build With Abdallah channel for
+  # now (reuses the existing smkit YouTube token) instead of a dedicated channel.
+  # Tradeoff (accepted): mixes a newcomer "what is offside" audience into the
+  # engineering/predictions subs. Reversible later — set youtube_profile to a
+  # dedicated token (e.g. "explainer" -> YOUTUBE_REFRESH_TOKEN_EXPLAINER) when a
+  # separate channel exists.
+  youtube_profile: "main"
+  crosspost_facebook: false
+  crosspost_linkedin: false   # explainer pillar skips LinkedIn by design
+  privacy: "public"
+# Hard gate: while false, explainer_short.py renders + reviews locally but
+# never uploads, even with --publish.
+channel_ready: true

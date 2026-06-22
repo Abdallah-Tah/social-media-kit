@@ -1,0 +1,30 @@
+# Build With Abdallah — Content Rules & Guardrails
+# Hard and soft constraints for the Content Intelligence Engine.
+
+rules:
+  - id: prefer_practical_tutorials
+    description: Prefer hands-on tutorials and build logs over generic news.
+    weight: 20
+
+  - id: require_buildable_or_explainable
+    description: Prefer topics Abdallah can actually build or explain from real experience.
+    weight: 20
+
+  - id: multi_format_potential
+    description: Boost topics that can become tutorial + short + LinkedIn/FB + Telegram update.
+    weight: 15
+
+  - id: avoid_gambling_finance
+    description: Avoid gambling, betting, odds, leverage, margin, forex, and get-rich-quick content.
+    weight: -25
+    keywords: [gambling, betting, casino, forex, leverage, margin, binary options, get rich quick, pyramid]
+
+  - id: world_cup_educational_only
+    description: World Cup content is allowed only when framed as software automation, analytics, data pipelines, or educational prediction models.
+    weight: -15
+    keywords: [world cup bet, world cup odds, bet on, betting tips]
+
+  - id: no_betting_advice
+    description: Never generate or promote betting advice.
+    weight: -50
+    keywords: [betting advice, betting tip, bet now, place your bet]

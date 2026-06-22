@@ -1,0 +1,45 @@
+{
+  "topics": [
+    {
+      "id": "hidden-third-place-table",
+      "title": "The 2026 World Cup Has a Hidden Table",
+      "title_lines": [
+        "The 2026 World Cup",
+        "Has a Hidden Table"
+      ],
+      "hook": "Your team can finish 3rd and still survive.",
+      "subtitle": "One goal, one draw, or one card can change the knockout path.",
+      "thumbnail_title": "HIDDEN TABLE",
+      "thumbnail_badge": "SURVIVAL LAB",
+      "caption": "The 2026 World Cup has a hidden table most fans will not notice until their team needs it.\n\nFinishing third does not always mean elimination.\n\nThe Pitch Agent breaks down the survival math:\n\n* top two from each group advance\n* selected third-place teams can still survive\n* goal difference can change everything\n* one card can matter if tiebreakers go deep\n\nNo hype. No fake certainty. Just football data explained simply.\n\nFollow BuildWithAbdallah for daily World Cup survival math.\n\n#WorldCup2026 #FootballAnalytics #SoccerData #BuildWithAbdallah #ThePitchAgent",
+      "scenes": {
+        "groups": [
+          "A", "B", "C", "D", "E", "F",
+          "G", "H", "I", "J", "K", "L"
+        ],
+        "danger_examples": [
+          "4 points may be safe",
+          "3 points may need goal difference",
+          "cards can matter if tiebreakers go deep"
+        ]
+      },
+      "voiceover": [
+        "Your team can finish third and still survive.",
+        "The twenty twenty six World Cup has twelve groups, and the table does not stop at first and second.",
+        "The top two teams from each group advance automatically.",
+        "Then comes the hidden table: selected third-place teams can still move on.",
+        "That means one goal, one draw, or even one card can change the knockout path.",
+        "In this series, we will track the simple table math that decides who is still alive.",
+        "Follow Build With Abdallah for daily World Cup survival math."
+      ],
+      "templates_next": [
+        "Can They Still Qualify?",
+        "Third-Place Danger Table",
+        "Goal Difference Swing",
+        "Yellow Card Danger Index",
+        "Bracket Path Finder",
+        "Group Chaos Meter"
+      ]
+    }
+  ]
+}

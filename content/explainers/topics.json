@@ -1,0 +1,326 @@
+{
+  "_README": "Rule bank for the 'explainer' pillar. rule_text = SOURCE OF TRUTH (vetted from IFAB). beats[] = PRE-WRITTEN, human-vetted caption strings rendered VERBATIM (rule statements are NEVER model-generated at run time; the LLM only writes hook/title/CTA). The engine refuses to render unless rule_text is non-empty AND vetted==true. `visual` names a primitive in remotion/src/primitives/. `priority` sets the daily order. In-force 2025/26 rules only — never depict proposals/trials.",
+  "topics": [
+    {
+      "id": "gk_8_second",
+      "title": "The new 8-second goalkeeper rule",
+      "search_phrase": "8 second goalkeeper rule world cup 2026 explained",
+      "priority": 1,
+      "vetted": true,
+      "source": "IFAB Law 12 (2025/26 change)",
+      "rule_text": "Old rule: a keeper could hold the ball in the hands up to 6 seconds; longer was an indirect free kick, which referees almost never gave, so keepers time-wasted freely. New rule: the keeper may hold the ball up to 8 seconds; if longer, the referee awards a CORNER KICK to the opposing team - a far bigger punishment. The countdown is visual: the referee raises an arm and counts down the last 5 seconds with the hand. This is one of the few brand-new rules at the 2026 World Cup.",
+      "visual": {
+        "type": "MatchClock",
+        "params": {
+          "mode": "gk8",
+          "countFrom": 5
+        }
+      },
+      "beats": [
+        {
+          "caption": "New for 2026: keepers get 8 seconds to hold the ball.",
+          "stress_words": [
+            "8 seconds"
+          ]
+        },
+        {
+          "caption": "The referee counts down the last 5 seconds with a raised hand.",
+          "stress_words": [
+            "5 seconds"
+          ]
+        },
+        {
+          "caption": "Hold it too long and it's a CORNER to the other team.",
+          "stress_words": [
+            "CORNER"
+          ]
+        },
+        {
+          "caption": "The old 6-second rule was almost never enforced - this one bites.",
+          "stress_words": [
+            "bites"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "offside",
+      "title": "What is offside?",
+      "search_phrase": "what is offside in soccer explained",
+      "priority": 2,
+      "vetted": true,
+      "source": "IFAB Law 11",
+      "rule_text": "Two separate things. Being in an offside POSITION is not an offence by itself; it only becomes an OFFENCE if the player gets involved in play. Offside position: any part of the head, body, or feet is both (1) in the opponents' half (level with the halfway line does not count) and (2) nearer the opponents' goal line than both the ball and the second-last opponent. Hands and arms are not counted, for anyone including the keeper. Level with the second-last opponent is onside. Timing: judged at the moment a team-mate plays the ball, not when it's received. The offence: the player must then be involved - touch the ball, interfere with an opponent, or gain an advantage from a rebound off the post, bar, official, or an opponent. No offside directly from a goal kick, throw-in, or corner. Sanction: indirect free kick.",
+      "visual": {
+        "type": "OffsideLine",
+        "params": {
+          "attackDir": "up",
+          "defenders": [
+            0.22,
+            0.42,
+            0.6,
+            0.8
+          ],
+          "secondLastY": 0.34,
+          "passer": {
+            "x": 0.5,
+            "y": 0.82
+          },
+          "attacker": {
+            "x": 0.58,
+            "startY": 0.52,
+            "endY": 0.22
+          },
+          "passFrame": 48,
+          "verdict": "offside"
+        }
+      },
+      "beats": [
+        {
+          "caption": "Offside position isn't an offence by itself.",
+          "stress_words": [
+            "offence"
+          ]
+        },
+        {
+          "caption": "You're offside only in the opponents' half, ahead of the ball and the second-last opponent.",
+          "stress_words": [
+            "second-last",
+            "opponent"
+          ]
+        },
+        {
+          "caption": "It's judged the moment the ball is played - not when you receive it.",
+          "stress_words": [
+            "moment",
+            "played"
+          ]
+        },
+        {
+          "caption": "You're only penalized if you get involved in the play.",
+          "stress_words": [
+            "involved"
+          ]
+        },
+        {
+          "caption": "No offside from a goal kick, throw-in, or corner.",
+          "stress_words": [
+            "goal",
+            "kick",
+            "throw-in",
+            "corner"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "captain_only",
+      "title": "The new captain-only rule",
+      "search_phrase": "captain only referee rule world cup 2026",
+      "priority": 3,
+      "vetted": false,
+      "source": "IFAB Law 3 guideline (2025/26)",
+      "rule_text": "A new guideline to cut down on players mobbing the referee: only the team captain may approach the referee in certain situations, and must do so respectfully. Normal player-referee conversation is still allowed, and the captain helps steer team-mates away. If the goalkeeper is captain, the team must tell the referee before kickoff which outfield player will approach instead. Any player who shows dissent still gets a yellow card.",
+      "visual": {
+        "type": "RefereeApproach",
+        "params": {}
+      },
+      "beats": [
+        {
+          "caption": "New 2026 guideline: only the captain may approach the referee.",
+          "stress_words": [
+            "only",
+            "captain"
+          ]
+        },
+        {
+          "caption": "It's there to stop players mobbing the official.",
+          "stress_words": [
+            "mobbing"
+          ]
+        },
+        {
+          "caption": "If the keeper is captain, a chosen outfield player approaches instead.",
+          "stress_words": []
+        },
+        {
+          "caption": "Dissent still earns a yellow card.",
+          "stress_words": [
+            "yellow",
+            "card"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "penalty",
+      "title": "What is a penalty kick?",
+      "search_phrase": "penalty kick soccer rules explained",
+      "priority": 4,
+      "vetted": true,
+      "source": "IFAB Law 14",
+      "rule_text": "Given for a direct-free-kick foul by the defending team inside its own penalty area. Taken from the penalty spot, about 11 metres (12 yards) from goal, one-on-one with the keeper. The keeper must stay on the goal line, between the posts, with part of one foot on or level with the line until the ball is kicked. Every other player stays outside the box, behind the ball, and outside the arc until it's struck. The taker can't touch the ball again until another player does. (Note: a proposal to make the ball dead after a save is NOT in force - do not teach it.)",
+      "visual": {
+        "type": "PenaltySpot",
+        "params": {
+          "verdict": "goal"
+        }
+      },
+      "beats": [
+        {
+          "caption": "A penalty is given for a direct-free-kick foul inside the box.",
+          "stress_words": [
+            "inside",
+            "box"
+          ]
+        },
+        {
+          "caption": "Taken from the spot, about 12 yards out, one-on-one with the keeper.",
+          "stress_words": [
+            "spot"
+          ]
+        },
+        {
+          "caption": "The keeper must stay on the line until the ball is kicked.",
+          "stress_words": [
+            "on the line"
+          ]
+        },
+        {
+          "caption": "Everyone else stays outside the box and arc until it's struck.",
+          "stress_words": []
+        }
+      ]
+    },
+    {
+      "id": "handball",
+      "title": "What counts as handball?",
+      "search_phrase": "handball rule soccer explained",
+      "priority": 5,
+      "vetted": true,
+      "source": "IFAB Law 12",
+      "rule_text": "Not every ball hitting an arm is handball. It's an offence when a player deliberately handles the ball or makes their body unnaturally bigger with the arm. A goal scored directly off the hand or arm does not count, even if accidental. The arm boundary is roughly the bottom of the armpit - contact above that isn't handball. Accidental contact with the arm in a natural position is usually not penalised. The keeper may handle inside their own area, but not from a deliberate back-pass or throw-in by a team-mate.",
+      "visual": {
+        "type": "HandballZone",
+        "params": {
+          "verdict": "handball"
+        }
+      },
+      "beats": [
+        {
+          "caption": "Not every ball hitting an arm is handball.",
+          "stress_words": [
+            "not every"
+          ]
+        },
+        {
+          "caption": "It's an offence if it's deliberate, or the arm makes the body unnaturally bigger.",
+          "stress_words": [
+            "deliberate",
+            "unnaturally bigger"
+          ]
+        },
+        {
+          "caption": "A goal off the hand never counts - even by accident.",
+          "stress_words": [
+            "never counts"
+          ]
+        },
+        {
+          "caption": "The line is the bottom of the armpit; above that isn't handball.",
+          "stress_words": [
+            "armpit"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cards",
+      "title": "Yellow & red cards",
+      "search_phrase": "yellow card red card soccer rules explained",
+      "priority": 6,
+      "vetted": true,
+      "source": "IFAB Law 12",
+      "rule_text": "Yellow card = a caution, an official warning. Two yellows in one match = an automatic red. Red card = sent off: the player leaves and is NOT replaced, so the team plays the rest of the match a player short. Typical yellows: reckless fouls, deliberately stopping a promising attack, dissent, time-wasting, repeated fouling. Straight reds: a dangerous or violent challenge, violent conduct, denying a clear goal-scoring chance by a foul or deliberate handball, or offensive/abusive language or gestures.",
+      "visual": {
+        "type": "CardSystem",
+        "params": {
+          "sequence": [
+            "yellow",
+            "yellow",
+            "red"
+          ]
+        }
+      },
+      "beats": [
+        {
+          "caption": "Yellow card = a caution, an official warning.",
+          "stress_words": [
+            "caution"
+          ]
+        },
+        {
+          "caption": "Two yellows in a match = an automatic red.",
+          "stress_words": [
+            "automatic red"
+          ]
+        },
+        {
+          "caption": "Red card = sent off, and the team gets NO replacement.",
+          "stress_words": [
+            "NO replacement"
+          ]
+        },
+        {
+          "caption": "So a red means playing the rest a player short.",
+          "stress_words": [
+            "a player short"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "stoppage_time",
+      "title": "Why do they add time?",
+      "search_phrase": "stoppage time added time soccer explained",
+      "priority": 7,
+      "vetted": true,
+      "source": "IFAB Law 7",
+      "rule_text": "A match is two halves of 45 minutes and the clock never stops. The referee adds time at the end of each half for stoppages: substitutions, injuries, goal celebrations, time-wasting, and VAR checks. The fourth official shows the minimum minutes to be added on a board; the referee can play more if needed. Play ends only when the referee decides - which is why a goal can still come well after the 90th minute.",
+      "visual": {
+        "type": "MatchClock",
+        "params": {
+          "mode": "stoppage",
+          "baseMinutes": 90,
+          "addedMinutes": 6
+        }
+      },
+      "beats": [
+        {
+          "caption": "The clock never stops - it runs all 45 minutes.",
+          "stress_words": [
+            "never stops"
+          ]
+        },
+        {
+          "caption": "Time lost to subs, injuries, celebrations and VAR gets added on.",
+          "stress_words": [
+            "added on"
+          ]
+        },
+        {
+          "caption": "The fourth official shows the minimum minutes on a board.",
+          "stress_words": [
+            "minimum"
+          ]
+        },
+        {
+          "caption": "The referee can play more - so goals come after 90.",
+          "stress_words": [
+            "after 90"
+          ]
+        }
+      ]
+    }
+  ]
+}

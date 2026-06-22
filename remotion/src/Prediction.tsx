@@ -11,10 +11,13 @@ import {
   useVideoConfig,
 } from "remotion";
 import { THEME, FONT } from "./theme";
+import { BrandFrame } from "./brand/BrandFrame";
 
 // ============================================================================
 // Full-screen World Cup prediction Short — the ENTIRE 1080x1920 canvas IS the
 // prediction card (clean sports-analytics product look). No poster wrapper.
+// Chrome (header lockup, corner blocks, dot grids, watermark, footer) comes
+// from the shared <BrandFrame>; this file only renders the prediction body.
 // ============================================================================
 
 export type PredictionProps = {
@@ -28,6 +31,8 @@ export type PredictionProps = {
   probs: { homeP: number; drawP: number; awayP: number }; // 0..100
   factors: string[];
   finalCall: string;      // e.g. "Iran 1 – 0"
+  ledger?: string;        // continuity banner, e.g. "Ledger 16-10 · 61.5%" (computed, never faked)
+  nextMatch?: string;     // return trigger, e.g. "Argentina vs Saudi Arabia"
   durations: number[];
   hasAudio: boolean;
   audioFile: string;
@@ -35,53 +40,9 @@ export type PredictionProps = {
   awayFlag: string;
 };
 
-const safeTop = 96;
-
-// ---- shared full-screen chrome ---------------------------------------------
-
-const CornerAccents: React.FC = () => (
-  <>
-    <div style={{ position: "absolute", top: 0, right: 0, width: 0, height: 0, borderTop: "240px solid #0b2a6b", borderLeft: "240px solid transparent", opacity: 0.9 }} />
-    <div style={{ position: "absolute", top: 0, right: 0, width: 0, height: 0, borderTop: "150px solid " + THEME.blue, borderLeft: "150px solid transparent" }} />
-    <div style={{ position: "absolute", bottom: 0, left: 0, width: 0, height: 0, borderBottom: "190px solid rgba(8,102,255,.10)", borderRight: "190px solid transparent" }} />
-    {/* faint giant watermark */}
-    <div style={{ position: "absolute", right: -40, top: 560, fontFamily: FONT, fontWeight: 900, fontSize: 760, color: THEME.navy, opacity: 0.04, lineHeight: 1 }}>A</div>
-    {/* dotted pattern bottom-left */}
-    <div style={{ position: "absolute", left: 70, bottom: 150, display: "grid", gridTemplateColumns: "repeat(6,16px)", gap: 12, opacity: 0.4 }}>
-      {Array.from({ length: 30 }).map((_, i) => (
-        <div key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: THEME.blue }} />
-      ))}
-    </div>
-  </>
-);
-
-const Branding: React.FC = () => (
-  <div style={{ position: "absolute", top: safeTop, left: 80, right: 80, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-    <div>
-      <div style={{ fontFamily: FONT, fontWeight: 800, fontSize: 40, color: THEME.ink }}>
-        Build With <span style={{ color: THEME.blue }}>Abdallah</span>
-      </div>
-      <div style={{ fontFamily: FONT, fontWeight: 800, fontSize: 19, letterSpacing: 3, color: THEME.muted, marginTop: 6 }}>
-        THE PITCH AGENT • INDEPENDENT FOOTBALL ANALYTICS
-      </div>
-    </div>
-    <div style={{ width: 88, height: 88, borderRadius: 20, background: "#fff", border: `4px solid ${THEME.blue}`, display: "grid", placeItems: "center", fontFamily: FONT, fontWeight: 900, fontSize: 46, color: THEME.navy, boxShadow: "0 10px 24px rgba(8,42,96,.14)" }}>A</div>
-  </div>
-);
-
-const Footer: React.FC = () => (
-  <div style={{ position: "absolute", bottom: 70, left: 0, right: 0, textAlign: "center", fontFamily: FONT, fontSize: 22, color: THEME.muted, opacity: 0.85 }}>
-    The Pitch Agent by BuildWithAbdallah&nbsp;&nbsp;|&nbsp;&nbsp;Independent analytics&nbsp;&nbsp;|&nbsp;&nbsp;Not affiliated with FIFA
-  </div>
-);
-
+// Chrome is the shared BrandFrame; scenes render their body as its children.
 const Frame: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <AbsoluteFill style={{ background: THEME.bgGrad, fontFamily: FONT }}>
-    <CornerAccents />
-    <Branding />
-    {children}
-    <Footer />
-  </AbsoluteFill>
+  <BrandFrame>{children}</BrandFrame>
 );
 
 const SectionLabel: React.FC<{ text: string; delay?: number }> = ({ text, delay = 0 }) => {
@@ -112,13 +73,23 @@ const Flag: React.FC<{ src: string; name: string; dir: number; delay: number }> 
 
 const MatchSetup: React.FC<{ p: PredictionProps }> = ({ p }) => {
   const title = useSpringIn(4);
-  const vs = useSpringIn(20, 9);
-  const hook = useSpringIn(38);
+  const subO = interpolate(useSpringIn(12), [0, 1], [0, 1]);
+  const ledgerO = interpolate(useSpringIn(20), [0, 1], [0, 1]);
+  const vs = useSpringIn(26, 9);
+  const hook = useSpringIn(40);
   return (
     <Frame>
       <div style={{ position: "absolute", top: 330, left: 80, right: 80, textAlign: "center" }}>
         <div style={{ fontFamily: FONT, fontWeight: 900, fontSize: 96, letterSpacing: -1, color: THEME.navy, opacity: title, transform: `translateY(${interpolate(title, [0, 1], [40, 0])}px)` }}>MATCH PREDICTION</div>
-        <div style={{ fontFamily: FONT, fontSize: 44, color: THEME.muted, marginTop: 18, opacity: interpolate(useSpringIn(12), [0, 1], [0, 1]) }}>{p.home} vs {p.away} · {p.competition}</div>
+        <div style={{ fontFamily: FONT, fontSize: 44, color: THEME.muted, marginTop: 18, opacity: subO }}>{p.home} vs {p.away} · {p.competition}</div>
+        {p.ledger ? (
+          <div style={{ marginTop: 30, display: "flex", justifyContent: "center", opacity: ledgerO }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 14, background: "#fff", border: `2px solid ${THEME.line}`, borderRadius: 999, padding: "16px 36px", fontFamily: FONT, fontWeight: 800, fontSize: 38, color: THEME.navy, boxShadow: "0 8px 22px rgba(8,42,96,.10)" }}>
+              <span style={{ width: 16, height: 16, borderRadius: "50%", background: THEME.blue, display: "inline-block" }} />
+              {p.ledger}
+            </div>
+          </div>
+        ) : null}
       </div>
       <div style={{ position: "absolute", top: 720, left: 80, right: 80, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <Flag src={p.homeFlag} name={p.home} dir={-1} delay={12} />
@@ -220,11 +191,22 @@ const FinalCall: React.FC<{ p: PredictionProps }> = ({ p }) => {
     <Frame>
       <div style={{ position: "absolute", top: 470, left: 90, right: 90, textAlign: "center" }}>
         <SectionLabel text="FINAL MODEL CALL" />
-        <div style={{ marginTop: 50, fontFamily: FONT, fontWeight: 900, fontSize: 150, letterSpacing: -3, color: THEME.navy, opacity: call, transform: `scale(${interpolate(call, [0, 1], [0.7, 1]) * pulse})` }}>{p.finalCall}</div>
+        <div style={{ marginTop: 50, fontFamily: FONT, fontWeight: 900, fontSize: 104, letterSpacing: -2, lineHeight: 1.02, color: THEME.navy, opacity: call, transform: `scale(${interpolate(call, [0, 1], [0.7, 1]) * pulse})` }}>{p.finalCall}</div>
         <div style={{ marginTop: 26, fontFamily: FONT, fontSize: 38, color: THEME.muted }}>Independent model prediction</div>
       </div>
+      {p.nextMatch ? (
+        <div style={{ position: "absolute", bottom: 470, left: 110, right: 110, opacity: interpolate(useSpringIn(30), [0, 1], [0, 1]) }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 22, background: "#fff", border: `3px solid ${THEME.line}`, borderRadius: 18, padding: "26px 32px", boxShadow: "0 8px 20px rgba(8,42,96,.08)" }}>
+            <div style={{ width: 16, height: 16, borderRadius: "50%", background: THEME.blue, flex: "0 0 16px" }} />
+            <div style={{ textAlign: "left" }}>
+              <div style={{ fontFamily: FONT, fontSize: 30, fontWeight: 700, color: THEME.muted, letterSpacing: 1 }}>Next prediction</div>
+              <div style={{ fontFamily: FONT, fontSize: 44, fontWeight: 900, color: THEME.navy, marginTop: 4 }}>{p.nextMatch}</div>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div style={{ position: "absolute", bottom: 250, left: 110, right: 110, textAlign: "center", opacity: interpolate(useSpringIn(40), [0, 1], [0, 1]) }}>
-        <div style={{ background: THEME.blue, color: "#fff", borderRadius: 16, padding: "24px 30px", fontFamily: FONT, fontWeight: 800, fontSize: 38 }}>Comment your score prediction</div>
+        <div style={{ background: THEME.blue, color: "#fff", borderRadius: 16, padding: "24px 30px", fontFamily: FONT, fontWeight: 800, fontSize: 38 }}>Comment who you've got winning</div>
         <div style={{ marginTop: 20, fontFamily: FONT, fontSize: 34, fontWeight: 700, color: THEME.blue }}>Follow for daily World Cup model calls</div>
       </div>
     </Frame>
