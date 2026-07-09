@@ -112,9 +112,10 @@ async function loadIntelligence(){
 }
 async function loadSnapshots(){
  const snaps=await (await fetch('/api/intelligence/snapshots')).json();
- scount.textContent='('+snaps.length+')';
- snapshots.innerHTML=snaps.length?'<ul>'+snaps.slice(0,20).map(s=>`<li><a href="#" onclick="loadSnapshot('${s.name}');return false">${s.name}</a> <span class=muted>${s.when}</span></li>`).join('')+'</ul>':'No snapshots yet.';
- if(snaps.length) loadSnapshot(snaps[0].name);
+ const list=(snaps.snapshots||[]);
+ scount.textContent='('+list.length+')';
+ snapshots.innerHTML=list.length?'<ul>'+list.slice(0,20).map(s=>`<li><a href="#" onclick="loadSnapshot('${s.name}');return false">${s.name}</a> <span class=muted>${s.when}</span></li>`).join('')+'</ul>':'No snapshots yet.';
+ if(list.length) loadSnapshot(list[0].name);
 }
 async function loadSnapshot(name){
  loading.hidden=false;
