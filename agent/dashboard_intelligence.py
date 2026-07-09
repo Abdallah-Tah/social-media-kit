@@ -39,7 +39,7 @@ INTELLIGENCE_PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 body{font:14px/1.45 system-ui,sans-serif;margin:0;background:var(--bg);color:var(--text)}
 header{padding:14px 22px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;gap:14px;align-items:center;position:sticky;top:0;z-index:20}
 h1{margin:0;font-size:17px;letter-spacing:.2px}.muted{color:var(--muted);font-size:12px}
-main{max-width:1400px;margin:0 auto;padding:18px;display:grid;gap:16px;grid-template-columns:minmax(0,1fr) 300px}
+main{max-width:1400px;margin:0 auto;padding:18px;padding-bottom:calc(24px + env(safe-area-inset-bottom));display:grid;gap:16px;grid-template-columns:minmax(0,1fr) 300px}
 .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px}
 label{display:block;font-size:12px;color:var(--muted);margin:6px 0 3px}
 input,select{width:100%;padding:8px;border-radius:7px;border:1px solid var(--border);background:#0b1120;color:var(--text)}
@@ -104,14 +104,16 @@ a{color:#60a5fa}
 .detail-box{background:#0b1120;border:1px solid var(--border);border-radius:10px;padding:10px}
 .detail-box b{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px}
 .hidden{display:none}#loading{margin:14px 0}
-.quick{display:flex;gap:6px;flex-wrap:wrap}.quick button{font-size:11px;padding:6px 10px}
+.quick{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:8px}.quick button{font-size:11px;padding:6px 10px}
 .expando{display:inline-flex;align-items:center;gap:4px;color:#60a5fa;cursor:pointer;font-size:11px;margin-top:4px}
 .expando:hover{text-decoration:underline}
 
 @media (max-width:900px){
- main{grid-template-columns:1fr}
+ main{grid-template-columns:1fr;padding:12px;padding-bottom:calc(28px + env(safe-area-inset-bottom))}
  .card-grid{grid-template-columns:1fr}
  .assistant-grid{grid-template-columns:repeat(2,1fr)}
+ .quick{gap:5px;padding-bottom:12px}
+ .quick button{font-size:10px;padding:5px 8px}
 }
 </style></head><body>
 <header><h1>🧠 smkit Intelligence</h1><span class=muted>AI Content Operating System</span><a href="/dashboard" style="color:#60a5fa;margin-left:auto;font-size:12px">Legacy Dashboard →</a></header>
