@@ -73,6 +73,10 @@ ul{padding-left:18px;margin:6px 0}a{color:#60a5fa}
 .score-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:5px 0}
 .score-row b{font-weight:600}
 kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px}
+.quick{display:flex;gap:8px;flex-wrap:wrap}
+.quick button{font-size:12px;padding:8px 10px}
+.source-list{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.source-list .pill{cursor:default}
 </style></head><body>
 <header><h1>🧠 smkit Intelligence</h1><span class=muted>read-only dashboard</span>
 <a href="/" style="color:#60a5fa;margin-left:auto">← Main dashboard</a></header>
@@ -91,6 +95,21 @@ kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font
    <button class=secondary onclick=loadSnapshots()>Load Latest Snapshot</button>
   </div>
   <div id=loading class=muted hidden>working…</div>
+ </div>
+
+ <div class=card>
+  <h3 style=margin-top:0>Quick Filters</h3>
+  <div class=quick>
+   <button class=secondary onclick=setFilter(70,'','')">🔥 Hot Now</button>
+   <button class=secondary onclick=setFilter(50,'','')">💎 Hidden Gems</button>
+   <button class=secondary onclick=setFilter(0,'exploding','')">🚀 Exploding</button>
+   <button class=secondary onclick=setFilter(0,'growing','')">📈 Growing</button>
+   <button class=secondary onclick=setFilter(60,'','')">⭐ High Authority</button>
+   <button class=secondary onclick=setFilter(0,'','youtube_short')">🎥 Great for Shorts</button>
+   <button class=secondary onclick=setFilter(0,'','linkedin_post')">💼 Great for LinkedIn</button>
+   <button class=secondary onclick=setFilter(0,'','tutorial')">🧑‍💻 Tutorials</button>
+   <button class=secondary onclick=setFilter(0,'','newsletter')">📬 Newsletter</button>
+  </div>
  </div>
 
  <div class=card>
@@ -121,6 +140,14 @@ function badge(score){return `<span class="pill ${cls(score)}">${score}</span>`}
 function trendBadge(d){return `<span class="pill ${{exploding:'good',growing:'good',stable:'warn',declining:'bad',dead:'bad'}[d]||'warn'}">${d}</span>`}
 let currentCards=[];
 const EMOJI={blog:'📝',youtube_short:'🎬',linkedin_post:'💼',twitter_thread:'🧵',newsletter:'📬',tutorial:'🧑‍💻'};
+function setFilter(min,trendDir,ctypeVal){minScore.value=min||'';trend.value=trendDir||'';ctype.value=ctypeVal||'';loadIntelligence();}
+function clusterSources(c){
+ const sources=(c.cluster&&c.cluster.sources)||[];
+ const consensus=[];
+ if(sources.length>=4)consensus.push(`Consensus: ${sources.length} sources`);
+ else if(sources.length>1)consensus.push(`Cluster: ${sources.length} related pickups`);
+ return {sources,consensus};
+}
 async function loadIntelligence(){
  loading.hidden=false;cards.innerHTML='';
  const params=new URLSearchParams({topic:topic.value,min_score:minScore.value,trend:trend.value,content_type:ctype.value,include_seen:includeSeen.checked?'1':'0'});
@@ -141,8 +168,7 @@ async function loadSnapshot(name){
  if(data.top_brief){briefCard.hidden=false;briefOut.textContent=JSON.stringify(data.top_brief,null,2);}
 }
 function progressBar(score){
- const c=cls(score);
- const blocks=Math.round(score/10);
+ const c=cls(score);const blocks=Math.round(score/10);
  return `<div class=barwrap><div class="bar ${c}" style="width:${score}%"></div></div><div style="font-size:11px;color:#94a3b8;margin-top:2px">${'█'.repeat(blocks)}${'░'.repeat(10-blocks)} ${score}</div>`;
 }
 function renderCards(list){
@@ -150,10 +176,8 @@ function renderCards(list){
  if(!list.length){cards.innerHTML='<span class=muted>No cards match filters.</span>';return}
  cards.innerHTML='<div class=card-grid>'+list.map((c,i)=>{
   const o=c.opportunity||{};const r=c.recommendation||{};const t=c.trend||{};const a=c.authority||{};
-  const fit=(c.platform_fit||[]).slice(0,5);
-  const breakdown=(c.score_breakdown||[]);
-  const why=(c.why_care||{}).bullets||[];
-  const recEmoji=EMOJI[r.recommendation]||'🎯';
+  const fit=(c.platform_fit||[]).slice(0,5);const why=(c.why_care||{}).bullets||[];
+  const recEmoji=EMOJI[r.recommendation]||'🎯'; const src=clusterSources(c);
   return `<div class=icard>
    <div class=head>
     <div>
@@ -167,7 +191,10 @@ function renderCards(list){
    <div class=meta>
     ${trendBadge(t.direction)} ${badge(r.confidence_score)} <span class=pill>Reach ${c.estimated_reach||0}%</span> <span class=pill>Difficulty ${c.estimated_difficulty||'Unknown'}</span> <span class=pill>Authority ${fmt(a.final_score||0)}</span>
    </div>
-   <div style="margin-top:8px"><b style="font-size:12px;color:#94a3b8">Platform Fit</b></div>
+   <div style="margin-top:8px"><b style="font-size:12px;color:#94a3b8">Source Consensus</b></div>
+   <div class=why>${src.consensus.map(b=>`<span class=pill>${escapeHtml(b)}</span>`).join(' ')||'<span class=muted>Single source</span>'} <span class=muted>(${src.sources.length})</span></div>
+   <div class=source-list>${src.sources.map(s=>`<span class=pill>${escapeHtml(s)}</span>`).join(' ')}</div>
+   <div style="margin-top:8px"><b style="font-size:13px;color:#94a3b8">Platform Fit</b></div>
    ${fit.length?fit.map(f=>`<div class=fit><span>${f.emoji} ${f.platform.replace(/_/g,' ')}${f.recommended?' ⭐':''}</span><span class=${cls(f.score)}>${f.score}%</span></div>`).join(''):'<div class=muted>No platform fit data</div>'}
    <div class=actions>
     <button onclick="details(${i})">View Details</button>
@@ -197,7 +224,7 @@ function details(i){
  </div>
  <div class=row>
   <div class=card><b style="font-size:13px;color:#94a3b8">Score Breakdown</b><div style=margin-top:8px>${breakdownHtml}</div><div class=score-row style="border-top:1px solid #334155;margin-top:6px;padding-top:6px"><span>Final</span><b>${o.opportunity_score||0}</b></div></div>
-  <div class=card><b style="font-size:13px;color:#94a3b8">Sources</b><ul>${(c.cluster&&c.cluster.sources||[]).map(s=>`<li>${escapeHtml(s)}</li>`).join('')}</ul></div>
+  <div class=card><b style="font-size:13px;color:#94a3b8">Sources <span class=muted>(${c.cluster&&c.cluster.sources&&c.cluster.sources.length||0})</span></b><ul>${(c.cluster&&c.cluster.sources||[]).map(s=>`<li>${escapeHtml(s)}</li>`).join('')}</ul></div>
  </div>`;
 }
 async function generateBrief(i){
