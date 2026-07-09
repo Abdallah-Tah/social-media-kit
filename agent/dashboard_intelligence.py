@@ -77,6 +77,10 @@ kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font
 .quick button{font-size:12px;padding:8px 10px}
 .source-list{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .source-list .pill{cursor:default}
+.spark{font-size:16px;color:#4ade80;letter-spacing:-1px}
+.assistant{background:linear-gradient(135deg,#1e3a8a 0%,#172554 100%);border:1px solid #2563eb}
+.assistant h3{margin-top:0}
+.delta.up{color:#4ade80}.delta.down{color:#f87171}
 </style></head><body>
 <header><h1>🧠 smkit Intelligence</h1><span class=muted>read-only dashboard</span>
 <a href="/" style="color:#60a5fa;margin-left:auto">← Main dashboard</a></header>
@@ -122,6 +126,11 @@ kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font
   <div id=snapshots class=muted>…</div>
  </div>
 
+ <div class="card assistant" id=assistantCard hidden>
+  <h3 style=margin-top:0>🤖 AI Assistant Summary</h3>
+  <div id=assistant></div>
+ </div>
+
  <div class=card id=detailsCard hidden>
   <h3 style=margin-top:0>Story Details</h3>
   <div id=details></div>
@@ -148,11 +157,26 @@ function clusterSources(c){
  else if(sources.length>1)consensus.push(`Cluster: ${sources.length} related pickups`);
  return {sources,consensus};
 }
+function sparkline(points){if(!points||!points.length)return'';const bars='▁▂▃▄▅▆▇█';const max=Math.max(...points,1);return points.map(v=>{bars[Math.min(7,Math.max(0,Math.round((v/max)*7)))]}).join('');}
+function renderAssistant(cards){
+ assistantCard.hidden=false;
+ const actionable=cards.filter(c=>(c.opportunity||{}).opportunity_score>=60);
+ const top=cards[0]||{}; const rec=(top.recommendation||{}).recommendation||'none';
+ const production={youtube_short:'7 min',linkedin_post:'5 min',twitter_thread:'8 min',newsletter:'12 min',blog:'60 min',tutorial:'90 min'}[rec]||'15 min';
+ assistant.innerHTML=`<div class=details-grid>
+  <div class=detail-box><b>Stories worth creating</b>${actionable.length}</div>
+  <div class=detail-box><b>Highest Opportunity</b>${escapeHtml(top.cluster&&top.cluster.headline||'—')}</div>
+  <div class=detail-box><b>Best Format</b>${EMOJI[rec]||'🎯'} ${rec.replace(/_/g,' ')}</div>
+  <div class=detail-box><b>Estimated Production Time</b>${production}</div>
+  <div class=detail-box><b>Potential Audience</b>Developers / Builders</div>
+  <div class=detail-box><b>Recommended Action</b>Generate brief for #1</div>
+ </div>`;
+}
 async function loadIntelligence(){
  loading.hidden=false;cards.innerHTML='';
  const params=new URLSearchParams({topic:topic.value,min_score:minScore.value,trend:trend.value,content_type:ctype.value,include_seen:includeSeen.checked?'1':'0'});
  const data=await (await fetch('/api/intelligence/run?'+params)).json();
- loading.hidden=true;currentCards=data.cards||[];renderCards(currentCards);
+ loading.hidden=true;currentCards=data.cards||[];renderCards(currentCards);renderAssistant(currentCards);
 }
 async function loadSnapshots(){
  const snaps=await (await fetch('/api/intelligence/snapshots')).json();
@@ -164,7 +188,7 @@ async function loadSnapshots(){
 async function loadSnapshot(name){
  loading.hidden=false;
  const data=await (await fetch('/api/intelligence/snapshot?name='+encodeURIComponent(name))).json();
- loading.hidden=true;currentCards=data.cards||[];renderCards(currentCards);
+ loading.hidden=true;currentCards=data.cards||[];renderCards(currentCards);renderAssistant(currentCards);
  if(data.top_brief){briefCard.hidden=false;briefOut.textContent=JSON.stringify(data.top_brief,null,2);}
 }
 function progressBar(score){
@@ -189,7 +213,7 @@ function renderCards(list){
    ${progressBar(o.opportunity_score||0)}
    <div class=rec>${recEmoji} ${r.recommendation.replace(/_/g,' ')} <span class=muted>— ${escapeHtml(r.suggested_hook||'')}</span></div>
    <div class=meta>
-    ${trendBadge(t.direction)} ${badge(r.confidence_score)} <span class=pill>Reach ${c.estimated_reach||0}%</span> <span class=pill>Difficulty ${c.estimated_difficulty||'Unknown'}</span> <span class=pill>Authority ${fmt(a.final_score||0)}</span>
+    ${trendBadge(t.direction)} ${sparkline(t.sparkline)} ${badge(r.confidence_score)} <span class=pill>Reach ${c.estimated_reach||0}%</span> <span class=pill>Difficulty ${c.estimated_difficulty||'Unknown'}</span> <span class=pill>Authority ${fmt(a.final_score||0)}</span>
    </div>
    <div style="margin-top:8px"><b style="font-size:12px;color:#94a3b8">Source Consensus</b></div>
    <div class=why>${src.consensus.map(b=>`<span class=pill>${escapeHtml(b)}</span>`).join(' ')||'<span class=muted>Single source</span>'} <span class=muted>(${src.sources.length})</span></div>
@@ -215,6 +239,7 @@ function details(i){
   <div class=detail-box><b>Confidence</b>${badge(r.confidence_score)}</div>
   <div class=detail-box><b>Estimated Reach</b>${c.estimated_reach||0}%</div>
   <div class=detail-box><b>Difficulty</b>${c.estimated_difficulty||'Unknown'}</div>
+  <div class=detail-box><b>History</b>${renderHistory(c.history_delta)}</div>
  </div>
  <div class=card style=margin-bottom:12px>
   <b style="font-size:13px;color:#94a3b8">Why It Matters</b>
@@ -231,6 +256,12 @@ async function generateBrief(i){
  const c=currentCards[i];
  const data=await (await fetch('/api/intelligence/brief',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({card:c})})).json();
  briefCard.hidden=false;briefOut.textContent=JSON.stringify(data.brief,null,2);
+}
+function renderHistory(h){
+  if(!h||h.previous===null||h.previous===undefined)return '<span class=muted>New story</span>';
+  const delta=(h.current||0)-h.previous;
+  const cls=delta>=0?'up':'down';const sign=delta>=0?'▲':'▼';
+  return `<span class="delta ${cls}">${sign} ${Math.abs(delta)}</span> <span class=muted>from ${h.previous}</span>`;
 }
 function openSource(url){if(url)window.open(url,'_blank')}
 function escapeHtml(t){return String(t||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}

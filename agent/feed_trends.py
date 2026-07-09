@@ -39,7 +39,22 @@ class TrendBreakdown:
             "engagement_score": round(self.engagement_score, 2),
             "signals": self.signals,
             "recommendation": self.recommendation,
+            "sparkline": self._sparkline(),
         }
+
+    def _sparkline(self) -> list[float]:
+        """Generate a 7-point sparkline from velocity and component scores."""
+        base = max(0.0, (self.velocity + 1) / 2)
+        points = [
+            base * 0.6,
+            base * 0.75,
+            base * 0.9,
+            base * 1.0,
+            base * self.freshness_score,
+            base * self.coverage_score,
+            base * self.diversity_score,
+        ]
+        return [round(min(1.0, p) * 100, 1) for p in points]
 
 
 # ── Time-window helpers ─────────────────────────────────────────────────────
