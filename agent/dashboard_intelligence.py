@@ -35,6 +35,12 @@ from .feed_intelligence import (
     save_intelligence,
 )
 from .feed_content_hook import build_brief, ContentBrief
+from .social_drafts import (
+    create_social_drafts_from_blog,
+    list_social_drafts,
+    load_social_draft,
+    update_social_draft,
+)
 
 INTEL_DIR = Path(__file__).resolve().parents[1] / "content" / "feed" / "intelligence"
 SNAPSHOTS_DIR = INTEL_DIR
@@ -199,12 +205,26 @@ a{color:#60a5fa}
   </div>
   <div id=draftEditorTab>
    <div id=draftPublishBanner style="display:none;margin-bottom:10px;padding:8px 12px;background:rgba(34,197,94,.12);border:1px solid var(--good);border-radius:8px;color:var(--good);font-size:12px"></div>
+   <div id=socialGenerator class=card style="display:none;margin-bottom:12px;background:#0f172a">
+    <b style="font-size:12px;color:var(--muted)">Generate Social Drafts</b>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0" id=socialPlatforms>
+     <label class=pill><input type=checkbox value=linkedin checked> LinkedIn</label>
+     <label class=pill><input type=checkbox value=facebook> Facebook</label>
+     <label class=pill><input type=checkbox value=x> X</label>
+     <label class=pill><input type=checkbox value=threads> Threads</label>
+     <label class=pill><input type=checkbox value=reddit> Reddit</label>
+     <label class=pill><input type=checkbox value=newsletter checked> Newsletter</label>
+     <label class=pill><input type=checkbox value=youtube> YouTube</label>
+    </div>
+    <button class=small onclick="generateSocialDrafts()">Generate Social Drafts</button>
+   </div>
    <label>Title</label><input id=draftTitle>
    <label>Slug</label><input id=draftSlug>
    <label>Status</label><select id=draftStatus onchange="togglePublishButton()"><option value=draft>draft</option><option value=reviewed>reviewed</option><option value=approved>approved</option><option value=published>published</option></select>
    <label>Body (Markdown)</label><textarea id=draftBody rows=10 style="font-family:ui-monospace,monospace"></textarea>
    <div id=draftMeta class=muted style="margin:8px 0"></div>
    <div id=draftPublishStatus class=muted style="margin:8px 0;min-height:18px"></div>
+   <div id=socialDraftsList style="margin-top:12px"></div>
    <div style="display:flex;gap:8px;flex-wrap:wrap">
     <button onclick="saveDraftEdits()">💾 Save Draft</button>
     <button class=secondary onclick="loadDraftWorkspace()">View Drafts</button>
@@ -415,6 +435,63 @@ async function saveDraftEdits(){
  if(data.ok){alert('Draft saved');renderDraftEditor(data.draft);loadDraftWorkspace();}else{alert(data.error||'Failed');}
  return data;
 }
+async function generateSocialDrafts(){
+ if(!currentDraftId){alert('No draft open');return}
+ const platforms=Array.from(socialPlatforms.querySelectorAll('input:checked')).map(cb=>cb.value);
+ if(!platforms.length){alert('Select at least one platform');return}
+ const data=await (await fetch('/api/drafts/'+currentDraftId+'/social',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({platforms})})).json();
+ if(data.ok){
+  alert(`Generated ${data.drafts.length} social drafts`);
+  renderSocialDrafts(currentDraftId);
+ }else{
+  alert('Failed: '+(data.error||'unknown'));
+ }
+}
+async function renderSocialDrafts(sourceId){
+ const data=await (await fetch('/api/drafts/'+sourceId+'/social')).json();
+ const drafts=data.drafts||[];
+ if(!drafts.length){socialDraftsList.innerHTML='';return;}
+ socialDraftsList.innerHTML='<b style="font-size:12px;color:var(--muted)">Social Drafts</b><div class=queue-list style="margin-top:6px">'+drafts.map(d=>
+  `<div class=qitem><div class=qnum>${{linkedin:'💼',facebook:'👍',x:'🐦',threads:'🧵',reddit:'🔴',newsletter:'📬',youtube:'🎬'}[d.platform]||'📝'}</div>`+
+  `<div class=qtitle>${escapeHtml(d.title||'')}`+
+  `<div class=qmeta>${d.platform} · ${d.status} · ${d.created_at.slice(0,10)}</div></div>`+
+  `<button class=small onclick="editSocialDraft('${d.draft_id}')">Edit</button></div>`).join('')+'</div>';
+}
+function editSocialDraft(id){
+ fetch('/api/social_drafts/'+id).then(r=>r.json()).then(data=>{
+  if(data.ok){openSocialEditor(data.draft);}
+ });
+}
+function openSocialEditor(d){
+ const modal=document.createElement('div');modal.id='socialEditorModal';
+ modal.innerHTML=`<div style="position:fixed;inset:0;background:rgba(0,0,0,.7);display:grid;place-items:center;z-index:50;padding:20px" onclick="if(event.target===this)closeSocialEditor()">`+
+  `<div class=card style="max-width:600px;width:100%;max-height:90vh;overflow:auto" onclick="event.stopPropagation()">`+
+   `<h3 style=margin-top:0>📝 ${d.platform} Draft</h3>`+
+   `<label>Title</label><input id=socialTitle value="${escapeHtml(d.title||'')}">`+
+   `<label>Text</label><textarea id=socialText rows=8>${escapeHtml(d.text||'')}</textarea>`+
+   `<label>Description</label><input id=socialDesc value="${escapeHtml(d.description||'')}">`+
+   `<label>Hashtags (comma separated)</label><input id=socialTags value="${escapeHtml((d.hashtags||[]).join(', '))}">`+
+   `<label>Status</label><select id=socialStatus><option value=draft ${d.status==='draft'?'selected':''}>draft</option><option value=approved ${d.status==='approved'?'selected':''}>approved</option></select>`+
+   `<div class=muted style="margin:8px 0">Source: <a href="${d.blog_url}" target=_blank style="color:#60a5fa">${d.blog_url}</a></div>`+
+   `<div style="display:flex;gap:8px"><button onclick="saveSocialDraft('${d.draft_id}')">💾 Save</button><button class=secondary onclick="previewSocialDraft('${d.draft_id}')">👁 Preview</button><button class=secondary onclick="closeSocialEditor()">Close</button></div>`+
+   `<pre id=socialPreview style="margin-top:12px" hidden></pre>`+
+  `</div>`+
+ `</div>`;
+ document.body.appendChild(modal);
+}
+function closeSocialEditor(){const m=document.getElementById('socialEditorModal');if(m)m.remove();}
+async function saveSocialDraft(id){
+ const fields={title:socialTitle.value,text:socialText.value,description:socialDesc.value,tags:socialTags.value,status:socialStatus.value};
+ const data=await (await fetch('/api/social_drafts/'+id,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(fields)})).json();
+ if(data.ok){alert('Saved');renderSocialDrafts(currentDraftId);}else{alert('Failed: '+(data.error||''));}
+}
+async function previewSocialDraft(id){
+ const data=await (await fetch('/api/social_drafts/'+id)).json();
+ if(data.ok){
+  socialPreview.hidden=false;
+  socialPreview.textContent=`Platform: ${data.draft.platform}\n\n${data.draft.text}`;
+ }
+}
 async function publishDraftBlog(){
  if(!currentDraftId){alert('No draft open');return}
  if(draftStatus.value!=='approved'){alert('Draft must be approved before publishing');return}
@@ -455,11 +532,13 @@ function renderDraftEditor(d){
  currentDraftId=d.draft_id;
  draftTitle.value=d.title||'';draftSlug.value=d.slug||'';draftBody.value=d.body||'';draftStatus.value=d.status||'draft';
  draftMeta.innerHTML=`Created ${d.created_at.slice(0,16)} · Updated ${d.updated_at.slice(0,16)} · ID ${d.draft_id}`;
- draftPublishStatus.innerHTML=d.blog_url?`<a href="${d.blog_url}" target=_blank style="color:var(--good)">Published: ${d.blog_url}</a> · ${d.published_at.slice(0,16)}<sup>🚀</sup>`:<sup>'';
- draftPublishBanner.style.display=d.status==='approved'&&!d.blog_url?'block':'none';
+ draftPublishStatus.innerHTML=d.blog_url?`<a href="${d.blog_url}" target=_blank style="color:var(--good)">Published: ${d.blog_url}</a> · ${d.published_at.slice(0,16)}`:'';
+ draftPublishBanner.style.display=d.status==='approved'?'block':'none';
  draftPublishBanner.textContent=d.status==='approved'?'✅ This draft is approved and ready to publish to the blog.':'';
+ socialGenerator.style.display=(d.status==='published'&&d.blog_url)?'block':'none';
  draftPreview.innerHTML=`<iframe style="width:100%;height:300px;border:1px solid var(--border);border-radius:8px;background:#fff" srcdoc="${escapeHtml(markdownToHtml(d.body||''))}"></iframe>`;
  togglePublishButton();
+ renderSocialDrafts(d.draft_id);
 }
 function showDraftActions(brief){
  draftActions.innerHTML=`<button class=small onclick="createDraftFromBrief()">📝 Create Draft</button>`;
@@ -659,6 +738,56 @@ def handle_draft_publish(draft_id: str) -> dict[str, Any]:
     return {"ok": False, "error": result.get("error", "publish failed")}
 
 
+
+
+def handle_draft_publish(draft_id: str) -> dict[str, Any]:
+    """Publish an approved draft to the blog."""
+    result = publish_blog(draft_id)
+    if result.get("ok"):
+        draft = load_draft(draft_id)
+        return {"ok": True, "draft": draft.to_dict() if draft else {}, "blog_url": result.get("blog_url")}
+    return {"ok": False, "error": result.get("error", "publish failed")}
+
+
+def handle_create_social_drafts(draft_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Generate social drafts from a published blog draft."""
+    from .drafts import load_draft as load_content_draft
+
+    draft = load_content_draft(draft_id)
+    if draft is None:
+        return {"ok": False, "error": "draft not found"}
+    if draft.status != "published" or not draft.blog_url:
+        return {"ok": False, "error": "draft must be published with a blog_url to generate social drafts"}
+    platforms = body.get("platforms", [])
+    if not platforms:
+        return {"ok": False, "error": "no platforms selected"}
+    created = create_social_drafts_from_blog(
+        source_draft_id=draft_id,
+        blog_url=draft.blog_url,
+        title=draft.title,
+        body=draft.body,
+        platforms=platforms,
+    )
+    return {"ok": True, "drafts": [d.to_dict() for d in created]}
+
+
+def handle_list_social_drafts(source_draft_id: str) -> dict[str, Any]:
+    return {"ok": True, "drafts": list_social_drafts(source_draft_id=source_draft_id)}
+
+
+def handle_get_social_draft(draft_id: str) -> dict[str, Any]:
+    draft = load_social_draft(draft_id)
+    if draft is None:
+        return {"ok": False, "error": "social draft not found"}
+    return {"ok": True, "draft": draft.to_dict()}
+
+
+def handle_update_social_draft(draft_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    draft = update_social_draft(draft_id, body)
+    if draft is None:
+        return {"ok": False, "error": "social draft not found or invalid status"}
+    return {"ok": True, "draft": draft.to_dict()}
+
 # ── Dispatch for dashboard.py integration ───────────────────────────────────
 
 def register_routes(path: str, query: dict[str, list[str]], body: dict[str, Any] | None = None) -> tuple[bytes, str] | dict[str, Any]:
@@ -686,6 +815,11 @@ def register_routes(path: str, query: dict[str, list[str]], body: dict[str, Any]
     if path.startswith("/api/drafts/") and path.endswith("/publish"):
         draft_id = path.replace("/api/drafts/", "").replace("/publish", "")
         return handle_draft_publish(draft_id)
+    if path.startswith("/api/drafts/") and path.endswith("/social"):
+        draft_id = path.replace("/api/drafts/", "").replace("/social", "")
+        if not body:
+            return handle_list_social_drafts(draft_id)
+        return handle_create_social_drafts(draft_id, body or {})
     if path.startswith("/api/drafts/"):
         draft_id = path.replace("/api/drafts/", "")
         if body:
@@ -693,4 +827,9 @@ def register_routes(path: str, query: dict[str, list[str]], body: dict[str, Any]
         return handle_get_draft(draft_id)
     if path == "/api/drafts":
         return handle_list_drafts()
+    if path.startswith("/api/social_drafts/"):
+        draft_id = path.replace("/api/social_drafts/", "")
+        if body:
+            return handle_update_social_draft(draft_id, body)
+        return handle_get_social_draft(draft_id)
     return {"error": "not found"}
