@@ -46,6 +46,8 @@ class IntelligenceCard:
     estimated_reach: int = 0
     estimated_difficulty: str = "Unknown"
     history_delta: dict[str, Any] = field(default_factory=dict)
+    story_age: str = ""
+    confidence_meter: int = 0
     rank: int = 0
 
     def to_dict(self) -> dict[str, Any]:
@@ -64,6 +66,8 @@ class IntelligenceCard:
             "estimated_reach": self.estimated_reach,
             "estimated_difficulty": self.estimated_difficulty,
             "history_delta": self.history_delta,
+            "story_age": self.story_age,
+            "confidence_meter": self.confidence_meter,
         }
 
 
@@ -142,6 +146,8 @@ def run_intelligent_feed(
             estimated_reach=_estimate_reach(opp_breakdown, trend_breakdown),
             estimated_difficulty=_estimate_difficulty(opp_breakdown, rec),
             history_delta=history_delta,
+            story_age=_story_age(cluster.latest),
+            confidence_meter=int(round(rec.confidence_score * 100)),
         )
         cards.append(card)
 
@@ -354,3 +360,24 @@ def _estimate_difficulty(opp: OpportunityBreakdown, rec: FormatRecommendation) -
     if score <= 2:
         return "Medium"
     return "High"
+
+
+def _story_age(iso_timestamp: str) -> str:
+    """Return a human-readable age from an ISO timestamp."""
+    if not iso_timestamp:
+        return "Unknown"
+    try:
+        ts = dt.datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return "Unknown"
+    now = dt.datetime.now(dt.timezone.utc)
+    delta = now - ts
+    if delta < dt.timedelta(minutes=1):
+        return "Just now"
+    if delta < dt.timedelta(hours=1):
+        return f"{int(delta.total_seconds() // 60)} min ago"
+    if delta < dt.timedelta(days=1):
+        return f"{int(delta.total_seconds() // 3600)} hour ago" if delta < dt.timedelta(hours=2) else f"{int(delta.total_seconds() // 3600)} hours ago"
+    if delta < dt.timedelta(days=7):
+        return f"{delta.days} day ago" if delta.days == 1 else f"{delta.days} days ago"
+    return f"{delta.days // 7} week ago" if delta.days // 7 == 1 else f"{delta.days // 7} weeks ago"

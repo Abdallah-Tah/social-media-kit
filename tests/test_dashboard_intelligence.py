@@ -17,6 +17,7 @@ if str(KIT / "scripts") not in sys.path:
 from agent.dashboard_intelligence import (
     filter_cards,
     handle_brief,
+    handle_briefs,
     handle_run,
     handle_snapshot,
     handle_snapshots,
@@ -152,6 +153,18 @@ def test_handle_run_does_not_mutate_seen_store(tmp_path):
         feed.FEED_DIR = original_feed_dir
         feed.SEEN_PATH = original_seen_path
         dashboard_intelligence.SNAPSHOTS_DIR = original_snapshots_dir
+
+
+def test_handle_briefs_no_publish():
+    cards = sample_cards()[:2]
+    cards[0]["recommendation"]["recommendation"] = "youtube_short"
+    cards[1]["recommendation"]["recommendation"] = "blog"
+    result = handle_briefs({"cards": cards})
+    assert result["ok"] is True
+    assert len(result["briefs"]) == 2
+    assert result["briefs"][0]["publish_ready"] is False
+    assert result["briefs"][0]["content_type"] == "youtube_short"
+    assert result["briefs"][1]["content_type"] == "blog"
 
 
 if __name__ == "__main__":

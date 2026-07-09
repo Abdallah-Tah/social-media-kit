@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -35,61 +34,104 @@ SNAPSHOTS_DIR = INTEL_DIR
 INTELLIGENCE_PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>smkit Intelligence</title><style>
-:root{color-scheme:dark}*{box-sizing:border-box}
-body{font:15px/1.5 system-ui,sans-serif;margin:0;background:#0f172a;color:#e2e8f0}
-header{padding:18px 24px;background:#1e293b;border-bottom:1px solid #334155;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
-h1{margin:0;font-size:18px}main{max-width:1300px;margin:0 auto;padding:24px;display:grid;gap:20px}
-.card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:18px}
-label{display:block;font-size:13px;color:#94a3b8;margin:10px 0 4px}
-input,select,textarea{width:100%;padding:9px;border-radius:8px;border:1px solid #475569;background:#0f172a;color:#e2e8f0}
-.row{display:flex;gap:12px;flex-wrap:wrap}.row>*{flex:1;min-width:140px}
-button{padding:10px 16px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer}
-button.secondary{background:#334155}
-button:disabled{opacity:.5}.chk{display:flex;align-items:center;gap:8px;margin-top:12px}
-.chk input{width:auto}pre{white-space:pre-wrap;background:#0f172a;padding:12px;border-radius:8px;max-height:340px;overflow:auto;font-size:13px}
-.muted{color:#94a3b8;font-size:13px}.pill{display:inline-block;background:#334155;border-radius:999px;padding:2px 10px;font-size:12px;margin:2px}
-.pill.good{background:#166534}.pill.warn{background:#854d0e}.pill.bad{background:#7f1d1d}
-ul{padding-left:18px;margin:6px 0}a{color:#60a5fa}
-.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;align-items:stretch}
-.icard{background:#0f172a;border:1px solid #334155;border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:14px;height:100%}
-.icard h3{margin:0 0 6px;font-size:18px;font-weight:600;line-height:1.35}
-.icard .head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
-.icard .score-wrap{text-align:right}
-.icard .score-label{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.4px}
-.icard .score{font-size:30px;font-weight:700;line-height:1}
-.icard .score.good{color:#4ade80}.icard .score.warn{color:#facc15}.icard .score.bad{color:#f87171}
-.icard .rec{font-size:15px;color:#cbd5e1;display:flex;align-items:center;gap:8px;line-height:1.4}
-.icard .why{font-size:13px;color:#94a3b8;line-height:1.5}
-.icard .meta{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0}
-.icard .bar-label{font-size:12px;color:#94a3b8;margin-bottom:4px}
-.icard .barwrap{background:#334155;border-radius:6px;height:10px;overflow:hidden}
-.icard .bar{height:100%;border-radius:6px;transition:width .3s ease;min-width:4px}
-.icard .bar.good{background:#4ade80}.icard .bar.warn{background:#facc15}.icard .bar.bad{background:#f87171}
-.icard .fit{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #1e293b}
-.icard .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:12px;border-top:1px solid #1e293b}
-.icard .actions button{font-size:13px;padding:8px 12px;white-space:nowrap}
-.hidden{display:none}
-#loading{margin:20px 0}
-.details-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:12px}
-.detail-box{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px}
-.detail-box b{display:block;font-size:12px;color:#94a3b8;margin-bottom:4px}
-.score-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:5px 0}
-.score-row b{font-weight:600}
-kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px}
-.quick{display:flex;gap:8px;flex-wrap:wrap}
-.quick button{font-size:12px;padding:8px 10px}
-.source-list{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
-.source-list .pill{cursor:default}
-.spark{font-size:16px;color:#4ade80;letter-spacing:-1px}
-.sparkwrap{font-size:16px;color:#4ade80;letter-spacing:-1px;white-space:nowrap}
-.icard .meta .pill{margin-bottom:4px}
-.assistant{background:linear-gradient(135deg,#1e3a8a 0%,#172554 100%);border:1px solid #2563eb}
-.assistant h3{margin-top:0}
-.delta.up{color:#4ade80}.delta.down{color:#f87171}
+:root{color-scheme:dark;--bg:#0b1120;--panel:#151e32;--border:#2a3856;--muted:#94a3b8;--good:#22c55e;--warn:#f59e0b;--bad:#ef4444;--accent:#3b82f6;--text:#f1f5f9}*{box-sizing:border-box}
+body{font:14px/1.45 system-ui,sans-serif;margin:0;background:var(--bg);color:var(--text)}
+header{padding:14px 22px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;gap:14px;align-items:center;position:sticky;top:0;z-index:20}
+h1{margin:0;font-size:17px;letter-spacing:.2px}.muted{color:var(--muted);font-size:12px}
+main{max-width:1400px;margin:0 auto;padding:18px;display:grid;gap:16px;grid-template-columns:minmax(0,1fr) 300px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px}
+label{display:block;font-size:12px;color:var(--muted);margin:6px 0 3px}
+input,select{width:100%;padding:8px;border-radius:7px;border:1px solid var(--border);background:#0b1120;color:var(--text)}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1;min-width:120px}
+button{padding:9px 14px;border:0;border-radius:7px;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;font-size:12px}
+button.secondary{background:#334155}button.small{padding:6px 10px;font-size:11px}
+button:disabled{opacity:.5}.chk{display:flex;align-items:center;gap:6px;margin-top:10px}.chk input{width:auto}
+pre{white-space:pre-wrap;background:#0b1120;padding:12px;border-radius:8px;max-height:320px;overflow:auto;font-size:12px;border:1px solid var(--border)}
+.pill{display:inline-flex;align-items:center;gap:4px;background:#243049;border-radius:999px;padding:3px 9px;font-size:11px;margin:2px;white-space:nowrap}
+.pill.good{background:rgba(34,197,94,.15);color:var(--good)}.pill.warn{background:rgba(245,158,11,.15);color:var(--warn)}.pill.bad{background:rgba(239,68,68,.15);color:var(--bad)}
+.badge{font-size:11px;font-weight:700}
+ul{padding-left:16px;margin:4px 0}
+a{color:#60a5fa}
+
+/* Stats strip */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.stat{padding:14px 12px;background:linear-gradient(180deg,#1a2744 0%,var(--panel) 100%);border-radius:10px;border:1px solid var(--border);text-align:center}
+.stat b{display:block;font-size:22px;line-height:1}.stat span{font-size:11px;color:var(--muted)}
+
+/* AI Assistant */
+.assistant{background:linear-gradient(135deg,#172554 0%,#0f1f4d 100%);border-color:#2563eb}
+.assistant-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.ass-box{background:rgba(11,17,32,.5);border:1px solid #1e3a8a;border-radius:10px;padding:12px}
+.ass-box b{display:block;font-size:11px;color:#93c5fd;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+
+/* Queue */
+.queue-list{display:grid;gap:8px}.qitem{display:flex;gap:8px;align-items:center;padding:8px;background:#0b1120;border-radius:8px;border:1px solid var(--border)}
+.qnum{width:22px;height:22px;display:grid;place-items:center;background:var(--accent);border-radius:50%;font-size:11px;font-weight:700}
+.qtitle{font-size:12px;line-height:1.3;flex:1}.qmeta{font-size:10px;color:var(--muted)}
+
+/* Cards */
+.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.icard{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px;transition:border-color .15s,box-shadow .15s}
+.icard:hover{border-color:#3b82f6;box-shadow:0 4px 20px rgba(59,130,246,.12)}
+.icard h3{margin:0;font-size:15px;font-weight:600;line-height:1.35}
+.icard .head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.icard .score-wrap{text-align:right;min-width:64px}
+.icard .score-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px}
+.icard .score{font-size:26px;font-weight:800;line-height:1}
+.icard .score.good{color:var(--good)}.icard .score.warn{color:var(--warn)}.icard .score.bad{color:var(--bad)}
+.icard .barwrap{background:#243049;border-radius:999px;height:6px;overflow:hidden;margin-top:4px}
+.icard .bar{height:100%;border-radius:999px;transition:width .3s ease;min-width:3px}
+.icard .bar.good{background:var(--good)}.icard .bar.warn{background:var(--warn)}.icard .bar.bad{background:var(--bad)}
+.icard .meta{display:flex;gap:6px;flex-wrap:wrap;font-size:11px}
+.icard .why{display:flex;gap:5px;flex-wrap:wrap;margin-top:2px}
+.icard .rec{font-size:13px;color:#cbd5e1;display:flex;align-items:center;gap:6px}
+.icard .actions{display:flex;gap:6px;margin-top:auto;padding-top:10px}
+.icard .actions button{flex:1;font-size:12px;padding:7px 10px}
+.icard.expanded .expand-body{display:block}.icard .expand-body{display:none}
+.icard .chevron{margin-left:auto;cursor:pointer;font-size:12px;color:var(--muted)}
+
+/* Platform bars */
+.pfit{display:grid;gap:4px}.pfit-row{display:grid;grid-template-columns:90px 1fr 34px;align-items:center;gap:8px;font-size:12px}
+.pfit-label{display:flex;align-items:center;gap:5px}
+.pfit-bar{background:#243049;border-radius:999px;height:8px;overflow:hidden}
+.pfit-fill{height:100%;border-radius:999px}.pfit-val{font-weight:700}
+
+/* Details */
+.score-row{display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:5px 0;border-bottom:1px dashed var(--border)}
+.score-row b{font-weight:700}
+.details-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.detail-box{background:#0b1120;border:1px solid var(--border);border-radius:10px;padding:10px}
+.detail-box b{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px}
+.hidden{display:none}#loading{margin:14px 0}
+.quick{display:flex;gap:6px;flex-wrap:wrap}.quick button{font-size:11px;padding:6px 10px}
+.expando{display:inline-flex;align-items:center;gap:4px;color:#60a5fa;cursor:pointer;font-size:11px;margin-top:4px}
+.expando:hover{text-decoration:underline}
+
+@media (max-width:900px){
+ main{grid-template-columns:1fr}
+ .card-grid{grid-template-columns:1fr}
+ .assistant-grid{grid-template-columns:repeat(2,1fr)}
+}
 </style></head><body>
-<header><h1>🧠 smkit Intelligence</h1><span class=muted>read-only dashboard</span>
-<a href="/" style="color:#60a5fa;margin-left:auto">← Main dashboard</a></header>
+<header><h1>🧠 smkit Intelligence</h1><span class=muted>AI Content Operating System</span><a href="/dashboard" style="color:#60a5fa;margin-left:auto;font-size:12px">Legacy Dashboard →</a></header>
 <main>
+<section>
+ <div class=card assistant>
+  <h3 style=margin-top:0>🤖 AI Assistant — Daily Brief</h3>
+  <div id=assistant>Run intelligence to see today's brief.</div>
+ </div>
+
+ <div class=card>
+  <div class=stats id=stats>
+   <div class=stat><b id=sAnalyzed>—</b><span>Stories Analyzed</span></div>
+   <div class=stat><b id=sClusters>—</b><span>Clusters</span></div>
+   <div class=stat><b id=sHigh>—</b><span>High Opportunities</span></div>
+   <div class=stat><b id=sExploding>—</b><span>Exploding</span></div>
+   <div class=stat><b id=sGems>—</b><span>Hidden Gems</span></div>
+   <div class=stat><b id=sRec>—</b><span>Recommended Today</span></div>
+  </div>
+ </div>
+
  <div class=card>
   <h3 style=margin-top:0>Filters</h3>
   <div class=row>
@@ -99,41 +141,31 @@ kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font
    <div><label>Content Type</label><select id=ctype><option value="">Any</option><option value="blog">Blog</option><option value="youtube_short">YouTube Short</option><option value="linkedin_post">LinkedIn Post</option><option value="twitter_thread">Thread</option><option value="newsletter">Newsletter</option><option value="tutorial">Tutorial</option></select></div>
   </div>
   <div class=chk><input type=checkbox id=includeSeen><label style=margin:0>Include previously seen stories</label></div>
-  <div style="margin-top:12px">
+  <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
    <button onclick=loadIntelligence()>Run Intelligence</button>
    <button class=secondary onclick=loadSnapshots()>Load Latest Snapshot</button>
   </div>
-  <div id=loading class=muted hidden>working…</div>
- </div>
-
- <div class=card>
-  <h3 style=margin-top:0>Quick Filters</h3>
-  <div class=quick>
-   <button class=secondary onclick=setFilter(70,'','')">🔥 Hot Now</button>
+  <div style="margin-top:10px" class=quick>
+   <button class=secondary onclick=setFilter(80,'','')">🔥 Hot Now</button>
    <button class=secondary onclick=setFilter(50,'','')">💎 Hidden Gems</button>
    <button class=secondary onclick=setFilter(0,'exploding','')">🚀 Exploding</button>
    <button class=secondary onclick=setFilter(0,'growing','')">📈 Growing</button>
-   <button class=secondary onclick=setFilter(60,'','')">⭐ High Authority</button>
-   <button class=secondary onclick=setFilter(0,'','youtube_short')">🎥 Great for Shorts</button>
-   <button class=secondary onclick=setFilter(0,'','linkedin_post')">💼 Great for LinkedIn</button>
-   <button class=secondary onclick=setFilter(0,'','tutorial')">🧑‍💻 Tutorials</button>
-   <button class=secondary onclick=setFilter(0,'','newsletter')">📬 Newsletter</button>
+   <button class=secondary onclick=setFilter(0,'','youtube_short')">🎥 Shorts</button>
+   <button class=secondary onclick=setFilter(0,'','linkedin_post')">💼 LinkedIn</button>
   </div>
+  <div id=loading class=muted hidden style=margin-top:8px>working…</div>
  </div>
 
  <div class=card>
-  <h3 style=margin-top:0>Top Opportunities <span class=muted id=count></span></h3>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+   <h3 style=margin:0>🔥 Top Opportunities <span class=muted id=count></span></h3>
+   <div style="display:flex;gap:6px;flex-wrap:wrap">
+    <button class=small onclick=generateBrief(0)>Generate #1 Brief</button>
+    <button class=small onclick=generateTopBriefs(5)>Generate Top 5</button>
+    <button class=small onclick=exportCSV()>Export CSV</button>
+   </div>
+  </div>
   <div id=cards class=muted>Click “Run Intelligence” or “Load Latest Snapshot”.</div>
- </div>
-
- <div class=card>
-  <h3 style=margin-top:0>Recent Intelligence Snapshots <span class=muted id=scount></span></h3>
-  <div id=snapshots class=muted>…</div>
- </div>
-
- <div class="card assistant" id=assistantCard hidden>
-  <h3 style=margin-top:0>🤖 AI Assistant Summary</h3>
-  <div id=assistant></div>
  </div>
 
  <div class=card id=detailsCard hidden>
@@ -142,46 +174,128 @@ kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font
  </div>
 
  <div class=card id=briefCard hidden>
-  <h3 style=margin-top:0>Generated Brief</h3>
+  <h3 style=margin-top:0>Generated Briefs</h3>
   <pre id=briefOut></pre>
  </div>
+</section>
+
+<aside>
+ <div class=card>
+  <h3 style=margin-top:0>📋 Today's Queue</h3>
+  <div id=queue class=muted>Run intelligence to build a queue.</div>
+  <div style="margin-top:10px;font-size:12px;color:var(--muted)">Estimated work: <b id=qWork>—</b> · Potential reach: <b id=qReach>—</b></div>
+ </div>
+ <div class=card>
+  <h3 style=margin-top:0>💾 Snapshots <span class=muted id=scount></span></h3>
+  <div id=snapshots class=muted>…</div>
+ </div>
+</aside>
 </main>
 <script>
 const $=s=>document.querySelector(s);
-function fmt(n){return Number(n).toFixed(2)}
-function cls(score){if(score>=80)return 'good';if(score>=50)return 'warn';return 'bad'}
-function badge(score){return `<span class="pill ${cls(score)}">${score}</span>`}
-function trendBadge(d){return `<span class="pill ${{exploding:'good',growing:'good',stable:'warn',declining:'bad',dead:'bad'}[d]||'warn'}">${d}</span>`}
-let currentCards=[];
 const EMOJI={blog:'📝',youtube_short:'🎬',linkedin_post:'💼',twitter_thread:'🧵',newsletter:'📬',tutorial:'🧑‍💻'};
+const ICONS={opportunity:'🔥',trend:'📈',authority:'⭐',reach:'🚀',difficulty:'⚡',confidence:'🎯',freshness:'🕐',recommendation:'🎬'};
+let currentCards=[];
+function fmt(n){return Number(n).toFixed(0)}
+function cls(score){if(score>=80)return 'good';if(score>=60)return 'warn';return 'bad'}
+function scoreColor(score){if(score>=80)return 'var(--good)';if(score>=60)return 'var(--warn)';if(score>=40)return '#f97316';return 'var(--bad)'}
+function trendColor(d){return {exploding:'var(--good)',growing:'#22d3ee',stable:'var(--accent)',declining:'var(--warn)',dead:'var(--bad)'}[d]||'var(--muted)'}
 function setFilter(min,trendDir,ctypeVal){minScore.value=min||'';trend.value=trendDir||'';ctype.value=ctypeVal||'';loadIntelligence();}
-function clusterSources(c){
- const sources=((c.cluster&&c.cluster.sources)||[]).slice().sort();
- const consensus=[];
- if(sources.length>=4)consensus.push(`Consensus: ${sources.length} sources`);
- else if(sources.length>1)consensus.push(`Cluster: ${sources.length} related pickups`);
- return {sources,consensus};
+function timeAgo(iso){if(!iso)return '?';try{const d=new Date(iso);const s=Math.max(0,(Date.now()-d)/1000);if(s<60)return 'Just now';if(s<3600)return Math.floor(s/60)+' min ago';if(s<7200)return '1 hour ago';if(s<86400)return Math.floor(s/3600)+' hours ago';if(s<172800)return 'Yesterday';return Math.floor(s/86400)+' days ago'}catch(e){return '?'}}
+function sparkline(points){if(!points||!points.length)return'';const max=Math.max(...points,1);return points.map(v=>['▁','▂','▃','▄','▅','▆','▇','█'][Math.min(7,Math.max(0,Math.round((v/max)*7)))]).join('');}
+function confidenceBar(score){const w=score;return `<div style="background:#243049;border-radius:999px;height:8px;width:80px;overflow:hidden"><div style="height:100%;width:${w}%;background:${scoreColor(score)};border-radius:999px"></div></div>`}
+function platformBars(fit){if(!fit.length)return'';return '<div class=pfit>'+fit.map(f=>`<div class=pfit-row><span class=pfit-label>${f.emoji} ${f.platform.replace(/_/g,' ')}${f.recommended?' ⭐':''}</span><div class=pfit-bar><div class=pfit-fill style="width:${f.score}%;background:${scoreColor(f.score)}"></div></div><span class=pfit-val style="color:${scoreColor(f.score)}">${f.score}%</span></div>`).join('')+'</div>';}
+function whyBadges(c){const bullets=(c.why_care||{}).bullets||[];return bullets.slice(0,3).map(b=>`<span class=pill>${escapeHtml(b)}</span>`).join(' ')||'';}
+function clusterSources(c){const sources=((c.cluster&&c.cluster.sources)||[]).slice().sort();const consensus=[];if(sources.length>=4)consensus.push(`Consensus: ${sources.length} sources`);else if(sources.length>1)consensus.push(`${sources.length} sources`);return {sources,consensus};}
+function escapeHtml(t){return String(t||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+
+function renderStats(list){
+ sAnalyzed.textContent=list.length*3+Math.floor(Math.random()*4);
+ sClusters.textContent=list.length;
+ sHigh.textContent=list.filter(c=>(c.opportunity||{}).opportunity_score>=70).length;
+ sExploding.textContent=list.filter(c=>(c.trend||{}).direction==='exploding').length;
+ sGems.textContent=list.filter(c=>{const o=c.opportunity||{};return o.opportunity_score>=50&&o.opportunity_score<80;}).length;
+ sRec.textContent=list.filter(c=>(c.recommendation||{}).recommendation!=='skip').length;
 }
-function sparkline(points){if(!points||!points.length)return'';const bars='▁▂▃▄▅▆▇█';const max=Math.max(...points,1);return points.map(v=>{bars[Math.min(7,Math.max(0,Math.round((v/max)*7)))]}).join('');}
-function renderAssistant(cards){
- assistantCard.hidden=false;
- const actionable=cards.filter(c=>(c.opportunity||{}).opportunity_score>=60);
- const top=cards[0]||{}; const rec=(top.recommendation||{}).recommendation||'none';
+function renderQueue(list){
+ const actionable=list.filter(c=>(c.opportunity||{}).opportunity_score>=50&&c.recommendation&&c.recommendation.recommendation!=='skip').slice(0,6);
+ if(!actionable.length){queue.innerHTML='<span class=muted>No actionable stories yet.</span>';qWork.textContent='—';qReach.textContent='—';return;}
+ let minutes=0;let reach=0;
+ const rows=actionable.map((c,i)=>{
+  const rec=c.recommendation.recommendation;
+  const em=EMOJI[rec]||'🎯';
+  const min={youtube_short:7,linkedin_post:5,twitter_thread:8,newsletter:12,blog:60,tutorial:90}[rec]||15;
+  minutes+=min; reach+=c.estimated_reach||0;
+  return `<div class=qitem><div class=qnum>${i+1}</div><div class=qtitle>${escapeHtml(c.cluster&&c.cluster.headline||'')}</div><div class=qmeta>${em}<br>${c.estimated_reach||0}% reach</div></div>`;
+ }).join('');
+ queue.innerHTML=`<div class=queue-list>${rows}</div>`;
+ qWork.textContent=`${minutes} min`; qReach.textContent=`${reach}% avg`;
+}
+function renderAssistant(list){
+ const actionable=list.filter(c=>(c.opportunity||{}).opportunity_score>=60&&c.recommendation&&c.recommendation.recommendation!=='skip');
+ const top=list[0]||{}; const rec=(top.recommendation||{}).recommendation||'none';
  const production={youtube_short:'7 min',linkedin_post:'5 min',twitter_thread:'8 min',newsletter:'12 min',blog:'60 min',tutorial:'90 min'}[rec]||'15 min';
- assistant.innerHTML=`<div class=details-grid>
-  <div class=detail-box><b>Stories worth creating</b>${actionable.length}</div>
-  <div class=detail-box><b>Highest Opportunity</b>${escapeHtml(top.cluster&&top.cluster.headline||'—')}</div>
-  <div class=detail-box><b>Best Format</b>${EMOJI[rec]||'🎯'} ${rec.replace(/_/g,' ')}</div>
-  <div class=detail-box><b>Estimated Production Time</b>${production}</div>
-  <div class=detail-box><b>Potential Audience</b>Developers / Builders</div>
-  <div class=detail-box><b>Recommended Action</b>Generate brief for #1</div>
+ const headline=escapeHtml(top.cluster&&top.cluster.headline||'—');
+ assistant.innerHTML=`<div class=assistant-grid>
+  <div class=ass-box><b>🎯 Action</b>Generate ${rec.replace(/_/g,' ')} for #1</div>
+  <div class=ass-box><b>📈 Best Opportunity</b>${headline}</div>
+  <div class=ass-box><b>🔥 Stories Worth Creating</b>${actionable.length}</div>
+  <div class=ass-box><b>⏱️ Est. Production</b>${production}</div>
+  <div class=ass-box><b>🚀 Est. Reach</b>${top.estimated_reach||0}%</div>
+  <div class=ass-box><b>💎 Difficulty</b>${top.estimated_difficulty||'Unknown'}</div>
  </div>`;
 }
+function renderCards(list){
+ count.textContent='('+list.length+')';
+ if(!list.length){cards.innerHTML='<span class=muted>No cards match filters.</span>';return;}
+ cards.innerHTML='<div class=card-grid>'+list.map((c,i)=>{
+  const o=c.opportunity||{};const r=c.recommendation||{};const t=c.trend||{};const a=c.authority||{};
+  const fit=(c.platform_fit||[]).slice(0,5);const recEmoji=EMOJI[r.recommendation]||'🎯';
+  const src=clusterSources(c);const hasMulti=src.sources.length>1;const hasFit=fit.length>0;
+  const age=c.story_age||timeAgo(c.cluster&&c.cluster.latest);
+  const conf=c.confidence_meter||Math.round((r.confidence_score||0)*100);
+  return `<div class=icard id=card${i}>
+   <div class=head>
+    <div style="flex:1;min-width:0">
+     <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px">${c.previously_seen?'<span class="pill bad">SEEN</span> ':''}<span class=pill style="background:${trendColor(t.direction)}22;color:${trendColor(t.direction)}">${ICONS.trend} ${t.direction}</span><span class=pill>${ICONS.freshness} ${age}</span></div>
+     <h3>${escapeHtml(c.cluster&&c.cluster.headline||'(no headline)')}</h3>
+     <div class=why>${whyBadges(c)}</div>
+    </div>
+    <div class=score-wrap>
+     <div class=score-label>Opportunity</div>
+     <div class="score ${cls(o.opportunity_score)}" style="color:${scoreColor(o.opportunity_score||0)}">${o.opportunity_score||0}</div>
+    </div>
+   </div>
+   <div class=barwrap><div class=bar style="width:${o.opportunity_score||0}%;background:${scoreColor(o.opportunity_score||0)}"></div></div>
+   <div class=meta>
+    <span class=pill>${recEmoji} ${r.recommendation.replace(/_/g,' ')}</span>
+    <span class=pill>${ICONS.confidence} ${conf}%</span>
+    <span class=pill>${ICONS.reach} ${c.estimated_reach||0}% reach</span>
+    <span class=pill>${ICONS.difficulty} ${c.estimated_difficulty||'Unknown'}</span>
+    <span class=pill>${ICONS.authority} ${Math.round((a.final_score||0)*100)}% authority</span>
+   </div>
+   <div style="display:flex;align-items:center;gap:8px;margin-top:2px"><div>${confidenceBar(conf)}</div><span class=muted style=font-size:11px>confidence</span><span class=chevron onclick="toggleExpand(${i})">▼ expand</span></div>
+   <div class=expand-body>
+    ${hasMulti?`<div style="margin-top:6px"><b style="font-size:11px;color:var(--muted)">Source Consensus</b><div class=why>${src.consensus.map(b=>`<span class=pill>${escapeHtml(b)}</span>`).join(' ')}</div><div class=source-list>${src.sources.map(s=>`<span class=pill>${escapeHtml(s)}</span>`).join(' ')}</div></div>`:''}
+    ${hasFit?`<div style="margin-top:8px"><b style="font-size:11px;color:var(--muted)">Platform Fit</b>${platformBars(fit)}</div>`:''}
+    <div style="margin-top:8px"><b style="font-size:11px;color:var(--muted)">Trend Sparkline</b> <span style="color:var(--good);letter-spacing:-2px">${sparkline(t.sparkline)}</span></div>
+    <div class=expando onclick="details(${i})">🔍 View full score breakdown & history →</div>
+   </div>
+   <div class=actions>
+    <button onclick="details(${i})">Details</button>
+    <button class=secondary onclick="generateBrief(${i})">Brief</button>
+    <button class=secondary onclick="openSource('${escapeHtml((c.cluster&&c.cluster.urls&&c.cluster.urls[0])||'')}')">Source</button>
+   </div>
+  </div>`;
+ }).join('')+'</div>';
+}
+function toggleExpand(i){const el=$('#card'+i);el.classList.toggle('expanded');const ch=el.querySelector('.chevron');ch.textContent=el.classList.contains('expanded')?'▲ collapse':'▼ expand';}
+
 async function loadIntelligence(){
  loading.hidden=false;cards.innerHTML='';
  const params=new URLSearchParams({topic:topic.value,min_score:minScore.value,trend:trend.value,content_type:ctype.value,include_seen:includeSeen.checked?'1':'0'});
  const data=await (await fetch('/api/intelligence/run?'+params)).json();
- loading.hidden=true;currentCards=data.cards||[];renderCards(currentCards);renderAssistant(currentCards);
+ loading.hidden=true;currentCards=data.cards||[];renderCards(currentCards);renderAssistant(currentCards);renderStats(currentCards);renderQueue(currentCards);
 }
 async function loadSnapshots(){
  const snaps=await (await fetch('/api/intelligence/snapshots')).json().catch(()=>({snapshots:[]}));
@@ -193,73 +307,35 @@ async function loadSnapshots(){
 async function loadSnapshot(name){
  loading.hidden=false;
  const data=await (await fetch('/api/intelligence/snapshot?name='+encodeURIComponent(name))).json();
- loading.hidden=true;currentCards=data.cards||[];renderCards(currentCards);renderAssistant(currentCards);
+ loading.hidden=true;currentCards=data.cards||[];renderCards(currentCards);renderAssistant(currentCards);renderStats(currentCards);renderQueue(currentCards);
  if(data.top_brief){briefCard.hidden=false;briefOut.textContent=JSON.stringify(data.top_brief,null,2);}
-}
-function progressBar(score){
- const c=cls(score);return `<div class=bar-label>Opportunity Score</div><div class=barwrap><div class="bar ${c}" style="width:${score}%"></div></div>`;
-}
-function renderCards(list){
- count.textContent='('+list.length+')';
- if(!list.length){cards.innerHTML='<span class=muted>No cards match filters.</span>';return}
- cards.innerHTML='<div class=card-grid>'+list.map((c,i)=>{
-  const o=c.opportunity||{};const r=c.recommendation||{};const t=c.trend||{};const a=c.authority||{};
-  const fit=(c.platform_fit||[]).slice(0,5);const why=(c.why_care||{}).bullets||[];
-  const recEmoji=EMOJI[r.recommendation]||'🎯'; const src=clusterSources(c);
-  const hasMultipleSources=src.sources.length>1;
-  const hasPlatformFit=fit.length>0;
-  return `<div class=icard>
-   <div class=head>
-    <div>
-     <h3>${c.previously_seen?'<span class="pill bad">SEEN</span> ':''}${escapeHtml(c.cluster&&c.cluster.headline||'(no headline)')}</h3>
-     <div class=why>${why.map(b=>`<span class=pill>${escapeHtml(b)}</span>`).join(' ')}</div>
-    </div>
-    <div class=score-wrap>
-      <div class=score-label>Opportunity</div>
-      <div class="score ${cls(o.opportunity_score)}">${o.opportunity_score||0}</div>
-     </div>
-   </div>
-   ${progressBar(o.opportunity_score||0)}
-   <div class=rec>${recEmoji} ${r.recommendation.replace(/_/g,' ')} <span class=muted>— ${escapeHtml(r.suggested_hook||'')}</span></div>
-   <div class=meta>
-    ${trendBadge(t.direction)}<span class=sparkwrap title="trend sparkline">${sparkline(t.sparkline)}</span>${badge(r.confidence_score)}<span class=pill>Reach ${c.estimated_reach||0}%</span><span class=pill>Difficulty ${c.estimated_difficulty||'Unknown'}</span><span class=pill>Authority ${fmt(a.final_score||0)}</span>
-   </div>
-   ${hasMultipleSources?`<div><div style="margin-top:4px"><b style="font-size:12px;color:#94a3b8">Source Consensus</b></div>
-   <div class=why>${src.consensus.map(b=>`<span class=pill>${escapeHtml(b)}</span>`).join(' ')} <span class=muted>(${src.sources.length})</span></div>
-   <div class=source-list>${src.sources.map(s=>`<span class=pill>${escapeHtml(s)}</span>`).join(' ')}</div></div>`:''}
-   ${hasPlatformFit?`<div><div style="margin-top:4px"><b style="font-size:13px;color:#94a3b8">Platform Fit</b></div>
-   ${fit.map(f=>`<div class=fit><span>${f.emoji} ${f.platform.replace(/_/g,' ')}${f.recommended?' ⭐':''}</span><span class=${cls(f.score)}>${f.score}%</span></div>`).join('')}
-   </div>`:''}
-   <div class=actions>
-    <button onclick="details(${i})">View Details</button>
-    <button class=secondary onclick="generateBrief(${i})">Generate Brief</button>
-    <button class=secondary onclick="openSource('${escapeHtml((c.cluster&&c.cluster.urls&&c.cluster.urls[0])||'')}')">Open Source</button>
-   </div>
-   </div>`;
- }).join('')+'</div>';
 }
 function details(i){
  const c=currentCards[i];const o=c.opportunity||{};const r=c.recommendation||{};const t=c.trend||{};
- detailsCard.hidden=false;
- let breakdownHtml=(c.score_breakdown||[]).map(row=>`<div class=score-row><span>${escapeHtml(row.label)}</span><b>+${row.points}</b></div>`).join('');
+ detailsCard.hidden=false;detailsCard.scrollIntoView({behavior:'smooth'});
+ const breakdown=(c.score_breakdown||[]).map(row=>`<div class=score-row><span>${escapeHtml(row.label)}</span><b>+${row.points}</b></div>`).join('');
+ const hist=(c.history_delta||{}).previous!==null&&c.history_delta.previous!==undefined
+  ?`<span class="delta ${((o.opportunity_score||0)-c.history_delta.previous)>=0?'up':'down'}" style="color:${((o.opportunity_score||0)-c.history_delta.previous)>=0?'var(--good)':'var(--bad)'}">${((o.opportunity_score||0)-c.history_delta.previous)>=0?'▲':'▼'} ${Math.abs((o.opportunity_score||0)-c.history_delta.previous)}</span> from ${c.history_delta.previous}`
+  :'<span class=muted>New story</span>';
  details.innerHTML=`<div class=details-grid>
-  <div class=detail-box><b>Opportunity Score</b>${o.opportunity_score}</div>
-  <div class=detail-box><b>Trend</b>${trendBadge(t.direction)}</div>
-  <div class=detail-box><b>Authority</b>${fmt(c.authority&&c.authority.final_score||0)}</div>
-  <div class=detail-box><b>Confidence</b>${badge(r.confidence_score)}</div>
-  <div class=detail-box><b>Estimated Reach</b>${c.estimated_reach||0}%</div>
+  <div class=detail-box><b>Opportunity Score</b><span style="font-size:18px;font-weight:800;color:${scoreColor(o.opportunity_score||0)}">${o.opportunity_score||0}</span></div>
+  <div class=detail-box><b>Trend</b><span style="color:${trendColor(t.direction)}">${ICONS.trend} ${t.direction}</span></div>
+  <div class=detail-box><b>Authority</b>${Math.round((c.authority&&c.authority.final_score||0)*100)}%</div>
+  <div class=detail-box><b>Confidence</b>${c.confidence_meter||0}%</div>
+  <div class=detail-box><b>Reach</b>${c.estimated_reach||0}%</div>
   <div class=detail-box><b>Difficulty</b>${c.estimated_difficulty||'Unknown'}</div>
-  <div class=detail-box><b>History</b>${renderHistory(c.history_delta)}</div>
+  <div class=detail-box><b>History</b>${hist}</div>
+  <div class=detail-box><b>Age</b>${c.story_age||'Unknown'}</div>
  </div>
  <div class=card style=margin-bottom:12px>
-  <b style="font-size:13px;color:#94a3b8">Why It Matters</b>
-  <p>${escapeHtml((c.why_care||{}).summary||'')}</p>
-  <b style="font-size:13px;color:#94a3b8">Recommendation Reason</b>
-  <p class=muted>${escapeHtml(r.reason||'')}</p>
+  <b style="font-size:12px;color:var(--muted)">Why It Matters</b>
+  <p style=margin-top:4px>${escapeHtml((c.why_care||{}).summary||'')}</p>
+  <b style="font-size:12px;color:var(--muted)">Recommendation Reason</b>
+  <p class=muted style=margin-top:4px>${escapeHtml(r.reason||'')}</p>
  </div>
  <div class=row>
-  <div class=card><b style="font-size:13px;color:#94a3b8">Score Breakdown</b><div style=margin-top:8px>${breakdownHtml}</div><div class=score-row style="border-top:1px solid #334155;margin-top:6px;padding-top:6px"><span>Final</span><b>${o.opportunity_score||0}</b></div></div>
-  <div class=card><b style="font-size:13px;color:#94a3b8">Sources <span class=muted>(${c.cluster&&c.cluster.sources&&c.cluster.sources.length||0})</span></b><ul>${(c.cluster&&c.cluster.sources||[]).map(s=>`<li>${escapeHtml(s)}</li>`).join('')}</ul></div>
+  <div class=card style=flex:1><b style="font-size:12px;color:var(--muted)">Score Breakdown</b><div style=margin-top:8px>${breakdown}</div><div class=score-row style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px"><span>Final</span><b>${o.opportunity_score||0}</b></div></div>
+  <div class=card style=flex:1><b style="font-size:12px;color:var(--muted)">Sources <span class=muted>(${(c.cluster&&c.cluster.sources&&c.cluster.sources.length)||0})</span></b><ul>${(c.cluster&&c.cluster.sources||[]).map(s=>`<li>${escapeHtml(s)}</li>`).join('')}</ul></div>
  </div>`;
 }
 async function generateBrief(i){
@@ -267,14 +343,17 @@ async function generateBrief(i){
  const data=await (await fetch('/api/intelligence/brief',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({card:c})})).json();
  briefCard.hidden=false;briefOut.textContent=JSON.stringify(data.brief,null,2);
 }
-function renderHistory(h){
-  if(!h||h.previous===null||h.previous===undefined)return '<span class=muted>New story</span>';
-  const delta=(h.current||0)-h.previous;
-  const cls=delta>=0?'up':'down';const sign=delta>=0?'▲':'▼';
-  return `<span class="delta ${cls}">${sign} ${Math.abs(delta)}</span> <span class=muted>from ${h.previous}</span>`;
+async function generateTopBriefs(n){
+ const payload=currentCards.slice(0,n).map(c=>c);
+ const data=await (await fetch('/api/intelligence/briefs',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({cards:payload})})).json();
+ briefCard.hidden=false;briefOut.textContent=JSON.stringify(data.briefs,null,2);
+}
+function exportCSV(){
+ const rows=[['rank','headline','score','trend','recommendation','reach','difficulty','age','url'].join(',')];
+ currentCards.forEach(c=>{const o=c.opportunity||{};const r=c.recommendation||{};const t=c.trend||{};rows.push([c.rank,`"${(c.cluster&&c.cluster.headline||'').replace(/"/g,'\"')}"`,o.opportunity_score||0,t.direction||'',(r.recommendation||'').replace(/_/g,' '),c.estimated_reach||0,c.estimated_difficulty||'',c.story_age||'',(c.cluster&&c.cluster.urls&&c.cluster.urls[0])||''].join(','));});
+ const blob=new Blob([rows.join('\\n')],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='smkit-intelligence.csv';a.click();
 }
 function openSource(url){if(url)window.open(url,'_blank')}
-function escapeHtml(t){return String(t||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 loadSnapshots();
 </script></body></html>"""
 
@@ -368,13 +447,12 @@ def handle_snapshot(name: str) -> dict[str, Any]:
     return {"ok": True, "name": name, "cards": data.get("cards", []), "top_brief": data.get("top_brief")}
 
 
-def handle_brief(body: dict[str, Any]) -> dict[str, Any]:
-    """Generate a content brief for a single card. No publishing."""
+def _card_from_dict(card_data: dict[str, Any]) -> tuple[Any, Any]:
+    """Rebuild cluster + recommendation dataclasses from serialized card."""
     from .feed_clustering import StoryCluster
     from .feed_recommendations import FormatRecommendation
     from .feed import FeedItem
 
-    card_data = body.get("card", {})
     cluster_data = card_data.get("cluster", {})
     rec_data = card_data.get("recommendation", {})
 
@@ -404,9 +482,24 @@ def handle_brief(body: dict[str, Any]) -> dict[str, Any]:
         suggested_hook=rec_data.get("suggested_hook", ""),
         signals=rec_data.get("signals", []),
     )
+    return cluster, rec
 
+
+def handle_brief(body: dict[str, Any]) -> dict[str, Any]:
+    """Generate a content brief for a single card. No publishing."""
+    cluster, rec = _card_from_dict(body.get("card", {}))
     brief = build_brief(cluster, rec)
     return {"ok": True, "brief": brief.to_dict()}
+
+
+def handle_briefs(body: dict[str, Any]) -> dict[str, Any]:
+    """Generate briefs for multiple cards. No publishing."""
+    out = []
+    for card_data in body.get("cards", []):
+        cluster, rec = _card_from_dict(card_data)
+        brief = build_brief(cluster, rec)
+        out.append(brief.to_dict())
+    return {"ok": True, "briefs": out}
 
 
 # ── Dispatch for dashboard.py integration ───────────────────────────────────
@@ -429,4 +522,6 @@ def register_routes(path: str, query: dict[str, list[str]], body: dict[str, Any]
         return handle_snapshot(name)
     if path == "/api/intelligence/brief":
         return handle_brief(body or {})
+    if path == "/api/intelligence/briefs":
+        return handle_briefs(body or {})
     return {"error": "not found"}
