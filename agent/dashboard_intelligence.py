@@ -39,6 +39,7 @@ from .social_drafts import (
     create_social_drafts_from_blog,
     list_social_drafts,
     load_social_draft,
+    publish_selected_social_drafts,
     update_social_draft,
 )
 
@@ -451,11 +452,42 @@ async function renderSocialDrafts(sourceId){
  const data=await (await fetch('/api/drafts/'+sourceId+'/social')).json();
  const drafts=data.drafts||[];
  if(!drafts.length){socialDraftsList.innerHTML='';return;}
- socialDraftsList.innerHTML='<b style="font-size:12px;color:var(--muted)">Social Drafts</b><div class=queue-list style="margin-top:6px">'+drafts.map(d=>
-  `<div class=qitem><div class=qnum>${{linkedin:'💼',facebook:'👍',x:'🐦',threads:'🧵',reddit:'🔴',newsletter:'📬',youtube:'🎬'}[d.platform]||'📝'}</div>`+
-  `<div class=qtitle>${escapeHtml(d.title||'')}`+
-  `<div class=qmeta>${d.platform} · ${d.status} · ${d.created_at.slice(0,10)}</div></div>`+
-  `<button class=small onclick="editSocialDraft('${d.draft_id}')">Edit</button></div>`).join('')+'</div>';
+ socialDraftsList.innerHTML='<b style="font-size:12px;color:var(--muted)">Social Drafts</b>'+
+  '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0" class=muted>'+
+  '<span>Select approved to publish:</span> <button class=small onclick="selectAllSocial()">All</button> <button class=small onclick="clearSocialSelection()">None</button>'+
+  '<input type=checkbox id=dryRunCheckbox style=width:auto> <label style=margin:0>Dry run</label>'+
+  '<button class=small onclick="publishSelectedSocial()" id=btnPublishSelected style="display:none;background:#166534;color:#fff">🚀 Publish Selected</button></div>'+
+  '<div class=queue-list style="margin-top:6px">'+drafts.map(d=>
+   `<div class=qitem><input type=checkbox class=social-select value="${d.draft_id}" ${d.status==='approved'?'':'disabled'} data-status="${d.status}" onchange="updatePublishSelectedButton()">`+
+   `<div class=qnum>${{linkedin:'💼',facebook:'👍',x:'🐦',threads:'🧵',reddit:'🔴',newsletter:'📬',youtube:'🎬'}[d.platform]||'📝'}</div>`+
+   `<div class=qtitle>${escapeHtml(d.title||'')}`+
+   `<div class=qmeta>${d.platform} · ${d.status}${d.status==='published'&&d.published_url?' · <a href="'+d.published_url+'" target=_blank style=color:var(--good)>Published</a>':''} · ${d.created_at.slice(0,10)}</div></div>`+
+   `<button class=small onclick="editSocialDraft('${d.draft_id}')">Edit</button></div>`).join('')+'</div>';
+ updatePublishSelectedButton();
+}
+function updatePublishSelectedButton(){
+ const any=Array.from(document.querySelectorAll('.social-select:checked')).length>0;
+ btnPublishSelected.style.display=any?'inline-block':'none';
+}
+function selectAllSocial(){document.querySelectorAll('.social-select:not(:disabled)').forEach(cb=>cb.checked=true);updatePublishSelectedButton();}
+function clearSocialSelection(){document.querySelectorAll('.social-select').forEach(cb=>cb.checked=false);updatePublishSelectedButton();}
+async function publishSelectedSocial(){
+ const ids=Array.from(document.querySelectorAll('.social-select:checked')).map(cb=>cb.value);
+ const approvedIds=Array.from(document.querySelectorAll('.social-select:checked[data-status=approved]')).map(cb=>cb.value);
+ if(approvedIds.length!==ids.length){alert('Only approved drafts can be published');return}
+ if(!ids.length){alert('Select at least one social draft');return}
+ const dryRun=dryRunCheckbox.checked;
+ const action=dryRun?'dry-run':'publish';
+ if(!confirm(`Confirm ${action} for ${ids.length} selected platform(s)?`)){return}
+ const data=await (await fetch('/api/social_drafts/publish',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ids,dry_run:dryRun})})).json();
+ const results=data.results||{};
+ const summary=Object.entries(results).map(([id,r])=>{
+  const draftEl=Array.from(document.querySelectorAll('.social-select')).find(cb=>cb.value===id);
+  const platform=draftEl?draftEl.closest('.qitem').querySelector('.qmeta').textContent.split(' · ')[0]:id;
+  return `${platform}: ${r.ok?'✅':'❌'} ${r.published_url?r.published_url:r.error||''}`;
+ }).join('\n');
+ alert(summary);
+ renderSocialDrafts(currentDraftId);
 }
 function editSocialDraft(id){
  fetch('/api/social_drafts/'+id).then(r=>r.json()).then(data=>{
@@ -749,6 +781,13 @@ def handle_draft_publish(draft_id: str) -> dict[str, Any]:
     return {"ok": False, "error": result.get("error", "publish failed")}
 
 
+def handle_publish_social(body: dict[str, Any]) -> dict[str, Any]:
+    """Publish selected approved social drafts."""
+    ids = body.get("ids", [])
+    dry_run = bool(body.get("dry_run", False))
+    return publish_selected_social_drafts(ids, dry_run=dry_run)
+
+
 def handle_create_social_drafts(draft_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Generate social drafts from a published blog draft."""
     from .drafts import load_draft as load_content_draft
@@ -827,6 +866,8 @@ def register_routes(path: str, query: dict[str, list[str]], body: dict[str, Any]
         return handle_get_draft(draft_id)
     if path == "/api/drafts":
         return handle_list_drafts()
+    if path == "/api/social_drafts/publish":
+        return handle_publish_social(body or {})
     if path.startswith("/api/social_drafts/"):
         draft_id = path.replace("/api/social_drafts/", "")
         if body:

@@ -35,6 +35,8 @@ class SocialDraft:
     tags: list[str] = field(default_factory=list)
     hashtags: list[str] = field(default_factory=list)
     status: str = "draft"
+    published_url: str = ""
+    published_at: str = ""
     created_at: str = ""
     updated_at: str = ""
 
@@ -61,6 +63,8 @@ class SocialDraft:
             "tags": self.tags,
             "hashtags": self.hashtags,
             "status": self.status,
+            "published_url": self.published_url,
+            "published_at": self.published_at,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -238,6 +242,38 @@ def delete_social_draft(draft_id: str) -> bool:
         path.unlink()
         return True
     return False
+
+
+def publish_social_draft(draft_id: str, dry_run: bool = False) -> dict[str, Any]:
+    """Publish a single approved social draft to its platform.
+
+    Returns ok, published_url, error. On success, updates the draft with
+    published_url, published_at, and status=published. On failure, keeps
+    the draft at its current status (expected to be approved).
+    """
+    from .social_publishers import publish
+
+    draft = load_social_draft(draft_id)
+    if draft is None:
+        return {"ok": False, "error": "social draft not found"}
+    if draft.status != "approved":
+        return {"ok": False, "error": f"social draft must be approved, current status: {draft.status}"}
+
+    result = publish(draft.platform, draft.to_dict(), dry_run=dry_run)
+    if result.get("ok"):
+        draft.status = "published"
+        draft.published_url = result.get("published_url", "")
+        draft.published_at = dt.datetime.now(dt.timezone.utc).isoformat()
+        save_social_draft(draft)
+    return result
+
+
+def publish_selected_social_drafts(draft_ids: list[str], dry_run: bool = False) -> dict[str, Any]:
+    """Publish multiple approved social drafts. Returns per-id results."""
+    results = {}
+    for draft_id in draft_ids:
+        results[draft_id] = publish_social_draft(draft_id, dry_run=dry_run)
+    return {"ok": True, "results": results}
 
 
 def create_social_drafts_from_blog(
