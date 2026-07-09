@@ -50,21 +50,24 @@ button:disabled{opacity:.5}.chk{display:flex;align-items:center;gap:8px;margin-t
 .muted{color:#94a3b8;font-size:13px}.pill{display:inline-block;background:#334155;border-radius:999px;padding:2px 10px;font-size:12px;margin:2px}
 .pill.good{background:#166534}.pill.warn{background:#854d0e}.pill.bad{background:#7f1d1d}
 ul{padding-left:18px;margin:6px 0}a{color:#60a5fa}
-.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px}
-.icard{background:#0f172a;border:1px solid #334155;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px}
-.icard h3{margin:0 0 4px;font-size:18px;font-weight:600}
-.icard .head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
-.icard .score{font-size:32px;font-weight:700;line-height:1}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px;align-items:stretch}
+.icard{background:#0f172a;border:1px solid #334155;border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:14px;height:100%}
+.icard h3{margin:0 0 6px;font-size:18px;font-weight:600;line-height:1.35}
+.icard .head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.icard .score-wrap{text-align:right}
+.icard .score-label{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.4px}
+.icard .score{font-size:30px;font-weight:700;line-height:1}
 .icard .score.good{color:#4ade80}.icard .score.warn{color:#facc15}.icard .score.bad{color:#f87171}
-.icard .rec{font-size:15px;color:#cbd5e1;display:flex;align-items:center;gap:8px}
-.icard .why{font-size:13px;color:#94a3b8}
+.icard .rec{font-size:15px;color:#cbd5e1;display:flex;align-items:center;gap:8px;line-height:1.4}
+.icard .why{font-size:13px;color:#94a3b8;line-height:1.5}
 .icard .meta{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0}
-.icard .barwrap{background:#334155;border-radius:6px;height:8px;overflow:hidden;margin-top:4px}
-.icard .bar{height:100%;border-radius:6px;transition:width .3s ease}
+.icard .bar-label{font-size:12px;color:#94a3b8;margin-bottom:4px}
+.icard .barwrap{background:#334155;border-radius:6px;height:10px;overflow:hidden}
+.icard .bar{height:100%;border-radius:6px;transition:width .3s ease;min-width:4px}
 .icard .bar.good{background:#4ade80}.icard .bar.warn{background:#facc15}.icard .bar.bad{background:#f87171}
-.icard .fit{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #1e293b}
-.icard .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:10px}
-.icard .actions button{font-size:13px;padding:8px 12px}
+.icard .fit{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #1e293b}
+.icard .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:12px;border-top:1px solid #1e293b}
+.icard .actions button{font-size:13px;padding:8px 12px;white-space:nowrap}
 .hidden{display:none}
 #loading{margin:20px 0}
 .details-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:12px}
@@ -78,6 +81,8 @@ kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font
 .source-list{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .source-list .pill{cursor:default}
 .spark{font-size:16px;color:#4ade80;letter-spacing:-1px}
+.sparkwrap{font-size:16px;color:#4ade80;letter-spacing:-1px;white-space:nowrap}
+.icard .meta .pill{margin-bottom:4px}
 .assistant{background:linear-gradient(135deg,#1e3a8a 0%,#172554 100%);border:1px solid #2563eb}
 .assistant h3{margin-top:0}
 .delta.up{color:#4ade80}.delta.down{color:#f87171}
@@ -151,7 +156,7 @@ let currentCards=[];
 const EMOJI={blog:'📝',youtube_short:'🎬',linkedin_post:'💼',twitter_thread:'🧵',newsletter:'📬',tutorial:'🧑‍💻'};
 function setFilter(min,trendDir,ctypeVal){minScore.value=min||'';trend.value=trendDir||'';ctype.value=ctypeVal||'';loadIntelligence();}
 function clusterSources(c){
- const sources=(c.cluster&&c.cluster.sources)||[];
+ const sources=((c.cluster&&c.cluster.sources)||[]).slice().sort();
  const consensus=[];
  if(sources.length>=4)consensus.push(`Consensus: ${sources.length} sources`);
  else if(sources.length>1)consensus.push(`Cluster: ${sources.length} related pickups`);
@@ -179,7 +184,7 @@ async function loadIntelligence(){
  loading.hidden=true;currentCards=data.cards||[];renderCards(currentCards);renderAssistant(currentCards);
 }
 async function loadSnapshots(){
- const snaps=await (await fetch('/api/intelligence/snapshots')).json();
+ const snaps=await (await fetch('/api/intelligence/snapshots')).json().catch(()=>({snapshots:[]}));
  const list=(snaps.snapshots||[]);
  scount.textContent='('+list.length+')';
  snapshots.innerHTML=list.length?'<ul>'+list.slice(0,20).map(s=>`<li><a href="#" onclick="loadSnapshot('${s.name}');return false">${s.name}</a> <span class=muted>${s.when}</span></li>`).join('')+'</ul>':'No snapshots yet.';
@@ -192,8 +197,7 @@ async function loadSnapshot(name){
  if(data.top_brief){briefCard.hidden=false;briefOut.textContent=JSON.stringify(data.top_brief,null,2);}
 }
 function progressBar(score){
- const c=cls(score);const blocks=Math.round(score/10);
- return `<div class=barwrap><div class="bar ${c}" style="width:${score}%"></div></div><div style="font-size:11px;color:#94a3b8;margin-top:2px">${'█'.repeat(blocks)}${'░'.repeat(10-blocks)} ${score}</div>`;
+ const c=cls(score);return `<div class=bar-label>Opportunity Score</div><div class=barwrap><div class="bar ${c}" style="width:${score}%"></div></div>`;
 }
 function renderCards(list){
  count.textContent='('+list.length+')';
@@ -202,30 +206,36 @@ function renderCards(list){
   const o=c.opportunity||{};const r=c.recommendation||{};const t=c.trend||{};const a=c.authority||{};
   const fit=(c.platform_fit||[]).slice(0,5);const why=(c.why_care||{}).bullets||[];
   const recEmoji=EMOJI[r.recommendation]||'🎯'; const src=clusterSources(c);
+  const hasMultipleSources=src.sources.length>1;
+  const hasPlatformFit=fit.length>0;
   return `<div class=icard>
    <div class=head>
     <div>
      <h3>${c.previously_seen?'<span class="pill bad">SEEN</span> ':''}${escapeHtml(c.cluster&&c.cluster.headline||'(no headline)')}</h3>
      <div class=why>${why.map(b=>`<span class=pill>${escapeHtml(b)}</span>`).join(' ')}</div>
     </div>
-    <div class="score ${cls(o.opportunity_score)}">${o.opportunity_score||0}</div>
+    <div class=score-wrap>
+      <div class=score-label>Opportunity</div>
+      <div class="score ${cls(o.opportunity_score)}">${o.opportunity_score||0}</div>
+     </div>
    </div>
    ${progressBar(o.opportunity_score||0)}
    <div class=rec>${recEmoji} ${r.recommendation.replace(/_/g,' ')} <span class=muted>— ${escapeHtml(r.suggested_hook||'')}</span></div>
    <div class=meta>
-    ${trendBadge(t.direction)} ${sparkline(t.sparkline)} ${badge(r.confidence_score)} <span class=pill>Reach ${c.estimated_reach||0}%</span> <span class=pill>Difficulty ${c.estimated_difficulty||'Unknown'}</span> <span class=pill>Authority ${fmt(a.final_score||0)}</span>
+    ${trendBadge(t.direction)}<span class=sparkwrap title="trend sparkline">${sparkline(t.sparkline)}</span>${badge(r.confidence_score)}<span class=pill>Reach ${c.estimated_reach||0}%</span><span class=pill>Difficulty ${c.estimated_difficulty||'Unknown'}</span><span class=pill>Authority ${fmt(a.final_score||0)}</span>
    </div>
-   <div style="margin-top:8px"><b style="font-size:12px;color:#94a3b8">Source Consensus</b></div>
-   <div class=why>${src.consensus.map(b=>`<span class=pill>${escapeHtml(b)}</span>`).join(' ')||'<span class=muted>Single source</span>'} <span class=muted>(${src.sources.length})</span></div>
-   <div class=source-list>${src.sources.map(s=>`<span class=pill>${escapeHtml(s)}</span>`).join(' ')}</div>
-   <div style="margin-top:8px"><b style="font-size:13px;color:#94a3b8">Platform Fit</b></div>
-   ${fit.length?fit.map(f=>`<div class=fit><span>${f.emoji} ${f.platform.replace(/_/g,' ')}${f.recommended?' ⭐':''}</span><span class=${cls(f.score)}>${f.score}%</span></div>`).join(''):'<div class=muted>No platform fit data</div>'}
+   ${hasMultipleSources?`<div><div style="margin-top:4px"><b style="font-size:12px;color:#94a3b8">Source Consensus</b></div>
+   <div class=why>${src.consensus.map(b=>`<span class=pill>${escapeHtml(b)}</span>`).join(' ')} <span class=muted>(${src.sources.length})</span></div>
+   <div class=source-list>${src.sources.map(s=>`<span class=pill>${escapeHtml(s)}</span>`).join(' ')}</div></div>`:''}
+   ${hasPlatformFit?`<div><div style="margin-top:4px"><b style="font-size:13px;color:#94a3b8">Platform Fit</b></div>
+   ${fit.map(f=>`<div class=fit><span>${f.emoji} ${f.platform.replace(/_/g,' ')}${f.recommended?' ⭐':''}</span><span class=${cls(f.score)}>${f.score}%</span></div>`).join('')}
+   </div>`:''}
    <div class=actions>
     <button onclick="details(${i})">View Details</button>
     <button class=secondary onclick="generateBrief(${i})">Generate Brief</button>
     <button class=secondary onclick="openSource('${escapeHtml((c.cluster&&c.cluster.urls&&c.cluster.urls[0])||'')}')">Open Source</button>
    </div>
-  </div>`;
+   </div>`;
  }).join('')+'</div>';
 }
 function details(i){
