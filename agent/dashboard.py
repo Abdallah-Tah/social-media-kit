@@ -2,7 +2,8 @@
 
 Zero extra dependencies: built on Python's stdlib http.server. Run with
 `smkit dashboard` and open http://127.0.0.1:8800. Trigger runs, repurpose a
-URL, preview drafts, and browse history without touching the CLI.
+URL, preview drafts, browse history, and explore the Intelligence feed
+without touching the CLI.
 
 Binds to localhost by default. It CAN publish live (uncheck "dry run"), so
 don't expose it to the network unless you mean to.
@@ -17,6 +18,7 @@ from urllib.parse import urlparse, parse_qs
 
 from . import history
 from .config import AgentConfig, ROOT, list_profiles, load_profile
+from .dashboard_intelligence import register_routes as intelligence_routes
 from .orchestrator import run_agent
 from .prompts import build_goal
 
@@ -177,6 +179,14 @@ def _make_handler():
 
         def do_GET(self):
             path = urlparse(self.path).path
+            query = parse_qs(urlparse(self.path).query)
+            # Intelligence dashboard routes
+            intel = intelligence_routes(path, query)
+            if isinstance(intel, tuple):
+                page, ctype = intel
+                return self._send(200, page, ctype)
+            if isinstance(intel, dict) and "error" not in intel:
+                return self._send(200, intel)
             if path == "/":
                 return self._send(200, PAGE.encode(), "text/html; charset=utf-8")
             if path == "/api/state":
@@ -215,8 +225,17 @@ def _make_handler():
 
         def do_POST(self):
             path = urlparse(self.path).path
+            query = parse_qs(urlparse(self.path).query)
             if path == "/api/upload":
                 return self._upload()
+            if path.startswith("/api/intelligence/"):
+                length = int(self.headers.get("Content-Length", 0))
+                try:
+                    body = json.loads(self.rfile.read(length) or b"{}")
+                except json.JSONDecodeError:
+                    return self._send(400, {"error": "bad json"})
+                result = intelligence_routes(path, query, body)
+                return self._send(200, result)
             if path != "/api/run":
                 return self._send(404, {"error": "not found"})
             length = int(self.headers.get("Content-Length", 0))
