@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOCIAL_DRAFTS_DIR = ROOT / "content" / "social_drafts"
 SOCIAL_DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
 
-VALID_STATUSES = {"draft", "approved", "scheduled", "published"}
+VALID_STATUSES = {"draft", "reviewed", "approved", "scheduled", "published", "failed"}
 SUPPORTED_PLATFORMS = {
     "linkedin", "facebook", "x", "threads", "reddit", "newsletter", "youtube",
 }
@@ -35,8 +35,10 @@ class SocialDraft:
     tags: list[str] = field(default_factory=list)
     hashtags: list[str] = field(default_factory=list)
     status: str = "draft"
+    scheduled_at: str = ""
     published_url: str = ""
     published_at: str = ""
+    error: str = ""
     created_at: str = ""
     updated_at: str = ""
 
@@ -63,8 +65,10 @@ class SocialDraft:
             "tags": self.tags,
             "hashtags": self.hashtags,
             "status": self.status,
+            "scheduled_at": self.scheduled_at,
             "published_url": self.published_url,
             "published_at": self.published_at,
+            "error": self.error,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -244,28 +248,83 @@ def delete_social_draft(draft_id: str) -> bool:
     return False
 
 
+def schedule_social_drafts(draft_ids: list[str], scheduled_at: str) -> dict[str, Any]:
+    """Schedule approved social drafts for future publishing.
+
+    Only drafts with status=approved can be scheduled. Sets status=scheduled
+    and stores the ISO datetime. Immediate publishing does not happen.
+    """
+    results = {}
+    for draft_id in draft_ids:
+        draft = load_social_draft(draft_id)
+        if draft is None:
+            results[draft_id] = {"ok": False, "error": "social draft not found"}
+            continue
+        if draft.status != "approved":
+            results[draft_id] = {"ok": False, "error": f"draft must be approved, current status: {draft.status}"}
+            continue
+        try:
+            dt.datetime.fromisoformat(scheduled_at)
+        except ValueError:
+            results[draft_id] = {"ok": False, "error": "invalid scheduled_at datetime"}
+            continue
+        draft.status = "scheduled"
+        draft.scheduled_at = scheduled_at
+        save_social_draft(draft)
+        results[draft_id] = {"ok": True, "draft": draft.to_dict()}
+    return {"ok": True, "results": results}
+
+
 def publish_social_draft(draft_id: str, dry_run: bool = False) -> dict[str, Any]:
-    """Publish a single approved social draft to its platform.
+    """Publish a single approved/scheduled social draft to its platform.
 
     Returns ok, published_url, error. On success, updates the draft with
-    published_url, published_at, and status=published. On failure, keeps
-    the draft at its current status (expected to be approved).
+    published_url, published_at, and status=published. On failure, sets
+    status=failed and stores error.
     """
     from .social_publishers import publish
 
     draft = load_social_draft(draft_id)
     if draft is None:
         return {"ok": False, "error": "social draft not found"}
-    if draft.status != "approved":
-        return {"ok": False, "error": f"social draft must be approved, current status: {draft.status}"}
+    if draft.status not in {"approved", "scheduled"}:
+        return {"ok": False, "error": f"social draft must be approved or scheduled, current status: {draft.status}"}
 
     result = publish(draft.platform, draft.to_dict(), dry_run=dry_run)
     if result.get("ok"):
         draft.status = "published"
         draft.published_url = result.get("published_url", "")
         draft.published_at = dt.datetime.now(dt.timezone.utc).isoformat()
-        save_social_draft(draft)
+        draft.error = ""
+    else:
+        draft.status = "failed"
+        draft.error = result.get("error", "publish failed")
+    save_social_draft(draft)
     return result
+
+
+def publish_due_social_drafts(dry_run: bool = False) -> dict[str, Any]:
+    """Publish scheduled social drafts whose scheduled_at has passed.
+
+    Skips future scheduled drafts. Returns per-id results.
+    """
+    now = dt.datetime.now(dt.timezone.utc)
+    results = {}
+    for data in list_social_drafts(status="scheduled"):
+        draft_id = data.get("draft_id")
+        scheduled_at = data.get("scheduled_at", "")
+        try:
+            when = dt.datetime.fromisoformat(scheduled_at)
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=dt.timezone.utc)
+        except ValueError:
+            results[draft_id] = {"ok": False, "error": "invalid scheduled_at"}
+            continue
+        if when > now:
+            results[draft_id] = {"ok": False, "error": "scheduled for the future", "skipped": True}
+            continue
+        results[draft_id] = publish_social_draft(draft_id, dry_run=dry_run)
+    return {"ok": True, "results": results}
 
 
 def publish_selected_social_drafts(draft_ids: list[str], dry_run: bool = False) -> dict[str, Any]:

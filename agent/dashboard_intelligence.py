@@ -40,6 +40,7 @@ from .social_drafts import (
     list_social_drafts,
     load_social_draft,
     publish_selected_social_drafts,
+    schedule_social_drafts,
     update_social_draft,
 )
 
@@ -456,6 +457,7 @@ async function renderSocialDrafts(sourceId){
   '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0" class=muted>'+
   '<span>Select approved to publish:</span> <button class=small onclick="selectAllSocial()">All</button> <button class=small onclick="clearSocialSelection()">None</button>'+
   '<input type=checkbox id=dryRunCheckbox style=width:auto> <label style=margin:0>Dry run</label>'+
+  '<button class=small onclick="scheduleSelectedSocial()" id=btnScheduleSelected style="background:#2563eb;color:#fff">📅 Schedule Selected</button>'+
   '<button class=small onclick="publishSelectedSocial()" id=btnPublishSelected style="display:none;background:#166534;color:#fff">🚀 Publish Selected</button></div>'+
   '<div class=queue-list style="margin-top:6px">'+drafts.map(d=>
    `<div class=qitem><input type=checkbox class=social-select value="${d.draft_id}" ${d.status==='approved'?'':'disabled'} data-status="${d.status}" onchange="updatePublishSelectedButton()">`+
@@ -485,6 +487,23 @@ async function publishSelectedSocial(){
   const draftEl=Array.from(document.querySelectorAll('.social-select')).find(cb=>cb.value===id);
   const platform=draftEl?draftEl.closest('.qitem').querySelector('.qmeta').textContent.split(' · ')[0]:id;
   return `${platform}: ${r.ok?'✅':'❌'} ${r.published_url?r.published_url:r.error||''}`;
+ }).join('\n');
+ alert(summary);
+ renderSocialDrafts(currentDraftId);
+}
+async function scheduleSelectedSocial(){
+ const ids=Array.from(document.querySelectorAll('.social-select:checked')).map(cb=>cb.value);
+ const approvedIds=Array.from(document.querySelectorAll('.social-select:checked[data-status=approved]')).map(cb=>cb.value);
+ if(approvedIds.length!==ids.length){alert('Only approved drafts can be scheduled');return}
+ if(!ids.length){alert('Select at least one social draft');return}
+ const when=prompt('Schedule for (ISO datetime, e.g. 2026-07-10T09:00:00-04:00):');
+ if(!when){return}
+ const data=await (await fetch('/api/social_drafts/schedule',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ids,scheduled_at:when})})).json();
+ const results=data.results||{};
+ const summary=Object.entries(results).map(([id,r])=>{
+  const draftEl=Array.from(document.querySelectorAll('.social-select')).find(cb=>cb.value===id);
+  const platform=draftEl?draftEl.closest('.qitem').querySelector('.qmeta').textContent.split(' · ')[0]:id;
+  return `${platform}: ${r.ok?'✅':'❌'} ${r.error||''}`;
  }).join('\n');
  alert(summary);
  renderSocialDrafts(currentDraftId);
@@ -788,6 +807,13 @@ def handle_publish_social(body: dict[str, Any]) -> dict[str, Any]:
     return publish_selected_social_drafts(ids, dry_run=dry_run)
 
 
+def handle_schedule_social(body: dict[str, Any]) -> dict[str, Any]:
+    """Schedule selected approved social drafts."""
+    ids = body.get("ids", [])
+    scheduled_at = body.get("scheduled_at", "")
+    return schedule_social_drafts(ids, scheduled_at)
+
+
 def handle_create_social_drafts(draft_id: str, body: dict[str, Any]) -> dict[str, Any]:
     """Generate social drafts from a published blog draft."""
     from .drafts import load_draft as load_content_draft
@@ -868,6 +894,8 @@ def register_routes(path: str, query: dict[str, list[str]], body: dict[str, Any]
         return handle_list_drafts()
     if path == "/api/social_drafts/publish":
         return handle_publish_social(body or {})
+    if path == "/api/social_drafts/schedule":
+        return handle_schedule_social(body or {})
     if path.startswith("/api/social_drafts/"):
         draft_id = path.replace("/api/social_drafts/", "")
         if body:

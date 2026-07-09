@@ -1114,7 +1114,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_feed.add_argument("--save-intelligence", action="store_true", help="Save intelligence snapshot to content/feed/intelligence/")
     p_feed.set_defaults(func=cmd_feed)
 
+    p_social = sub.add_parser("social", help="Social publishing commands")
+    p_social.add_argument("action", choices=["publish-due"], help="Action to run")
+    p_social.add_argument("--dry-run", action="store_true", help="Preview scheduled posts without publishing")
+    p_social.set_defaults(func=cmd_social)
+
     return parser
+
+
+def cmd_social(args: argparse.Namespace) -> int:
+    """Run social publishing commands."""
+    from .social_drafts import publish_due_social_drafts
+
+    result = publish_due_social_drafts(dry_run=args.dry_run)
+    print(json.dumps(result, indent=2))
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
