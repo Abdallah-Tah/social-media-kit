@@ -28,6 +28,116 @@ from agent.feed_opportunity import OpportunityBreakdown, opportunity_for_cluster
 from agent.feed_recommendations import FormatRecommendation, recommend_format
 from agent.feed_trends import TrendBreakdown, trend_for_cluster
 
+
+# ── Card enrichment helpers ───────────────────────────────────────────────────
+
+def _build_score_breakdown(opp: OpportunityBreakdown) -> list[dict[str, Any]]:
+    """Convert weighted component scores into additive-looking points.
+
+    The final opportunity score is already weighted. For the dashboard we
+    decompose it into intuitive additive components that sum to ~100.
+    """
+    weights = {
+        "Freshness": 0.15,
+        "Authority": 0.15,
+        "Trend": 0.15,
+        "Interest Match": 0.20,
+        "Novelty": 0.10,
+        "Content Gap": 0.10,
+        "Competition": 0.05,
+    }
+    values = {
+        "Freshness": opp.freshness_score,
+        "Authority": opp.authority_score,
+        "Trend": opp.trend_score,
+        "Interest Match": opp.interest_score,
+        "Novelty": opp.novelty_score,
+        "Content Gap": opp.gap_score,
+        "Competition": opp.competition_score,
+    }
+    total = sum(weights[k] * values[k] for k in weights)
+    if total > 0:
+        scale = opp.opportunity_score / (total * 100)
+    else:
+        scale = 0
+    breakdown = []
+    for label, weight in weights.items():
+        val = values[label]
+        points = int(round(weight * val * 100 * scale))
+        breakdown.append({"label": label, "points": points, "weight": weight, "raw": round(val, 2)})
+    drift = int(opp.opportunity_score) - sum(b["points"] for b in breakdown)
+    if breakdown and drift != 0:
+        breakdown[0]["points"] += drift
+    return breakdown
+
+
+def _build_platform_fit(opp: OpportunityBreakdown, rec: FormatRecommendation) -> list[dict[str, Any]]:
+    """Return sorted platform fit scores with emoji labels."""
+    emoji = {
+        "blog": "📝",
+        "youtube_short": "🎬",
+        "linkedin_post": "💼",
+        "twitter_thread": "🧵",
+        "newsletter": "📬",
+        "tutorial": "🧑‍💻",
+    }
+    fits = []
+    for platform, score in sorted(rec.platform_fit_scores.items(), key=lambda x: x[1], reverse=True):
+        fits.append({
+            "platform": platform,
+            "emoji": emoji.get(platform, ""),
+            "score": int(round(score * 100)),
+            "recommended": platform == rec.recommendation,
+        })
+    return fits
+
+
+def _build_why_care(opp: OpportunityBreakdown, trend: TrendBreakdown, cluster: StoryCluster) -> dict[str, Any]:
+    """Human-readable bullet summary of why this story matters."""
+    bullets: list[str] = []
+    if trend.direction == "exploding":
+        bullets.append("🔥 Exploding trend")
+    elif trend.direction == "growing":
+        bullets.append("📈 Growing momentum")
+    if opp.authority_score >= 0.7:
+        bullets.append("✅ Authoritative source(s)")
+    if opp.interest_score >= 0.5:
+        bullets.append("🎯 Strong audience match")
+    if opp.competition_score >= 0.7:
+        bullets.append("💎 Low competition / niche")
+    if opp.virality_score >= 0.15:
+        bullets.append("📣 Engagement signals")
+    if opp.gap_score >= 0.7:
+        bullets.append("✨ Fresh content gap")
+    if not bullets:
+        bullets.append("Moderate fit for your interests")
+    return {"bullets": bullets, "summary": " · ".join(bullets)}
+
+
+def _estimate_reach(opp: OpportunityBreakdown, trend: TrendBreakdown) -> int:
+    """Simple estimated reach % from opportunity + trend + virality."""
+    base = opp.opportunity_score
+    if trend.direction == "exploding":
+        base += 8
+    elif trend.direction == "growing":
+        base += 4
+    base += int(opp.virality_score * 15)
+    return min(99, max(5, base))
+
+
+def _estimate_difficulty(opp: OpportunityBreakdown, rec: FormatRecommendation) -> str:
+    """Estimate production difficulty from recommendation and authority."""
+    difficult = {"blog": 3, "tutorial": 4, "youtube_short": 1, "linkedin_post": 1, "twitter_thread": 1, "newsletter": 2}
+    score = difficult.get(rec.recommendation, 2)
+    if opp.authority_score < 0.5:
+        score += 1
+    if score <= 1:
+        return "Low"
+    if score <= 2:
+        return "Medium"
+    return "High"
+
+
 INTELLIGENCE_DIR = Path(__file__).resolve().parents[1] / "content" / "feed" / "intelligence"
 
 
@@ -40,6 +150,11 @@ class IntelligenceCard:
     recommendation: dict[str, Any] = field(default_factory=dict)
     brief: dict[str, Any] | None = None
     previously_seen: bool = False
+    score_breakdown: list[dict[str, Any]] = field(default_factory=list)
+    platform_fit: list[dict[str, Any]] = field(default_factory=list)
+    why_care: dict[str, Any] = field(default_factory=dict)
+    estimated_reach: int = 0
+    estimated_difficulty: str = "Unknown"
     rank: int = 0
 
     def to_dict(self) -> dict[str, Any]:
@@ -52,6 +167,11 @@ class IntelligenceCard:
             "opportunity": self.opportunity,
             "recommendation": self.recommendation,
             "brief": self.brief,
+            "score_breakdown": self.score_breakdown,
+            "platform_fit": self.platform_fit,
+            "why_care": self.why_care,
+            "estimated_reach": self.estimated_reach,
+            "estimated_difficulty": self.estimated_difficulty,
         }
 
 
@@ -121,6 +241,11 @@ def run_intelligent_feed(
             opportunity=opp_breakdown.to_dict(),
             recommendation=rec.to_dict(),
             previously_seen=previously_seen,
+            score_breakdown=_build_score_breakdown(opp_breakdown),
+            platform_fit=_build_platform_fit(opp_breakdown, rec),
+            why_care=_build_why_care(opp_breakdown, trend_breakdown, cluster),
+            estimated_reach=_estimate_reach(opp_breakdown, trend_breakdown),
+            estimated_difficulty=_estimate_difficulty(opp_breakdown, rec),
         )
         cards.append(card)
 

@@ -38,7 +38,7 @@ INTELLIGENCE_PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 :root{color-scheme:dark}*{box-sizing:border-box}
 body{font:15px/1.5 system-ui,sans-serif;margin:0;background:#0f172a;color:#e2e8f0}
 header{padding:18px 24px;background:#1e293b;border-bottom:1px solid #334155;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
-h1{margin:0;font-size:18px}main{max-width:1200px;margin:0 auto;padding:24px;display:grid;gap:20px}
+h1{margin:0;font-size:18px}main{max-width:1300px;margin:0 auto;padding:24px;display:grid;gap:20px}
 .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:18px}
 label{display:block;font-size:13px;color:#94a3b8;margin:10px 0 4px}
 input,select,textarea{width:100%;padding:9px;border-radius:8px;border:1px solid #475569;background:#0f172a;color:#e2e8f0}
@@ -50,14 +50,29 @@ button:disabled{opacity:.5}.chk{display:flex;align-items:center;gap:8px;margin-t
 .muted{color:#94a3b8;font-size:13px}.pill{display:inline-block;background:#334155;border-radius:999px;padding:2px 10px;font-size:12px;margin:2px}
 .pill.good{background:#166534}.pill.warn{background:#854d0e}.pill.bad{background:#7f1d1d}
 ul{padding-left:18px;margin:6px 0}a{color:#60a5fa}
-.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
-.icard{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:14px}
-.icard h4{margin:0 0 8px;font-size:15px}
-.icard .meta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-.icard .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-.icard .actions button{font-size:12px;padding:6px 10px}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px}
+.icard{background:#0f172a;border:1px solid #334155;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.icard h3{margin:0 0 4px;font-size:18px;font-weight:600}
+.icard .head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.icard .score{font-size:32px;font-weight:700;line-height:1}
+.icard .score.good{color:#4ade80}.icard .score.warn{color:#facc15}.icard .score.bad{color:#f87171}
+.icard .rec{font-size:15px;color:#cbd5e1;display:flex;align-items:center;gap:8px}
+.icard .why{font-size:13px;color:#94a3b8}
+.icard .meta{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0}
+.icard .barwrap{background:#334155;border-radius:6px;height:8px;overflow:hidden;margin-top:4px}
+.icard .bar{height:100%;border-radius:6px;transition:width .3s ease}
+.icard .bar.good{background:#4ade80}.icard .bar.warn{background:#facc15}.icard .bar.bad{background:#f87171}
+.icard .fit{display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #1e293b}
+.icard .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:10px}
+.icard .actions button{font-size:13px;padding:8px 12px}
 .hidden{display:none}
 #loading{margin:20px 0}
+.details-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:12px}
+.detail-box{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px}
+.detail-box b{display:block;font-size:12px;color:#94a3b8;margin-bottom:4px}
+.score-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:5px 0}
+.score-row b{font-weight:600}
+kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px}
 </style></head><body>
 <header><h1>🧠 smkit Intelligence</h1><span class=muted>read-only dashboard</span>
 <a href="/" style="color:#60a5fa;margin-left:auto">← Main dashboard</a></header>
@@ -101,9 +116,11 @@ ul{padding-left:18px;margin:6px 0}a{color:#60a5fa}
 <script>
 const $=s=>document.querySelector(s);
 function fmt(n){return Number(n).toFixed(2)}
-function badge(score){if(score>=70)return 'good';if(score>=40)return 'warn';return 'bad'}
-function trendBadge(d){return {exploding:'good',growing:'good',stable:'warn',declining:'bad',dead:'bad'}[d]||'warn'}
+function cls(score){if(score>=80)return 'good';if(score>=50)return 'warn';return 'bad'}
+function badge(score){return `<span class="pill ${cls(score)}">${score}</span>`}
+function trendBadge(d){return `<span class="pill ${{exploding:'good',growing:'good',stable:'warn',declining:'bad',dead:'bad'}[d]||'warn'}">${d}</span>`}
 let currentCards=[];
+const EMOJI={blog:'📝',youtube_short:'🎬',linkedin_post:'💼',twitter_thread:'🧵',newsletter:'📬',tutorial:'🧑‍💻'};
 async function loadIntelligence(){
  loading.hidden=false;cards.innerHTML='';
  const params=new URLSearchParams({topic:topic.value,min_score:minScore.value,trend:trend.value,content_type:ctype.value,include_seen:includeSeen.checked?'1':'0'});
@@ -121,26 +138,41 @@ async function loadSnapshot(name){
  loading.hidden=false;
  const data=await (await fetch('/api/intelligence/snapshot?name='+encodeURIComponent(name))).json();
  loading.hidden=true;currentCards=data.cards||[];renderCards(currentCards);
+ if(data.top_brief){briefCard.hidden=false;briefOut.textContent=JSON.stringify(data.top_brief,null,2);}
+}
+function progressBar(score){
+ const c=cls(score);
+ const blocks=Math.round(score/10);
+ return `<div class=barwrap><div class="bar ${c}" style="width:${score}%"></div></div><div style="font-size:11px;color:#94a3b8;margin-top:2px">${'█'.repeat(blocks)}${'░'.repeat(10-blocks)} ${score}</div>`;
 }
 function renderCards(list){
  count.textContent='('+list.length+')';
  if(!list.length){cards.innerHTML='<span class=muted>No cards match filters.</span>';return}
  cards.innerHTML='<div class=card-grid>'+list.map((c,i)=>{
   const o=c.opportunity||{};const r=c.recommendation||{};const t=c.trend||{};const a=c.authority||{};
+  const fit=(c.platform_fit||[]).slice(0,5);
+  const breakdown=(c.score_breakdown||[]);
+  const why=(c.why_care||{}).bullets||[];
+  const recEmoji=EMOJI[r.recommendation]||'🎯';
   return `<div class=icard>
-   <h4>${c.previously_seen?'<span class="pill bad">SEEN</span> ':''}${escapeHtml(c.cluster&&c.cluster.headline||'(no headline)')}</h4>
-   <div class=meta>
-    <span class="pill ${badge(o.opportunity_score)}">Score ${o.opportunity_score}</span>
-    <span class="pill ${trendBadge(t.direction)}">Trend ${t.direction}</span>
-    <span class=pill>Authority ${fmt(a.final_score)}</span>
-    <span class=pill>${r.recommendation}</span>
-    <span class="pill ${badge(r.confidence_score)}">Confidence ${r.confidence_score}</span>
+   <div class=head>
+    <div>
+     <h3>${c.previously_seen?'<span class="pill bad">SEEN</span> ':''}${escapeHtml(c.cluster&&c.cluster.headline||'(no headline)')}</h3>
+     <div class=why>${why.map(b=>`<span class=pill>${escapeHtml(b)}</span>`).join(' ')}</div>
+    </div>
+    <div class="score ${cls(o.opportunity_score)}">${o.opportunity_score||0}</div>
    </div>
-   <p class=muted>${escapeHtml(r.reason||'')}</p>
+   ${progressBar(o.opportunity_score||0)}
+   <div class=rec>${recEmoji} ${r.recommendation.replace(/_/g,' ')} <span class=muted>— ${escapeHtml(r.suggested_hook||'')}</span></div>
+   <div class=meta>
+    ${trendBadge(t.direction)} ${badge(r.confidence_score)} <span class=pill>Reach ${c.estimated_reach||0}%</span> <span class=pill>Difficulty ${c.estimated_difficulty||'Unknown'}</span> <span class=pill>Authority ${fmt(a.final_score||0)}</span>
+   </div>
+   <div style="margin-top:8px"><b style="font-size:12px;color:#94a3b8">Platform Fit</b></div>
+   ${fit.length?fit.map(f=>`<div class=fit><span>${f.emoji} ${f.platform.replace(/_/g,' ')}${f.recommended?' ⭐':''}</span><span class=${cls(f.score)}>${f.score}%</span></div>`).join(''):'<div class=muted>No platform fit data</div>'}
    <div class=actions>
-    <button onclick="details(${i})">Details</button>
+    <button onclick="details(${i})">View Details</button>
     <button class=secondary onclick="generateBrief(${i})">Generate Brief</button>
-    <button class=secondary onclick="openSource('${escapeHtml((c.cluster&&c.cluster.urls&&c.cluster.urls[0])||'')})">Open Source</button>
+    <button class=secondary onclick="openSource('${escapeHtml((c.cluster&&c.cluster.urls&&c.cluster.urls[0])||'')}')">Open Source</button>
    </div>
   </div>`;
  }).join('')+'</div>';
@@ -148,11 +180,25 @@ function renderCards(list){
 function details(i){
  const c=currentCards[i];const o=c.opportunity||{};const r=c.recommendation||{};const t=c.trend||{};
  detailsCard.hidden=false;
- details.innerHTML=`<div class=row><div><b>Opportunity Score</b><br>${o.opportunity_score}</div><div><b>Trend</b><br>${t.direction}</div><div><b>Authority</b><br>${c.authority&&c.authority.final_score}</div></div>
-  <p><b>Explanation:</b> ${escapeHtml(r.reason||'')}</p>
-  <p><b>Signals:</b> ${(o.signals||[]).map(s=>`<span class=pill>${escapeHtml(s)}</span>`).join(' ')}</p>
-  <p><b>Sources:</b> ${(c.cluster&&c.cluster.sources||[]).map(s=>`<span class=pill>${escapeHtml(s)}</span>`).join(' ')}</p>
-  <p><b>URLs:</b><ul>${(c.cluster&&c.cluster.urls||[]).map(u=>`<li><a href="${encodeURI(u)}" target=_blank>${escapeHtml(u)}</a></li>`).join('')}</ul></p>`;
+ let breakdownHtml=(c.score_breakdown||[]).map(row=>`<div class=score-row><span>${escapeHtml(row.label)}</span><b>+${row.points}</b></div>`).join('');
+ details.innerHTML=`<div class=details-grid>
+  <div class=detail-box><b>Opportunity Score</b>${o.opportunity_score}</div>
+  <div class=detail-box><b>Trend</b>${trendBadge(t.direction)}</div>
+  <div class=detail-box><b>Authority</b>${fmt(c.authority&&c.authority.final_score||0)}</div>
+  <div class=detail-box><b>Confidence</b>${badge(r.confidence_score)}</div>
+  <div class=detail-box><b>Estimated Reach</b>${c.estimated_reach||0}%</div>
+  <div class=detail-box><b>Difficulty</b>${c.estimated_difficulty||'Unknown'}</div>
+ </div>
+ <div class=card style=margin-bottom:12px>
+  <b style="font-size:13px;color:#94a3b8">Why It Matters</b>
+  <p>${escapeHtml((c.why_care||{}).summary||'')}</p>
+  <b style="font-size:13px;color:#94a3b8">Recommendation Reason</b>
+  <p class=muted>${escapeHtml(r.reason||'')}</p>
+ </div>
+ <div class=row>
+  <div class=card><b style="font-size:13px;color:#94a3b8">Score Breakdown</b><div style=margin-top:8px>${breakdownHtml}</div><div class=score-row style="border-top:1px solid #334155;margin-top:6px;padding-top:6px"><span>Final</span><b>${o.opportunity_score||0}</b></div></div>
+  <div class=card><b style="font-size:13px;color:#94a3b8">Sources</b><ul>${(c.cluster&&c.cluster.sources||[]).map(s=>`<li>${escapeHtml(s)}</li>`).join('')}</ul></div>
+ </div>`;
 }
 async function generateBrief(i){
  const c=currentCards[i];
