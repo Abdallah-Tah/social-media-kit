@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -18,6 +19,7 @@ from agent.drafts import (
     delete_draft,
     list_drafts,
     load_draft,
+    publish_blog,
     transition_status,
     update_draft,
 )
@@ -135,6 +137,73 @@ def test_draft_to_dict_roundtrip(tmp_path):
         loaded = load_draft(draft.draft_id)
         assert loaded.title == "Hello World"
         assert loaded.slug == "hello-world"
+    finally:
+        drafts.DRAFTS_DIR = original_dir
+
+
+def test_publish_requires_approved_status(tmp_path):
+    from agent import drafts
+    original_dir = drafts.DRAFTS_DIR
+    drafts.DRAFTS_DIR = tmp_path
+    try:
+        draft = create_draft(SAMPLE_CARD, SAMPLE_BRIEF)
+        result = publish_blog(draft.draft_id)
+        assert result["ok"] is False
+        assert "approved" in result["error"]
+    finally:
+        drafts.DRAFTS_DIR = original_dir
+
+
+def test_approved_draft_publishes_blog_and_saves_url(tmp_path):
+    from agent import drafts
+    original_dir = drafts.DRAFTS_DIR
+    drafts.DRAFTS_DIR = tmp_path
+    try:
+        draft = create_draft(SAMPLE_CARD, SAMPLE_BRIEF)
+        transition_status(draft.draft_id, "approved")
+        with patch("blog_publisher.publish_article") as mock_pub:
+            mock_pub.return_value = {"id": 999, "slug": draft.slug}
+            result = publish_blog(draft.draft_id)
+        assert result["ok"] is True
+        assert result["blog_url"].endswith(f"/tutorials/{draft.slug}")
+
+        loaded = load_draft(draft.draft_id)
+        assert loaded.status == "published"
+        assert loaded.blog_url == result["blog_url"]
+        assert loaded.published_at
+    finally:
+        drafts.DRAFTS_DIR = original_dir
+
+
+def test_publish_failure_keeps_draft_approved(tmp_path):
+    from agent import drafts
+    original_dir = drafts.DRAFTS_DIR
+    drafts.DRAFTS_DIR = tmp_path
+    try:
+        draft = create_draft(SAMPLE_CARD, SAMPLE_BRIEF)
+        transition_status(draft.draft_id, "approved")
+        with patch("blog_publisher.publish_article") as mock_pub:
+            mock_pub.return_value = None
+            result = publish_blog(draft.draft_id)
+        assert result["ok"] is False
+        loaded = load_draft(draft.draft_id)
+        assert loaded.status == "approved"
+        assert not loaded.blog_url
+    finally:
+        drafts.DRAFTS_DIR = original_dir
+
+
+def test_publish_blog_no_social_side_effects(tmp_path):
+    from agent import drafts
+    original_dir = drafts.DRAFTS_DIR
+    drafts.DRAFTS_DIR = tmp_path
+    try:
+        draft = create_draft(SAMPLE_CARD, SAMPLE_BRIEF)
+        transition_status(draft.draft_id, "approved")
+        with patch("blog_publisher.publish_article") as mock_pub:
+            mock_pub.return_value = {"id": 42, "slug": "test-slug"}
+            publish_blog(draft.draft_id)
+            mock_pub.assert_called_once()
     finally:
         drafts.DRAFTS_DIR = original_dir
 

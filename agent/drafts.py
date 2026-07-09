@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import re
+import sys
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,6 +36,8 @@ class ContentDraft:
     body: str = ""
     source_urls: list[str] = field(default_factory=list)
     status: str = "draft"
+    blog_url: str = ""
+    published_at: str = ""
     created_at: str = ""
     updated_at: str = ""
 
@@ -62,6 +66,8 @@ class ContentDraft:
             "body": self.body,
             "source_urls": self.source_urls,
             "status": self.status,
+            "blog_url": self.blog_url,
+            "published_at": self.published_at,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -141,6 +147,53 @@ def transition_status(draft_id: str, new_status: str) -> ContentDraft | None:
     if new_status not in VALID_STATUSES:
         return None
     return update_draft(draft_id, {"status": new_status})
+
+
+def publish_blog(draft_id: str) -> dict[str, Any]:
+    """Publish an approved draft to the blog. No-op if not approved.
+
+    Returns a dict with ok, blog_url, post, and error.
+    """
+    draft = load_draft(draft_id)
+    if draft is None:
+        return {"ok": False, "error": "draft not found"}
+    if draft.status != "approved":
+        return {"ok": False, "error": f"draft must be approved, current status: {draft.status}"}
+
+    # Import blog publisher lazily to keep draft module light.
+    scripts_dir = str(ROOT / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    from blog_publisher import publish_article
+
+    post = publish_article(
+        title=draft.title,
+        slug=draft.slug,
+        content=draft.body,
+        excerpt=draft.brief.get("excerpt", ""),
+        publish=True,
+    )
+    if not post:
+        return {"ok": False, "error": "blog publish failed"}
+
+    base_url = _blog_base_url()
+    slug = post.get("slug") or draft.slug
+    blog_url = f"{base_url}/tutorials/{slug}"
+
+    draft.blog_url = blog_url
+    draft.published_at = dt.datetime.now(dt.timezone.utc).isoformat()
+    draft.status = "published"
+    save_draft(draft)
+
+    return {"ok": True, "blog_url": blog_url, "post": post}
+
+
+def _blog_base_url() -> str:
+    """Derive public blog base URL from BLOG_API_URL env."""
+    api_url = os.environ.get("BLOG_API_URL", "")
+    if "/api" in api_url:
+        return api_url.split("/api")[0].rstrip("/")
+    return api_url.rstrip("/")
 
 
 def list_drafts(status: str | None = None) -> list[dict[str, Any]]:

@@ -20,7 +20,14 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from .drafts import ContentDraft, create_draft, list_drafts, load_draft, update_draft
+from .drafts import (
+    ContentDraft,
+    create_draft,
+    list_drafts,
+    load_draft,
+    publish_blog,
+    update_draft,
+)
 from .feed_intelligence import (
     IntelligenceCard,
     generate_brief_for_top,
@@ -191,14 +198,17 @@ a{color:#60a5fa}
    <button class=small onclick="switchDraftTab('preview')">Preview Blog</button>
   </div>
   <div id=draftEditorTab>
+   <div id=draftPublishBanner style="display:none;margin-bottom:10px;padding:8px 12px;background:rgba(34,197,94,.12);border:1px solid var(--good);border-radius:8px;color:var(--good);font-size:12px"></div>
    <label>Title</label><input id=draftTitle>
    <label>Slug</label><input id=draftSlug>
-   <label>Status</label><select id=draftStatus><option value=draft>draft</option><option value=reviewed>reviewed</option><option value=approved>approved</option><option value=published>published</option></select>
+   <label>Status</label><select id=draftStatus onchange="togglePublishButton()"><option value=draft>draft</option><option value=reviewed>reviewed</option><option value=approved>approved</option><option value=published>published</option></select>
    <label>Body (Markdown)</label><textarea id=draftBody rows=10 style="font-family:ui-monospace,monospace"></textarea>
    <div id=draftMeta class=muted style="margin:8px 0"></div>
-   <div style="display:flex;gap:8px">
+   <div id=draftPublishStatus class=muted style="margin:8px 0;min-height:18px"></div>
+   <div style="display:flex;gap:8px;flex-wrap:wrap">
     <button onclick="saveDraftEdits()">💾 Save Draft</button>
     <button class=secondary onclick="loadDraftWorkspace()">View Drafts</button>
+    <button id=draftPublishBtn class=secondary onclick="publishDraftBlog()" style="display:none;background:#166534;color:#fff">🚀 Publish Blog</button>
    </div>
   </div>
   <div id=draftPreviewTab hidden>
@@ -405,6 +415,19 @@ async function saveDraftEdits(){
  if(data.ok){alert('Draft saved');renderDraftEditor(data.draft);loadDraftWorkspace();}else{alert(data.error||'Failed');}
  return data;
 }
+async function publishDraftBlog(){
+ if(!currentDraftId){alert('No draft open');return}
+ if(draftStatus.value!=='approved'){alert('Draft must be approved before publishing');return}
+ if(!confirm('Publish this approved draft to the blog? This cannot be undone.')){return}
+ const data=await (await fetch('/api/drafts/'+currentDraftId+'/publish',{method:'POST',headers:{'content-type':'application/json'}})).json();
+ if(data.ok){
+  alert('Published: '+data.blog_url);
+  renderDraftEditor(data.draft);
+  loadDraftWorkspace();
+ }else{
+  alert('Publish failed: '+(data.error||'unknown error'));
+ }
+}
 async function loadDraftsList(){
  const data=await (await fetch('/api/drafts')).json();
  return data.drafts||[];
@@ -424,12 +447,19 @@ async function openDraft(id){
  const data=await (await fetch('/api/drafts/'+id)).json();
  if(data.ok){renderDraftEditor(data.draft);draftWorkspace.hidden=false;workspaceTabs.scrollIntoView({behavior:'smooth'});}
 }
+function togglePublishButton(){
+ const show=draftStatus.value==='approved';
+ draftPublishBtn.style.display=show?'inline-block':'none';
+}
 function renderDraftEditor(d){
  currentDraftId=d.draft_id;
  draftTitle.value=d.title||'';draftSlug.value=d.slug||'';draftBody.value=d.body||'';draftStatus.value=d.status||'draft';
  draftMeta.innerHTML=`Created ${d.created_at.slice(0,16)} · Updated ${d.updated_at.slice(0,16)} · ID ${d.draft_id}`;
+ draftPublishStatus.innerHTML=d.blog_url?`<a href="${d.blog_url}" target=_blank style="color:var(--good)">Published: ${d.blog_url}</a> · ${d.published_at.slice(0,16)}<sup>🚀</sup>`:<sup>'';
+ draftPublishBanner.style.display=d.status==='approved'&&!d.blog_url?'block':'none';
+ draftPublishBanner.textContent=d.status==='approved'?'✅ This draft is approved and ready to publish to the blog.':'';
  draftPreview.innerHTML=`<iframe style="width:100%;height:300px;border:1px solid var(--border);border-radius:8px;background:#fff" srcdoc="${escapeHtml(markdownToHtml(d.body||''))}"></iframe>`;
- switchDraftTab('editor');
+ togglePublishButton();
 }
 function showDraftActions(brief){
  draftActions.innerHTML=`<button class=small onclick="createDraftFromBrief()">📝 Create Draft</button>`;
@@ -594,6 +624,41 @@ def handle_briefs(body: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "briefs": out}
 
 
+def handle_create_draft(body: dict[str, Any]) -> dict[str, Any]:
+    """Create a draft from intelligence card + brief."""
+    card = body.get("card", {})
+    brief = body.get("brief", {})
+    draft = create_draft(card, brief)
+    return {"ok": True, "draft": draft.to_dict()}
+
+
+def handle_list_drafts() -> dict[str, Any]:
+    return {"ok": True, "drafts": list_drafts()}
+
+
+def handle_get_draft(draft_id: str) -> dict[str, Any]:
+    draft = load_draft(draft_id)
+    if draft is None:
+        return {"ok": False, "error": "draft not found"}
+    return {"ok": True, "draft": draft.to_dict()}
+
+
+def handle_update_draft(draft_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    draft = update_draft(draft_id, body)
+    if draft is None:
+        return {"ok": False, "error": "draft not found or invalid status"}
+    return {"ok": True, "draft": draft.to_dict()}
+
+
+def handle_draft_publish(draft_id: str) -> dict[str, Any]:
+    """Publish an approved draft to the blog."""
+    result = publish_blog(draft_id)
+    if result.get("ok"):
+        draft = load_draft(draft_id)
+        return {"ok": True, "draft": draft.to_dict() if draft else {}, "blog_url": result.get("blog_url")}
+    return {"ok": False, "error": result.get("error", "publish failed")}
+
+
 # ── Dispatch for dashboard.py integration ───────────────────────────────────
 
 def register_routes(path: str, query: dict[str, list[str]], body: dict[str, Any] | None = None) -> tuple[bytes, str] | dict[str, Any]:
@@ -616,4 +681,16 @@ def register_routes(path: str, query: dict[str, list[str]], body: dict[str, Any]
         return handle_brief(body or {})
     if path == "/api/intelligence/briefs":
         return handle_briefs(body or {})
+    if path == "/api/intelligence/draft":
+        return handle_create_draft(body or {})
+    if path.startswith("/api/drafts/") and path.endswith("/publish"):
+        draft_id = path.replace("/api/drafts/", "").replace("/publish", "")
+        return handle_draft_publish(draft_id)
+    if path.startswith("/api/drafts/"):
+        draft_id = path.replace("/api/drafts/", "")
+        if body:
+            return handle_update_draft(draft_id, body)
+        return handle_get_draft(draft_id)
+    if path == "/api/drafts":
+        return handle_list_drafts()
     return {"error": "not found"}
