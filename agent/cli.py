@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -170,6 +171,17 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         "Cover images": ["FAL_KEY"],
     }
     OPTIONAL = {"Web search", "Cover images"}
+    # Feed source health
+    try:
+        from .feed import doctor_feed
+        feed_health = doctor_feed()
+        print("\nFeed sources:")
+        for name, status in feed_health.get("sources", {}).items():
+            mark = "✅" if status.get("ok") else "⚠️"
+            print(f"  {mark} {name}")
+    except Exception as exc:
+        print(f"\n⚠️  Feed doctor check failed: {exc}")
+
     print("Channel credentials:")
     for label, keys in checks.items():
         present = [k for k in keys if os.environ.get(k)]
@@ -474,6 +486,207 @@ def cmd_pitch_bracket_video(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pitch_video(args: argparse.Namespace) -> int:
+    """Generate World Cup Shorts metadata (+ optional static sample frames).
+
+    Football-first hooks, winner+win% verdict, no betting language. The Remotion
+    video template itself is built separately once the visual direction is
+    approved; this command produces the data + sample frames locally.
+    """
+    import re
+    root = Path(__file__).resolve().parents[1]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    if str(root / "scripts") not in sys.path:
+        sys.path.insert(0, str(root / "scripts"))
+    from pitch_agent import shorts_meta as sm
+    from pitch_agent.shorts_mockup import render_frames
+
+    if not re.search(r"\s+vs\s+", args.match, flags=re.I):
+        print('❌ --match must look like "England vs Croatia"')
+        return 1
+    home, away = [s.strip() for s in re.split(r"\s+vs\s+", args.match, maxsplit=1, flags=re.I)]
+
+    ledger = ""
+    try:
+        from football_prediction_shorts import compute_ledger
+        L = compute_ledger()
+        ledger = L["banner"].replace("Ledger ", "") if L else ""
+    except Exception:
+        pass
+
+    leader = args.leader or home
+    data = {
+        "home": home, "away": away, "competition": "World Cup 2026",
+        "leader": leader, "verdict": f"{leader} to win", "confidence": args.confidence,
+        "factors": args.factor or [
+            f"{home}'s attack rates higher in the model",
+            f"{away} can control midfield — the model's edge case",
+            "First goal swings it across the model's runs",
+        ],
+        "ledger": ledger,
+    }
+    variants = list(sm.VARIANTS) if args.all_variants else [args.variant]
+    out = Path(args.out) if args.out else (root / "artifacts" / "shorts_redesign" / "samples")
+    out.mkdir(parents=True, exist_ok=True)
+
+    if args.video:  # fetch this match's flags once into remotion/public
+        try:
+            from football_prediction_shorts import FLAG, PUBLIC, fetch_flag
+            PUBLIC.mkdir(parents=True, exist_ok=True)
+            fetch_flag(FLAG.get(home, ""), PUBLIC / "flag_home.png")
+            fetch_flag(FLAG.get(away, ""), PUBLIC / "flag_away.png")
+        except Exception as exc:  # noqa: BLE001
+            print(f"⚠️  flag fetch failed (video may miss flags): {exc}")
+
+    for v in variants:
+        meta = sm.generate_metadata(data, v)
+        slug = f"{home}-{away}-{v}".replace(" ", "_")
+        (out / f"{slug}.json").write_text(json.dumps({"data": data, "metadata": meta}, indent=2))
+        print(f"✅ {v}: {out / (slug + '.json')}")
+        print(f"   hook: {meta['hook']}")
+        if args.frames:
+            paths = render_frames(data, v, out / slug)
+            print(f"   frames: {len(paths)}/3 -> {out / slug}")
+        if args.video:
+            props = {
+                "variant": v, "home": home, "away": away, "competition": data["competition"],
+                "topChip": meta["top_chip"], "hook": meta["hook"], "subheadline": meta["subheadline"],
+                "credibilityChip": meta["credibility_chip"],
+                "homeFlag": "flag_home.png", "awayFlag": "flag_away.png",
+                "leader": data["leader"], "confidence": data["confidence"],
+                "factorLabel": meta["factor_label"], "factors": data["factors"][:3],
+                "verdict": data["verdict"], "cta": meta["cta_text"],
+                "durations": [2, 4, 7, 4, 3], "hasAudio": False, "audioFile": "voiceover.mp3",
+            }
+            pp = out / f"{slug}.props.json"
+            pp.write_text(json.dumps(props, indent=2))
+            mp4 = out / f"{slug}.mp4"
+            remotion = root / "remotion"
+            node = "/home/linuxbrew/.linuxbrew/bin/node"
+            node = node if Path(node).exists() else "node"
+            r = subprocess.run([node, str(remotion / "render.mjs"), "--id", "PredictionShort",
+                                "--props", str(pp), "--out", str(mp4)], cwd=str(remotion))
+            print(f"   video: {'OK' if (r.returncode == 0 and mp4.exists()) else 'FAILED'} -> {mp4}")
+    return 0
+
+
+def cmd_pitch_post(args: argparse.Namespace) -> int:
+    """ML/Elo build-in-public post: model's prediction (pre-match) or result.
+
+    Default = DRAFT (sends copy to Telegram for approval, posts nothing).
+    --publish posts to LinkedIn (worldcup kind) + X.
+    """
+    import re
+    import sqlite3
+    root = Path(__file__).resolve().parents[1]
+    for p in (str(root), str(root / "scripts")):
+        if p not in sys.path:
+            sys.path.insert(0, p)
+    from agent.config import load_env
+    load_env()  # populates TELEGRAM_TOKEN / TELEGRAM_CHAT_ID for the draft send
+    from pitch_agent import skill_post
+
+    if not re.search(r"\s+vs\s+", args.match, flags=re.I):
+        print('❌ --match must look like "England vs Croatia"'); return 1
+    home, away = [s.strip() for s in re.split(r"\s+vs\s+", args.match, maxsplit=1, flags=re.I)]
+
+    # Pull the model's real numbers + record (never fabricated).
+    ledger = ""
+    try:
+        from football_prediction_shorts import compute_ledger
+        L = compute_ledger(); ledger = L["banner"].replace("Ledger ", "") if L else ""
+    except Exception:
+        pass
+    data = {"home": home, "away": away, "ledger": ledger,
+            "leader": args.leader or home, "confidence": args.confidence,
+            "key_factor": args.key_factor}
+    try:
+        db = str(root / "pitch_agent.db")
+        c = sqlite3.connect(db); c.row_factory = sqlite3.Row
+        row = c.execute(
+            "SELECT p.predicted_outcome o, p.home_win_prob hp, p.away_win_prob ap, p.key_factor kf, "
+            "m.home_score hs, m.away_score as_, pr.correct corr "
+            "FROM predictions p JOIN matches m ON m.match_id=p.match_id "
+            "LEFT JOIN prediction_results pr ON pr.prediction_id=p.id "
+            "WHERE m.home_team_name=? AND m.away_team_name=? ORDER BY p.id DESC LIMIT 1",
+            (home, away)).fetchone()
+        c.close()
+        if row:
+            data["leader"] = home if row["o"] == "home" else away if row["o"] == "away" else home
+            data["confidence"] = round((row["hp"] if row["o"] != "away" else row["ap"]) * 100)
+            data["key_factor"] = data["key_factor"] or row["kf"]
+            data["home_score"], data["away_score"] = row["hs"], row["as_"]
+            data["verdict"] = f"{data['leader']} to win" if row["o"] != "draw" else "a draw"
+            data["correct"] = bool(row["corr"]) if row["corr"] is not None else False
+    except Exception as exc:  # noqa: BLE001
+        print(f"⚠️  model lookup failed (using args/defaults): {exc}")
+
+    copy = skill_post.result_post(data) if args.kind == "result" else skill_post.prediction_post(data)
+    print(f"\n===== {args.kind.upper()} — LinkedIn =====\n{copy['linkedin']}\n")
+    print(f"===== {args.kind.upper()} — X =====\n{copy['x']}\n")
+
+    if not args.publish:
+        import os
+        # Queue the exact publish command into Taco's workspace so the OpenClaw
+        # agent can run it on approval (it never sees the bot's own draft msg).
+        publish_cmd = (f'cd {root} && /usr/bin/python3 -m agent.cli pitch-post '
+                       f'--match "{home} vs {away}" --kind {args.kind} --publish')
+        try:
+            import datetime
+            q = Path(os.path.expanduser("~/.openclaw/workspace/pending_posts.json"))
+            try:
+                items = json.loads(q.read_text())
+            except (FileNotFoundError, json.JSONDecodeError):
+                items = []
+            items = [it for it in items if not (it.get("match") == f"{home} vs {away}"
+                                                and it.get("kind") == args.kind
+                                                and it.get("status") == "pending")]
+            items.append({"match": f"{home} vs {away}", "kind": args.kind,
+                          "command": publish_cmd, "status": "pending",
+                          "drafted_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds")})
+            q.parent.mkdir(parents=True, exist_ok=True)
+            q.write_text(json.dumps(items[-30:], indent=2))
+        except Exception as exc:  # noqa: BLE001
+            print(f"⚠️  could not write pending queue: {exc}")
+        try:
+            import telegram_poster as T
+            os.environ.setdefault("TELEGRAM_BOT_TOKEN", open(os.path.expanduser("~/.telegram-bot-token")).read().strip())
+            os.environ.setdefault("TELEGRAM_TOKEN", os.environ["TELEGRAM_BOT_TOKEN"])
+            T.post_message(
+                f"📝 DRAFT ({args.kind}) — {home} vs {away}\n\n— LinkedIn —\n{copy['linkedin']}\n\n"
+                f"— X —\n{copy['x']}\n\n"
+                f"✅ To publish: REPLY \"approve\" to THIS message (posts to LinkedIn; X paused until re-auth).\n"
+                f"[taco: on approval, read ~/.openclaw/workspace/pending_posts.json, run the pending "
+                f"`command` for match \"{home} vs {away}\" (kind {args.kind}) via shell, then set that "
+                f"entry's status to \"published\".]")
+            print("→ draft sent to Telegram + queued in pending_posts.json. Re-run with --publish (or approve in chat) to post.")
+        except Exception as exc:  # noqa: BLE001
+            print(f"⚠️  Telegram draft send failed: {exc}")
+        return 0
+
+    # --publish: LinkedIn (worldcup) + X
+    if not args.no_linkedin:
+        try:
+            import linkedin_org_poster as LI
+            from news_publish import linkedin_person_urn
+            tok, _ = LI.fetch_org_token()
+            r = LI.post_org(copy["linkedin"], token=tok, author=linkedin_person_urn(tok), post_kind="worldcup")
+            print(f"LinkedIn: {'✅ ' + r['id'] if r else '❌ failed/blocked'}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"LinkedIn ❌ {exc}")
+    if args.with_x and not args.no_x:
+        try:
+            import x_poster
+            r = x_poster.post_tweet(copy["x"])
+            print(f"X: {'✅ ' + str(r) if r else '❌ failed'}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"X ❌ {exc}")
+    else:
+        print("X: skipped (X auth needs re-authorization — pass --with-x once fixed)")
+    return 0
+
+
 def cmd_calendar(args: argparse.Namespace) -> int:
     """Generate a weekly content opportunity calendar."""
     from .intelligence.opportunity_calendar import run_calendar_pipeline
@@ -486,6 +699,58 @@ def cmd_calendar(args: argparse.Namespace) -> int:
         top_n=args.top,
     )
     print(f"\n✅ Content opportunity calendar: {path}")
+    return 0
+
+
+def cmd_feed(args: argparse.Namespace) -> int:
+    """Personalized AI news feed: fetch, rank, save, notify, or post."""
+    from .feed import build_feed, notify_feed, post_feed, print_feed, save_feed
+
+    items = build_feed(
+        topic=args.topic,
+        profile_name=args.profile,
+        limit=args.limit,
+        excluded_sources=args.exclude_source or [],
+        use_llm=args.llm,
+    )
+
+    if args.save:
+        path = save_feed(items)
+        print(f"💾 Feed snapshot saved: {path}")
+
+    if args.notify:
+        result = notify_feed(
+            items,
+            channel=args.channel,
+            profile_name=args.profile,
+            dry_run=args.dry_run,
+        )
+        if result.get("dry_run"):
+            print("🔮 Dry-run notification:\n")
+            print(result["message"])
+        elif result["ok"]:
+            print(f"✅ Notified {result['channel']} with {result['sent']} items.")
+        else:
+            print(f"❌ Notify failed: {result.get('error')}")
+            return 1
+
+    if args.post:
+        if args.dry_run:
+            print("🔮 Dry-run --post: would create social content from top story:")
+            print(f"   {items[0].title}\n   {items[0].url}")
+        else:
+            print(f"🚀 Creating social post from top story: {items[0].title}")
+            result = post_feed(items, profile_name=args.profile, dry_run=False)
+            if result["ok"]:
+                print("✅ Social post pipeline completed.")
+            else:
+                print(f"❌ Post pipeline failed: {result.get('error') or result.get('stderr')}")
+                return 1
+
+    # Always print ranked feed unless --quiet is passed.
+    if not args.quiet:
+        print_feed(items)
+
     return 0
 
 
@@ -737,6 +1002,36 @@ def build_parser() -> argparse.ArgumentParser:
     p_pitch_bracket.add_argument("--workdir", help="Render work directory")
     p_pitch_bracket.set_defaults(func=cmd_pitch_bracket_video)
 
+    p_pitch_video = sub.add_parser(
+        "pitch-video",
+        help="Generate World Cup Shorts metadata + sample frames for a match/variant")
+    p_pitch_video.add_argument("--match", required=True, help='e.g. "England vs Croatia"')
+    p_pitch_video.add_argument("--variant", default="key-factor",
+                               choices=["key-factor", "match-tension", "result-curiosity"],
+                               help="Template variant (default: key-factor)")
+    p_pitch_video.add_argument("--all-variants", action="store_true", help="Generate all 3 variants")
+    p_pitch_video.add_argument("--leader", help="Model's favoured side (default: home team)")
+    p_pitch_video.add_argument("--confidence", type=int, default=58, help="Leader win probability %%")
+    p_pitch_video.add_argument("--factor", action="append", help="Key factor (repeatable)")
+    p_pitch_video.add_argument("--frames", action="store_true", help="Also render static PNG sample frames")
+    p_pitch_video.add_argument("--video", action="store_true", help="Render a full MP4 via the PredictionShort Remotion composition")
+    p_pitch_video.add_argument("--out", help="Output directory")
+    p_pitch_video.set_defaults(func=cmd_pitch_video)
+
+    p_pitch_post = sub.add_parser(
+        "pitch-post",
+        help="ML/Elo build-in-public post (prediction or result) to LinkedIn + X; draft-first")
+    p_pitch_post.add_argument("--match", required=True, help='e.g. "England vs Croatia"')
+    p_pitch_post.add_argument("--kind", choices=["prediction", "result"], default="prediction")
+    p_pitch_post.add_argument("--leader", help="Override: model's favoured side")
+    p_pitch_post.add_argument("--confidence", type=int, default=58, help="Override: win probability %%")
+    p_pitch_post.add_argument("--key-factor", dest="key_factor", help="Override: the model's key factor")
+    p_pitch_post.add_argument("--publish", action="store_true", help="Actually post (LinkedIn + X). Default drafts to Telegram.")
+    p_pitch_post.add_argument("--no-linkedin", action="store_true", help="Skip LinkedIn when publishing")
+    p_pitch_post.add_argument("--with-x", action="store_true", help="Also post to X (off by default; needs valid X auth)")
+    p_pitch_post.add_argument("--no-x", action="store_true", help="(deprecated) X is opt-in via --with-x now")
+    p_pitch_post.set_defaults(func=cmd_pitch_post)
+
     # Newsletter mining standalone report
     p_newsletter_report = sub.add_parser(
         "newsletter-report",
@@ -757,6 +1052,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_calendar.add_argument("--include-newsletter", action="store_true", default=True, help="Include newsletter mining (default on)")
     p_calendar.add_argument("--include-audience", action="store_true", default=True, help="Include audience pain signals (default on)")
     p_calendar.set_defaults(func=cmd_calendar)
+
+    # Personalized feed
+    p_feed = sub.add_parser(
+        "feed",
+        help="Personalized AI news feed (Google Discover-style)",
+    )
+    p_feed.add_argument("--topic", "-t", help="Optional topic override")
+    p_feed.add_argument("--profile", "-p", default="default", help="Brand profile")
+    p_feed.add_argument("--limit", type=int, default=10, help="Number of items to return")
+    p_feed.add_argument("--exclude-source", action="append", help="Skip a source (repeatable)")
+    p_feed.add_argument("--channel", help="Override notification channel")
+    p_feed.add_argument("--save", action="store_true", help="Save snapshot to content/feed/YYYY-MM-DD.json")
+    p_feed.add_argument("--notify", action="store_true", help="Send top 3 items to notification channel")
+    p_feed.add_argument("--post", action="store_true", help="Create social content from the top story")
+    p_feed.add_argument("--llm", action="store_true", default=False, help="Use LLM for summaries (default off)")
+    p_feed.add_argument("--quiet", action="store_true", help="Skip printing the feed table")
+    p_feed.add_argument("--dry-run", action="store_true", help="Preview only; don't send/post")
+    p_feed.set_defaults(func=cmd_feed)
 
     return parser
 
