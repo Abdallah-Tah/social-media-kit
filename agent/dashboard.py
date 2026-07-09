@@ -180,6 +180,15 @@ def _make_handler():
         def do_GET(self):
             path = urlparse(self.path).path
             query = parse_qs(urlparse(self.path).query)
+            if path == "/":
+                # Default landing page is the Intelligence dashboard.
+                self.send_response(302)
+                self.send_header("Location", "/intelligence")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if path == "/dashboard":
+                return self._send(200, PAGE.encode(), "text/html; charset=utf-8")
             # Intelligence dashboard routes
             intel = intelligence_routes(path, query)
             if isinstance(intel, tuple):
