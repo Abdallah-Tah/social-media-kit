@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from agent.feed import FeedItem, build_feed, load_profile_with_interests
+from agent.feed import FeedItem, build_feed, is_seen, load_profile_with_interests
 from agent.feed_authority import item_authority
 from agent.feed_clustering import StoryCluster, cluster_items
 from agent.feed_content_hook import ContentBrief, build_brief
@@ -39,11 +39,13 @@ class IntelligenceCard:
     opportunity: dict[str, Any] = field(default_factory=dict)
     recommendation: dict[str, Any] = field(default_factory=dict)
     brief: dict[str, Any] | None = None
+    previously_seen: bool = False
     rank: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "rank": self.rank,
+            "previously_seen": self.previously_seen,
             "cluster": self.cluster.to_dict() if self.cluster else {},
             "authority": self.authority,
             "trend": self.trend,
@@ -60,6 +62,7 @@ def run_intelligent_feed(
     excluded_sources: list[str] | None = None,
     use_llm: bool = False,
     existing_content: list[Any] | None = None,
+    include_seen: bool = False,
 ) -> list[IntelligenceCard]:
     """Run the full intelligence pipeline and return ranked cards."""
     profile = load_profile_with_interests(profile_name)
@@ -72,6 +75,7 @@ def run_intelligent_feed(
         limit=max(limit * 3, 30),
         excluded_sources=excluded_sources,
         use_llm=use_llm,
+        include_seen=include_seen,
     )
 
     # Phase 1/2: cluster stories.
@@ -103,12 +107,20 @@ def run_intelligent_feed(
             interests=interests,
         )
 
+        previously_seen = False
+        if include_seen:
+            from agent.feed import load_seen
+
+            seen = load_seen()
+            previously_seen = is_seen(rep.url, seen)
+
         card = IntelligenceCard(
             cluster=cluster,
             authority=auth_breakdown.to_dict(),
             trend=trend_breakdown.to_dict(),
             opportunity=opp_breakdown.to_dict(),
             recommendation=rec.to_dict(),
+            previously_seen=previously_seen,
         )
         cards.append(card)
 
@@ -173,7 +185,8 @@ def print_intelligence(cards: list[IntelligenceCard], brief: ContentBrief | None
     for card in cards:
         opp = card.opportunity
         rec = card.recommendation
-        print(f"{card.rank}. {card.cluster.headline if card.cluster else '(no headline)'}")
+        seen_marker = " [SEEN]" if card.previously_seen else ""
+        print(f"{card.rank}.{seen_marker} {card.cluster.headline if card.cluster else '(no headline)'}")
         print(f"   Opportunity: {opp.get('opportunity_score')} | Trend: {card.trend.get('direction')} | Authority: {card.authority.get('final_score')}")
         print(f"   Recommendation: {rec.get('recommendation')} (confidence {rec.get('confidence_score')})")
         print(f"   Reason: {rec.get('reason')}")

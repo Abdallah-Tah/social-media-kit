@@ -236,6 +236,7 @@ def build_feed(
     limit: int = DEFAULT_LIMIT,
     excluded_sources: list[str] | None = None,
     use_llm: bool = True,
+    include_seen: bool = False,
 ) -> list[FeedItem]:
     """Fetch, dedupe, rank, and summarize a personalized feed.
 
@@ -245,6 +246,7 @@ def build_feed(
         limit: How many top items to return.
         excluded_sources: Source names to skip this run.
         use_llm: Whether to use the LLM provider for summaries/explanations.
+        include_seen: If True, include previously seen URLs (demo/analysis mode).
     """
     profile = load_profile_with_interests(profile_name)
     interests = [i.lower() for i in profile.get("interests", [])]
@@ -258,7 +260,8 @@ def build_feed(
     raw = fetch_all(sources, topic=topic)
 
     seen = load_seen()
-    raw = [item for item in raw if not is_seen(item.url, seen)]
+    if not include_seen:
+        raw = [item for item in raw if not is_seen(item.url, seen)]
 
     from scripts.feed_ranker import dedupe_items, rank_items
 
@@ -268,7 +271,9 @@ def build_feed(
         ranked = _summarize_top(ranked, profile, topic=topic)
 
     # Mark top N as seen so reruns don't surface the same stories.
-    mark_seen([item.url for item in ranked[:limit]], seen)
+    # When include_seen is True, do not update the seen store.
+    if not include_seen:
+        mark_seen([item.url for item in ranked[:limit]], seen)
     return ranked[:limit]
 
 

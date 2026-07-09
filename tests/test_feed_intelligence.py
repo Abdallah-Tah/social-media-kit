@@ -121,8 +121,70 @@ def test_run_intelligent_feed_with_items():
         assert top.opportunity.get("opportunity_score", 0) >= 0
         assert top.trend.get("direction") in {"exploding", "growing", "stable", "declining", "dead"}
         assert top.recommendation.get("recommendation") in {"blog", "tutorial", "linkedin_post", "youtube_short", "twitter_thread", "newsletter", "skip"}
+        assert top.previously_seen is False
     finally:
         feed_intelligence.build_feed = original_build_feed
+
+
+def test_include_seen_flags_previously_seen():
+    from agent import feed
+    from agent import feed_intelligence
+
+    now = "2026-07-09T11:00:00+00:00"
+    item = FakeItem(
+        title="Laravel adds AI tooling for developers",
+        url="https://laravel.com/news/ai-tooling",
+        source="rss",
+        published_at=now,
+    )
+    # Mark the URL as seen first.
+    feed.mark_seen([item.url])
+    original_build_feed = feed_intelligence.build_feed
+
+    def fake_build_feed(*, include_seen=False, **kwargs):
+        if include_seen:
+            return [item]
+        return []
+
+    feed_intelligence.build_feed = fake_build_feed
+    try:
+        # Without include_seen: no cards.
+        cards_default = run_intelligent_feed(topic="laravel ai", profile_name="default", limit=3)
+        assert cards_default == []
+        # With include_seen: card marked as previously_seen.
+        cards_seen = run_intelligent_feed(topic="laravel ai", profile_name="default", limit=3, include_seen=True)
+        assert len(cards_seen) >= 1
+        assert cards_seen[0].previously_seen is True
+    finally:
+        feed_intelligence.build_feed = original_build_feed
+
+
+def test_include_seen_does_not_update_seen_store(tmp_path):
+    from agent import feed
+    from agent import feed_intelligence
+
+    original_feed_dir = feed.FEED_DIR
+    original_seen_path = feed.SEEN_PATH
+    feed.FEED_DIR = tmp_path
+    feed.SEEN_PATH = tmp_path / "seen.json"
+
+    now = "2026-07-09T11:00:00+00:00"
+    item = FakeItem(
+        title="Laravel AI tooling",
+        url="https://laravel.com/news/ai-tooling",
+        source="rss",
+        published_at=now,
+    )
+    original_build_feed = feed_intelligence.build_feed
+    feed_intelligence.build_feed = lambda **kwargs: [item]
+    try:
+        run_intelligent_feed(topic="laravel", profile_name="default", limit=3, include_seen=True)
+        # seen.json should not have been created/updated.
+        assert not feed.SEEN_PATH.exists()
+    finally:
+        feed_intelligence.build_feed = original_build_feed
+        feed.FEED_DIR = original_feed_dir
+        feed.SEEN_PATH = original_seen_path
 
 
 def test_intelligence_brief_option():

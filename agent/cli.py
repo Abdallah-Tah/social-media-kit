@@ -772,6 +772,7 @@ def _cmd_feed_intelligence(args: argparse.Namespace) -> int:
         limit=args.limit,
         excluded_sources=args.exclude_source or [],
         use_llm=args.llm,
+        include_seen=args.include_seen,
     )
 
     brief = None
@@ -1108,6 +1109,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_feed.add_argument("--quiet", action="store_true", help="Skip printing the feed table")
     p_feed.add_argument("--dry-run", action="store_true", help="Preview only; don't send/post")
     p_feed.add_argument("--intelligence", action="store_true", help="Run full authority→cluster→trend→opportunity pipeline")
+    p_feed.add_argument("--include-seen", action="store_true", help="Include previously-seen stories in intelligence mode (demo-safe)")
     p_feed.add_argument("--brief", action="store_true", help="Generate content brief for top intelligence opportunity")
     p_feed.add_argument("--save-intelligence", action="store_true", help="Save intelligence snapshot to content/feed/intelligence/")
     p_feed.set_defaults(func=cmd_feed)
