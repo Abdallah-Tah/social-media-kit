@@ -177,6 +177,24 @@ def _make_handler():
             self.end_headers()
             self.wfile.write(data)
 
+        def do_POST(self):
+            path = urlparse(self.path).path
+            body = self._read_json()
+            # Intelligence dashboard routes
+            intel = intelligence_routes(path, {}, body=body)
+            if isinstance(intel, dict) and "error" not in intel:
+                return self._send(200, intel)
+            return self._send(404, {"error": "not found"})
+
+        def _read_json(self):
+            length = int(self.headers.get("Content-Length", "0"))
+            if not length:
+                return {}
+            try:
+                return json.loads(self.rfile.read(length).decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                return {}
+
         def do_GET(self):
             path = urlparse(self.path).path
             query = parse_qs(urlparse(self.path).query)

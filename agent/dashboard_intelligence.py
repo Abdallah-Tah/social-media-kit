@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from .drafts import ContentDraft, create_draft, list_drafts, load_draft, update_draft
 from .feed_intelligence import (
     IntelligenceCard,
     generate_brief_for_top,
@@ -174,8 +175,33 @@ a{color:#60a5fa}
  </div>
 
  <div class=card id=briefCard hidden>
-  <h3 style=margin-top:0>Generated Briefs</h3>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+   <h3 style=margin:0>Generated Briefs</h3>
+   <div id=draftActions style="display:flex;gap:6px"></div>
+  </div>
   <pre id=briefOut></pre>
+ </div>
+
+ <div class=card id=draftWorkspace hidden>
+  <h3 style=margin-top:0>📝 Draft Workspace</h3>
+  <div id=workspaceTabs style="display:flex;gap:8px;margin-bottom:10px">
+   <button class=small onclick="switchDraftTab('editor')">Editor</button>
+   <button class=small onclick="switchDraftTab('preview')">Preview Blog</button>
+  </div>
+  <div id=draftEditorTab>
+   <label>Title</label><input id=draftTitle>
+   <label>Slug</label><input id=draftSlug>
+   <label>Status</label><select id=draftStatus><option value=draft>draft</option><option value=reviewed>reviewed</option><option value=approved>approved</option><option value=published>published</option></select>
+   <label>Body (Markdown)</label><textarea id=draftBody rows=10 style="font-family:ui-monospace,monospace"></textarea>
+   <div id=draftMeta class=muted style="margin:8px 0"></div>
+   <div style="display:flex;gap:8px">
+    <button onclick="saveDraftEdits()">💾 Save Draft</button>
+    <button class=secondary onclick="loadDraftWorkspace()">View Drafts</button>
+   </div>
+  </div>
+  <div id=draftPreviewTab hidden>
+   <div id=draftPreview style="margin-top:8px"></div>
+  </div>
  </div>
 </section>
 
@@ -184,6 +210,10 @@ a{color:#60a5fa}
   <h3 style=margin-top:0>📋 Today's Queue</h3>
   <div id=queue class=muted>Run intelligence to build a queue.</div>
   <div style="margin-top:10px;font-size:12px;color:var(--muted)">Estimated work: <b id=qWork>—</b> · Potential reach: <b id=qReach>—</b></div>
+ </div>
+ <div class=card>
+  <h3 style=margin-top:0>🗂️ Draft Workspace <span class=muted id=draftCount></span></h3>
+  <div id=draftList class=muted>Loading…</div>
  </div>
  <div class=card>
   <h3 style=margin-top:0>💾 Snapshots <span class=muted id=scount></span></h3>
@@ -196,6 +226,10 @@ const $=s=>document.querySelector(s);
 const EMOJI={blog:'📝',youtube_short:'🎬',linkedin_post:'💼',twitter_thread:'🧵',newsletter:'📬',tutorial:'🧑‍💻'};
 const ICONS={opportunity:'🔥',trend:'📈',authority:'⭐',reach:'🚀',difficulty:'⚡',confidence:'🎯',freshness:'🕐',recommendation:'🎬'};
 let currentCards=[];
+let currentDraftBrief=null;
+let currentDraftCard=null;
+let currentDraftId=null;
+function switchDraftTab(tab){draftEditorTab.hidden=tab==='preview';draftPreviewTab.hidden=tab==='editor';if(tab==='preview'&&currentDraftId){saveDraftEdits().then(()=>{draftPreview.innerHTML=`<iframe style="width:100%;height:300px;border:1px solid var(--border);border-radius:8px;background:#fff" srcdoc="${escapeHtml(markdownToHtml(draftBody.value))}"></iframe>`;});}}
 function fmt(n){return Number(n).toFixed(0)}
 function cls(score){if(score>=80)return 'good';if(score>=60)return 'warn';return 'bad'}
 function scoreColor(score){if(score>=80)return 'var(--good)';if(score>=60)return 'var(--warn)';if(score>=40)return '#f97316';return 'var(--bad)'}
@@ -295,7 +329,7 @@ async function loadIntelligence(){
  loading.hidden=false;cards.innerHTML='';
  const params=new URLSearchParams({topic:topic.value,min_score:minScore.value,trend:trend.value,content_type:ctype.value,include_seen:includeSeen.checked?'1':'0'});
  const data=await (await fetch('/api/intelligence/run?'+params)).json();
- loading.hidden=true;currentCards=data.cards||[];renderCards(currentCards);renderAssistant(currentCards);renderStats(currentCards);renderQueue(currentCards);
+ loading.hidden=true;currentCards=data.cards||[];renderCards(currentCards);renderAssistant(currentCards);renderStats(currentCards);renderQueue(currentCards);loadDraftWorkspace();
 }
 async function loadSnapshots(){
  const snaps=await (await fetch('/api/intelligence/snapshots')).json().catch(()=>({snapshots:[]}));
@@ -307,7 +341,7 @@ async function loadSnapshots(){
 async function loadSnapshot(name){
  loading.hidden=false;
  const data=await (await fetch('/api/intelligence/snapshot?name='+encodeURIComponent(name))).json();
- loading.hidden=true;currentCards=data.cards||[];renderCards(currentCards);renderAssistant(currentCards);renderStats(currentCards);renderQueue(currentCards);
+ loading.hidden=true;currentCards=data.cards||[];renderCards(currentCards);renderAssistant(currentCards);renderStats(currentCards);renderQueue(currentCards);loadDraftWorkspace();
  if(data.top_brief){briefCard.hidden=false;briefOut.textContent=JSON.stringify(data.top_brief,null,2);}
 }
 function details(i){
@@ -342,11 +376,67 @@ async function generateBrief(i){
  const c=currentCards[i];
  const data=await (await fetch('/api/intelligence/brief',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({card:c})})).json();
  briefCard.hidden=false;briefOut.textContent=JSON.stringify(data.brief,null,2);
+ currentDraftBrief=data.brief||null;currentDraftCard=c;
+ showDraftActions(data.brief);
 }
 async function generateTopBriefs(n){
  const payload=currentCards.slice(0,n).map(c=>c);
  const data=await (await fetch('/api/intelligence/briefs',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({cards:payload})})).json();
  briefCard.hidden=false;briefOut.textContent=JSON.stringify(data.briefs,null,2);
+}
+async function createDraftFromBrief(){
+ if(!currentDraftBrief||!currentDraftCard){alert('Generate a brief first');return}
+ const data=await (await fetch('/api/intelligence/draft',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({card:currentDraftCard,brief:currentDraftBrief})})).json();
+ if(data.ok){
+  currentDraftId=data.draft.draft_id;
+  alert('Draft saved: '+currentDraftId);
+  loadDraftWorkspace();
+  draftWorkspace.hidden=false;
+  workspaceTabs.scrollIntoView({behavior:'smooth'});
+  renderDraftEditor(data.draft);
+ }else{alert(data.error||'Failed');}
+}
+async function saveDraftEdits(){
+ if(!currentDraftId){alert('No draft open');return Promise.reject('No draft open')}
+ const fields={title:draftTitle.value,slug:draftSlug.value,body:draftBody.value,status:draftStatus.value};
+ const data=await (await fetch('/api/drafts/'+currentDraftId,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(fields)})).json();
+ if(data.ok){alert('Draft saved');renderDraftEditor(data.draft);loadDraftWorkspace();}else{alert(data.error||'Failed');}
+ return data;
+}
+async function loadDraftsList(){
+ const data=await (await fetch('/api/drafts')).json();
+ return data.drafts||[];
+}
+async function loadDraftWorkspace(){
+ const drafts=await loadDraftsList();
+ draftCount.textContent='('+drafts.length+')';
+ if(!drafts.length){draftList.innerHTML='<span class=muted>No drafts yet. Generate a brief and create one.</span>';draftWorkspace.hidden=true;return;}
+ draftWorkspace.hidden=false;
+ draftList.innerHTML='<div class=queue-list>'+drafts.map(d=>`
+  <div class=qitem onclick="openDraft('${d.draft_id}');return false;" style=cursor:pointer>
+   <div class=qnum>${{draft:'📝',reviewed:'👀',approved:'✅',published:'🚀'}[d.status]||'📝'}</div>
+   <div class=qtitle>${escapeHtml(d.title||'Untitled')}<div class=qmeta>${d.content_type.replace(/_/g,' ')} · ${d.status} · ${d.updated_at.slice(0,10)}</div></div>
+  </div>`).join('')+'</div>';
+}
+async function openDraft(id){
+ const data=await (await fetch('/api/drafts/'+id)).json();
+ if(data.ok){renderDraftEditor(data.draft);draftWorkspace.hidden=false;workspaceTabs.scrollIntoView({behavior:'smooth'});}
+}
+function renderDraftEditor(d){
+ currentDraftId=d.draft_id;
+ draftTitle.value=d.title||'';draftSlug.value=d.slug||'';draftBody.value=d.body||'';draftStatus.value=d.status||'draft';
+ draftMeta.innerHTML=`Created ${d.created_at.slice(0,16)} · Updated ${d.updated_at.slice(0,16)} · ID ${d.draft_id}`;
+ draftPreview.innerHTML=`<iframe style="width:100%;height:300px;border:1px solid var(--border);border-radius:8px;background:#fff" srcdoc="${escapeHtml(markdownToHtml(d.body||''))}"></iframe>`;
+ switchDraftTab('editor');
+}
+function showDraftActions(brief){
+ draftActions.innerHTML=`<button class=small onclick="createDraftFromBrief()">📝 Create Draft</button>`;
+}
+function markdownToHtml(md){
+ if(!md)return '';
+ return md.replace(/^### (.*$)/gim,'<h3>$1</h3>').replace(/^## (.*$)/gim,'<h2>$1</h2>').replace(/^# (.*$)/gim,'<h1>$1</h1>')
+  .replace(/\*\*(.*?)\*\*/gim,'<b>$1</b>').replace(/\*(.*?)\*/gim,'<i>$1</i>')
+  .replace(/\n/g,'<br>');
 }
 function exportCSV(){
  const rows=[['rank','headline','score','trend','recommendation','reach','difficulty','age','url'].join(',')];
