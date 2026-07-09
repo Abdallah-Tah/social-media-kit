@@ -97,18 +97,37 @@ def server():
     srv.shutdown()
 
 
-def _get(url):
-    with urllib.request.urlopen(url, timeout=5) as r:
-        return r.status, r.read()
+def _get(url, follow_redirects=False):
+    req = urllib.request.Request(url, method="GET")
+    req.add_header("Accept", "text/html")
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            final_url = r.geturl()
+            return r.status, r.read(), final_url
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read(), url
 
 
-def test_dashboard_serves_page(server):
-    status, body = _get(server + "/")
-    assert status == 200 and b"Social Media Agent" in body
+def test_dashboard_root_redirects_to_intelligence(server):
+    status, body, final_url = _get(server + "/")
+    assert status == 200, f"expected redirect then 200, got {status}"
+    assert "/intelligence" in final_url, f"expected redirect to /intelligence, got {final_url}"
+
+
+def test_dashboard_intelligence_serves_page(server):
+    status, body, _ = _get(server + "/intelligence")
+    assert status == 200
+    assert b"smkit Intelligence" in body or b"AI Content Operating System" in body
+
+
+def test_dashboard_legacy_repurpose_page_still_serves(server):
+    status, body, _ = _get(server + "/dashboard")
+    assert status == 200
+    assert b"Social Media Agent" in body or b"Repurpose" in body
 
 
 def test_dashboard_state_endpoint(server):
-    status, body = _get(server + "/api/state")
+    status, body, _ = _get(server + "/api/state")
     data = json.loads(body)
     assert status == 200
     assert "profiles" in data and "history" in data and "drafts" in data
