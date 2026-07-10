@@ -102,7 +102,14 @@ async function loadAnalytics(){
   </div>
 
   <div class=card><h2>📈 External Performance</h2>
-   <div class=notice>${p.message}</div>
+   ${(p.blog_metrics||[]).length?`
+   <table><tr><th>Blog URL</th><th>Status</th><th>Views</th><th>Visitors</th><th>Clicks</th><th>Avg Read (s)</th><th>Top Referrers</th><th>Last Sync</th></tr>`+
+    p.blog_metrics.map(m=>{
+      const ref=(m.referrers||[]).slice(0,3).map(r=>r.source+' '+r.visits).join(', ');
+      const statusClass = m.status==='connected'?'var(--good)':(m.status==='not_connected'?'var(--muted)':'#ef4444');
+      return `<tr><td><a href="${m.blog_url}" target=_blank>${m.blog_url.replace('https://','').slice(0,35)}...</a></td><td style="color:${statusClass}">${m.status}</td><td>${fmt(m.page_views)}</td><td>${fmt(m.unique_visitors)}</td><td>${fmt(m.clicks)}</td><td>${fmt(m.average_read_time_seconds)}</td><td class=muted>${ref}</td><td class=muted>${(m.last_sync_at||'').slice(0,16)}</td></tr>`;
+    }).join('')+
+   `</table>`:`<div class=notice>No synced blog analytics for this date range.</div>`}
   </div>
 
   <div class=card><h2>🔔 Recent Publishing Activity</h2>
@@ -114,8 +121,24 @@ async function loadAnalytics(){
  `;
 }
 async function syncAnalytics(){
- const data=await (await fetch('/api/analytics/sync',{method:'POST'})).json();
- alert(data.ok?`Synced ${data.synced} blog posts`:`Failed: ${data.error||'unknown'}`);
+ const daysVal=days.value;
+ const body={};
+ if(daysVal){
+  const end=new Date().toISOString().slice(0,10);
+  const start=new Date(Date.now()-daysVal*86400000).toISOString().slice(0,10);
+  body.from=start;
+  body.to=end;
+ }
+ const data=await (await fetch('/api/analytics/sync',{
+  method:'POST',
+  headers:{'content-type':'application/json'},
+  body:JSON.stringify(body)
+ })).json();
+ if(data.ok){
+  loadAnalytics();
+ } else {
+  alert('Failed: '+(data.error||'unknown'));
+ }
 }
 async function saveSnapshot(){
  const data=await (await fetch('/api/analytics/save',{method:'POST'})).json();
@@ -161,6 +184,8 @@ def handle_save() -> dict[str, Any]:
     return {"ok": True, "path": str(path)}
 
 
-def handle_sync() -> dict[str, Any]:
+def handle_sync(body: dict[str, Any] | None = None) -> dict[str, Any]:
     from .analytics_connectors.blog import sync_blog_analytics
-    return sync_blog_analytics()
+    from_date = body.get("from") if body else None
+    to_date = body.get("to") if body else None
+    return sync_blog_analytics(from_date=from_date, to_date=to_date)

@@ -180,6 +180,9 @@ def _make_handler():
         def do_POST(self):
             path = urlparse(self.path).path
             body = self._read_json()
+            if path == "/api/analytics/sync":
+                from .dashboard_analytics import handle_sync
+                return self._send(200, handle_sync(body))
             # Intelligence dashboard routes
             intel = intelligence_routes(path, {}, body=body)
             if isinstance(intel, dict) and "error" not in intel:
@@ -215,7 +218,8 @@ def _make_handler():
                 return self._send(200, handle_save())
             if path == "/api/analytics/sync":
                 from .dashboard_analytics import handle_analytics_page, handle_analytics_api, handle_export, handle_save, handle_sync
-                return self._send(200, handle_sync())
+                body = self._read_json()
+                return self._send(200, handle_sync(body))
             if path == "/":
                 # Redirect root to Intelligence dashboard.
                 self.send_response(302)
@@ -273,6 +277,10 @@ def _make_handler():
             query = parse_qs(urlparse(self.path).query)
             if path == "/api/upload":
                 return self._upload()
+            if path == "/api/analytics/sync":
+                from .dashboard_analytics import handle_sync
+                body = self._read_json()
+                return self._send(200, handle_sync(body))
             if path.startswith("/api/intelligence/"):
                 length = int(self.headers.get("Content-Length", 0))
                 try:
