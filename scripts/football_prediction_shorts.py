@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
-"""Per-match FULL-SCREEN prediction Shorts (the Mexico-vs-SA format) — auto.
+"""Per-match FULL-SCREEN prediction Shorts (modular variant system) — auto.
 
 For each upcoming World Cup match: pull the model's read (win probabilities,
-predicted scoreline, key factor), render the full-screen Remotion "Prediction"
-composition (Jarnathan voice), upload to YouTube + cross-post FB/LinkedIn.
-Deduped via content/prediction_shorts_posted.json.
+predicted scoreline, key factor), render the full-screen Remotion
+"PredictionShort" composition (Jarnathan voice), upload to YouTube + cross-post
+FB/LinkedIn. Deduped via content/prediction_shorts_posted.json.
 
-This REPLACES the old poster-wrapper per-match shorts (football_match_shorts.py).
+Variants (CLI --variant):
+  key-factor-mystery  hook = "One stat changed the X vs Y prediction" (default)
+  match-tension       hook = "This matchup is closer than it looks"
+  result-curiosity    hook = "Will X pull the upset?"
+
+The legacy "Prediction" composition is left untouched.
 
   /usr/bin/python3 scripts/football_prediction_shorts.py --dry-run
   /usr/bin/python3 scripts/football_prediction_shorts.py --privacy public --max 4
+  /usr/bin/python3 scripts/football_prediction_shorts.py --variant-samples
 """
 from __future__ import annotations
 
@@ -31,11 +37,14 @@ from agent.config import load_env  # noqa: E402
 REMOTION = KIT / "remotion"
 PUBLIC = REMOTION / "public"
 OUT_DIR = KIT / "content" / "assets" / "shorts" / "predictions_auto"
+SAMPLES_DIR = OUT_DIR / "samples"
 POSTED = KIT / "content" / "prediction_shorts_posted.json"
 NODE = "/home/linuxbrew/.linuxbrew/bin/node" if Path("/home/linuxbrew/.linuxbrew/bin/node").exists() else "node"
 RENDER_TIMEOUT_SECS = int(os.environ.get("PRED_SHORT_RENDER_TIMEOUT_SECS", "1200"))
 UPLOAD_TIMEOUT_SECS = int(os.environ.get("PRED_SHORT_UPLOAD_TIMEOUT_SECS", "600"))
 MIN_VIDEO_BYTES = int(os.environ.get("PRED_SHORT_MIN_VIDEO_BYTES", "1000000"))
+
+VARIANT_ORDER = ["key-factor-mystery", "match-tension", "result-curiosity"]
 
 # team name -> ISO-3166 alpha-2 (flagcdn); England/Scotland use GB subdivisions
 FLAG = {
@@ -128,7 +137,7 @@ def predict(fixture: dict) -> dict | None:
             is_host_advantage=False,
         )
         hp_, dp_, ap_ = out["home_win"] * 100, out["draw"] * 100, out["away_win"] * 100
-        label = top["label"]  # e.g. "2–1"
+        label = top["label"]
         return {
             "home": home, "away": away,
             "homeFlag_code": FLAG.get(home), "awayFlag_code": FLAG.get(away),
@@ -154,14 +163,7 @@ def fetch_flag(code: str, dest: Path) -> bool:
 
 
 def compute_ledger() -> dict | None:
-    """Continuity stats from the IMMUTABLE accuracy CLI (never backfill/fake).
-
-    Source of truth: `pitch_agent.cli accuracy` → "Outcome: 16/26 correct (61.5%)".
-    Returns {"banner": "Ledger 16-10 · 61.5%", "correct": 16, "total": 26,
-    "pct": "61.5"} or None if no graded predictions yet. Streak/last-five are
-    intentionally omitted: graded_at is batch-identical, so no honest
-    chronological order exists.
-    """
+    """Continuity stats from the IMMUTABLE accuracy CLI (never backfill/fake)."""
     try:
         r = _run_with_timeout(
             ["/usr/bin/python3", "-m", "pitch_agent.cli", "accuracy"],
@@ -180,58 +182,147 @@ def compute_ledger() -> dict | None:
         return None
 
 
-def build_props(p: dict, ledger: dict | None = None, next_match: str | None = None) -> dict:
+def _variant_copy(home: str, away: str, leader: str, other: str, outcome: str, confidence: int,
+                    key_factor: str, probs: dict, ledger: dict | None, variant: str) -> dict:
+    """Generate hook/subheadline/factors/verdict copy for a given variant."""
+    strong = confidence >= 55
+    win_p = probs["homeP"] if leader == home else probs["awayP"]
+    draw_p = probs["drawP"]
+    loss_p = probs["awayP"] if leader == home else probs["homeP"]
+    credibility = ledger["banner"] if ledger else "Independent AI model"
+
+    if variant == "match-tension":
+        hook = f"This {home} vs {away} matchup is closer than it looks."
+        subheadline = "The model sees a tight contest — here is where the edge sits."
+        factor_label = "WHY THE MODEL IS NERVOUS"
+        tension_label = "TIGHT MATCHUP"
+        tension_factors = [
+            f"{leader} only holds a slight edge on the numbers",
+            f"{other} can flip it with one good half",
+            "First goal pressure is the model's swing factor",
+        ]
+        factors = [
+            key_factor or f"{leader} rate higher in our model",
+            f"{other} threaten in transition",
+            "First goal changes the game",
+        ]
+    elif variant == "result-curiosity":
+        hook = f"Will {other} pull the upset against {leader}?"
+        subheadline = "The model's answer is locked in."
+        factor_label = "HOW THE MODEL DECIDED"
+        tension_label = "UPSET WATCH"
+        tension_factors = [
+            f"{other}'s path to a shock result",
+            f"{leader}'s advantage in the model",
+            "One moment can override the probability",
+        ]
+        factors = [
+            key_factor or f"{leader} rate higher in our model",
+            f"{other} can threaten in transition",
+            "First goal changes the game",
+        ]
+    else:  # key-factor-mystery (default)
+        if strong:
+            hook = f"One stat changed the {home} vs {away} prediction."
+            subheadline = f"The model still favors {leader} — but the gap matters."
+        else:
+            hook = f"One stat flipped the {home} vs {away} read."
+            subheadline = "This is closer than the names suggest."
+        factor_label = "THE STAT THAT CHANGED IT"
+        tension_label = "KEY FACTORS"
+        tension_factors = [
+            key_factor or f"{leader} rate higher in our model",
+            f"{other} can threaten in transition",
+            "First goal changes the game",
+        ]
+        factors = [
+            key_factor or f"{leader} rate higher in our model",
+            f"{other} can threaten in transition",
+            "First goal changes the game",
+        ]
+
+    if outcome == "draw":
+        verdict = "Too close — draw likely"
+        cta = f"Can {home} or {away} break the deadlock? Follow for the recap."
+    else:
+        verdict = f"{leader} to win"
+        cta = f"Follow BuildWithAbdallah to see if {leader} gets it done."
+
+    return {
+        "hook": hook, "subheadline": subheadline,
+        "factorLabel": factor_label, "tensionLabel": tension_label,
+        "factors": factors, "tensionFactors": tension_factors,
+        "verdict": verdict, "cta": cta,
+        "winProb": win_p, "drawProb": draw_p, "lossProb": loss_p,
+        "credibilityChip": credibility,
+    }
+
+
+def build_props(p: dict, ledger: dict | None = None, variant: str = "key-factor-mystery") -> dict:
     home, away = p["home"], p["away"]
     outcome = p["outcome"]
-    winner = home if outcome == "home" else away if outcome == "away" else None
-    lead = p["lead_prob"]
-    # Outcome-only output — call the winner, never a scoreline.
-    if outcome == "draw":
-        confidence = "Too even to split"
-        lean = "Model leans a draw"
-        hook = "This matchup is closer than it looks."
-    else:
-        strong = lead >= 55
-        confidence = f"{'Strong' if strong else 'Slight'} {winner} edge"
-        lean = f"{winner} to win"
-        hook = "Our model sees one clear edge." if strong else "The model does not see this as a walkover."
     leader = home if p["probs"]["homeP"] >= p["probs"]["awayP"] else away
     other = away if leader == home else home
-    reasons = [p["key_factor"][:26] if p.get("key_factor") else "Form & Elo read",
-               "First goal matters", confidence]
-    factors = [
-        "Group stage pressure",
-        "First goal changes the game",
-        f"{leader} rate higher in our model",
-        f"{other} can threaten in transition",
-    ]
-    final = f"{winner} to win" if outcome != "draw" else "Too close — draw"
-    # Ledger-led "bridge" hook (Meta growth advice, brand-safe — analytics only,
-    # no betting/bookie framing). Falls back to the per-match hook pre-ledger.
-    if ledger:
-        hook = f"{ledger['correct']} of {ledger['total']} calls right — here's the next one."
+    confidence = p["lead_prob"]
+    copy = _variant_copy(home, away, leader, other, outcome, confidence,
+                         p.get("key_factor", ""), p["probs"], ledger, variant)
+
+    durations = {
+        "key-factor-mystery": [2, 4, 7, 4, 3],
+        "match-tension": [2, 4, 6, 5, 3],
+        "result-curiosity": [2, 4, 6, 5, 3],
+    }.get(variant, [2, 4, 7, 4, 3])
+
     return {
+        "variant": variant,
         "home": home, "away": away, "competition": "World Cup 2026",
-        "hook": hook, "lean": lean, "confidence": confidence,
-        "reasons": reasons, "probs": p["probs"], "factors": factors,
-        "finalCall": final, "durations": [4, 6, 6, 6, 5],
         "homeFlag": "flag_home.png", "awayFlag": "flag_away.png",
-        **({"ledger": ledger["banner"]} if ledger else {}),
-        **({"nextMatch": next_match} if next_match else {}),
+        "leader": leader,
+        "confidence": round(confidence),
+        "winProb": copy["winProb"],
+        "drawProb": copy["drawProb"],
+        "lossProb": copy["lossProb"],
+        "verdict": copy["verdict"],
+        "credibilityChip": copy["credibilityChip"],
+        "hook": copy["hook"],
+        "subheadline": copy["subheadline"],
+        "factorLabel": copy["factorLabel"],
+        "factors": copy["factors"],
+        "tensionLabel": copy["tensionLabel"],
+        "tensionFactors": copy["tensionFactors"],
+        "cta": copy["cta"],
+        "durations": durations,
+        "hasAudio": False,
+        "audioFile": "voiceover.mp3",
     }
 
 
 def voiceover(props: dict, out: Path) -> Path | None:
     import reel_generator  # type: ignore
     h, a = props["home"], props["away"]
-    text = (
-        f"{props['hook']} {h} versus {a} at the World Cup. "
-        f"The model's read: {props['confidence'].lower()}. "
-        f"On the numbers, here is the win probability for {h}, the draw, and {a}. "
-        "The key factors: group stage pressure, the first goal changing the game, and where the edge sits. "
-        f"Final model call — {props['finalCall']}. An independent model prediction. "
-        "Comment who you've got winning, and follow to see if the model gets it right."
-    )
+    variant = props.get("variant", "key-factor-mystery")
+    if variant == "match-tension":
+        text = (
+            f"{props['hook']} {h} versus {a} at the World Cup. "
+            f"The model shows a tight win probability: {props['winProb']}% for {props['leader']}, "
+            f"{props['drawProb']}% draw, {props['lossProb']}% for the underdog. "
+            "Why it is so close: a slight edge on the numbers, one good half can flip it, and the first goal is the swing factor. "
+            f"The model breaks the tie: {props['verdict']}. Follow to see if it holds up."
+        )
+    elif variant == "result-curiosity":
+        text = (
+            f"{props['hook']} {h} versus {a}. The model's answer is locked in: "
+            f"{props['leader']} with a {props['confidence']}% win probability. "
+            "How it decided: the ratings, the transition threat, and the pressure of the first goal. "
+            f"Final model call — {props['verdict']}. Follow BuildWithAbdallah for the recap."
+        )
+    else:
+        text = (
+            f"{props['hook']} {h} versus {a} at the World Cup. "
+            f"The model's read: {props['leader']} edge, {props['confidence']}% win probability. "
+            "The key factors: the model's ratings, the transition threat, and why the first goal swings it. "
+            f"Final model call — {props['verdict']}. Follow to see if the model gets it right."
+        )
     r = reel_generator.tts(text, str(out))
     return Path(r) if r and Path(r).exists() else None
 
@@ -287,57 +378,68 @@ def _run_with_timeout(
         return subprocess.CompletedProcess(cmd, 124, out, err)
 
 
-def publish_match(fx: dict, privacy: str, dry_run: bool, next_fx: dict | None = None) -> bool:
+def render_prediction(data: dict, ledger: dict | None, variant: str, out_dir: Path,
+                      base_name: str, *, with_voice: bool = True,
+                      dry_run: bool = False) -> Path | None:
+    """Render one PredictionShort MP4 for the given variant."""
+    PUBLIC.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    home, away = data["home"], data["away"]
+    if not (fetch_flag(data["homeFlag_code"], PUBLIC / "flag_home.png")
+            and fetch_flag(data["awayFlag_code"], PUBLIC / "flag_away.png")):
+        print(f"[pred-short] missing flag for {home}/{away} — skip")
+        return None
+
+    props = build_props(data, ledger=ledger, variant=variant)
+    props_path = out_dir / f"{base_name}_{variant}.props.json"
+    props_path.write_text(json.dumps(props, indent=2))
+    vo: Path | None = None
+    if with_voice:
+        vo = voiceover(props, out_dir / f"{base_name}_{variant}.mp3")
+
+    out = out_dir / f"{base_name}_{variant}.mp4"
+    tmp_out = out.with_suffix(".tmp.mp4")
+    if tmp_out.exists():
+        tmp_out.unlink()
+    cmd = [NODE, str(REMOTION / "render.mjs"), "--id", "PredictionShort",
+           "--props", str(props_path), "--out", str(tmp_out)]
+    if vo:
+        cmd += ["--audio", str(vo)]
+    print(f"[pred-short] {home} vs {away} [{variant}] — rendering")
+    if dry_run:
+        print("[pred-short] DRY RUN — not rendering/uploading.")
+        return None
+    render = _run_with_timeout(cmd, cwd=REMOTION, timeout=RENDER_TIMEOUT_SECS)
+    if render.returncode == 124:
+        print(f"[pred-short] render timed out after {RENDER_TIMEOUT_SECS}s")
+        tmp_out.unlink(missing_ok=True)
+        return None
+    if render.returncode != 0:
+        print("[pred-short] render failed")
+        print((render.stderr or "")[-600:])
+        tmp_out.unlink(missing_ok=True)
+        return None
+    if not tmp_out.exists() or tmp_out.stat().st_size < MIN_VIDEO_BYTES:
+        size = tmp_out.stat().st_size if tmp_out.exists() else 0
+        print(f"[pred-short] render output invalid ({size} bytes)")
+        tmp_out.unlink(missing_ok=True)
+        return None
+    tmp_out.replace(out)
+    return out
+
+
+def publish_match(fx: dict, privacy: str, dry_run: bool, variant: str,
+                  next_fx: dict | None = None) -> bool:
     data = predict(fx)
     if not data:
         print(f"[pred-short] no model data for {fx.get('home_team_name')} vs {fx.get('away_team_name')} — skip")
         return False
     home, away = data["home"], data["away"]
-    PUBLIC.mkdir(parents=True, exist_ok=True)
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    if not (fetch_flag(data["homeFlag_code"], PUBLIC / "flag_home.png")
-            and fetch_flag(data["awayFlag_code"], PUBLIC / "flag_away.png")):
-        print(f"[pred-short] missing flag for {home}/{away} — skip")
+    out = render_prediction(data, compute_ledger(), variant, OUT_DIR,
+                            str(fx["match_id"]), with_voice=True, dry_run=dry_run)
+    if not out:
         return False
 
-    next_match = None
-    if next_fx:
-        nh = next_fx.get("home_team_name", "")
-        na = next_fx.get("away_team_name", "")
-        if nh and na:
-            next_match = f"{nh} vs {na}"
-    props = build_props(data, ledger=compute_ledger(), next_match=next_match)
-    props_path = OUT_DIR / "props.json"
-    props_path.write_text(json.dumps(props, indent=2))
-    vo = voiceover(props, OUT_DIR / "voiceover.mp3")
-
-    out = OUT_DIR / f"{fx['match_id']}.mp4"
-    tmp_out = out.with_suffix(".tmp.mp4")
-    if tmp_out.exists():
-        tmp_out.unlink()
-    cmd = [NODE, str(REMOTION / "render.mjs"), "--id", "Prediction",
-           "--props", str(props_path), "--out", str(tmp_out)]
-    if vo:
-        cmd += ["--audio", str(vo)]
-    print(f"[pred-short] {home} vs {away} — rendering full-screen prediction")
-    if dry_run:
-        print("[pred-short] DRY RUN — not rendering/uploading.")
-        return False
-    render = _run_with_timeout(cmd, cwd=REMOTION, timeout=RENDER_TIMEOUT_SECS)
-    if render.returncode == 124:
-        print(f"[pred-short] render timed out after {RENDER_TIMEOUT_SECS}s")
-        tmp_out.unlink(missing_ok=True)
-        return False
-    if render.returncode != 0:
-        print("[pred-short] render failed")
-        tmp_out.unlink(missing_ok=True)
-        return False
-    if not tmp_out.exists() or tmp_out.stat().st_size < MIN_VIDEO_BYTES:
-        size = tmp_out.stat().st_size if tmp_out.exists() else 0
-        print(f"[pred-short] render output invalid ({size} bytes)")
-        tmp_out.unlink(missing_ok=True)
-        return False
-    tmp_out.replace(out)
     try:
         from worldcup_thumbnail import generate_thumbnail
         thumb = generate_thumbnail(
@@ -349,7 +451,7 @@ def publish_match(fx: dict, privacy: str, dry_run: bool, next_fx: dict | None = 
         print(f"[pred-short] thumbnail failed (non-fatal): {exc}")
         thumb = None
 
-    title = f"{home} vs {away} — AI Prediction \U0001F3C6 World Cup 2026"[:100]
+    title = f"{home} vs {away} — AI Prediction 🏆 World Cup 2026"[:100]
     desc = (f"{home} vs {away} — our independent model's World Cup 2026 read: model lean, "
             f"win probability, and key factors. Analytics only, not affiliated with FIFA.\n\n"
             "Comment who you've got winning. Follow to see if the model gets it right.\n\n"
@@ -368,7 +470,6 @@ def publish_match(fx: dict, privacy: str, dry_run: bool, next_fx: dict | None = 
     if up.returncode != 0:
         print(f"[pred-short] upload failed: {(up.stderr or '')[-300:]}")
         return False
-    import re
     m = re.search(r"https://www\.youtube\.com/shorts/[\w-]+", up.stdout)
     yt = m.group(0) if m else ""
     if privacy == "public":
@@ -385,13 +486,60 @@ def publish_match(fx: dict, privacy: str, dry_run: bool, next_fx: dict | None = 
     return True
 
 
+def render_variant_samples(dry_run: bool = False) -> list[Path]:
+    """Render all three variants for the next upcoming TIMED match (no upload, no voice)."""
+    from pitch_agent.fixtures import get_upcoming_fixtures
+    matches = [m for m in get_upcoming_fixtures(limit=50)
+               if str(m.get("match_id")) not in _posted()
+               and m.get("status") == "TIMED"
+               and m.get("home_team_name") and m.get("away_team_name")]
+    if not matches:
+        print("[pred-short] no upcoming TIMED matches for variant samples")
+        return []
+    fx = matches[0]
+    data = predict(fx)
+    if not data:
+        print(f"[pred-short] could not predict {fx.get('home_team_name')} vs {fx.get('away_team_name')}")
+        return []
+    ledger = compute_ledger()
+    outputs: list[Path] = []
+    meta = {"match_id": fx.get("match_id"), "home": data["home"], "away": data["away"],
+            "date": fx.get("date"), "probs": data["probs"], "variants": {}}
+    for variant in VARIANT_ORDER:
+        out = render_prediction(data, ledger, variant, SAMPLES_DIR,
+                                f"sample_{fx['match_id']}", with_voice=False, dry_run=dry_run)
+        if out:
+            outputs.append(out)
+            props = build_props(data, ledger=ledger, variant=variant)
+            meta["variants"][variant] = {
+                "file": str(out), "props": props,
+                "size_bytes": out.stat().st_size,
+            }
+    SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
+    meta_path = SAMPLES_DIR / f"sample_{fx['match_id']}.metadata.json"
+    meta_path.write_text(json.dumps(meta, indent=2))
+    print(f"[pred-short] samples metadata: {meta_path}")
+    return outputs
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--privacy", choices=["public", "unlisted", "private"], default="public")
     ap.add_argument("--max", type=int, default=6)
+    ap.add_argument("--variant", choices=VARIANT_ORDER, default="key-factor-mystery",
+                    help="Default prediction Short variant")
+    ap.add_argument("--variant-samples", action="store_true",
+                    help="Render all 3 variants for the first upcoming match (no upload)")
     args = ap.parse_args()
     load_env()
+
+    if args.variant_samples:
+        outs = render_variant_samples(dry_run=args.dry_run)
+        print(f"[pred-short] rendered {len(outs)} variant samples")
+        for o in outs:
+            print(f"  {o}")
+        return 0 if outs else 1
 
     posted = _posted()
     matches = [m for m in todays_upcoming() if str(m.get("match_id")) not in posted]
@@ -403,7 +551,7 @@ def main() -> int:
     for i, fx in enumerate(batch):
         next_fx = batch[i + 1] if i + 1 < len(batch) else None
         try:
-            if publish_match(fx, args.privacy, args.dry_run, next_fx=next_fx) and not args.dry_run:
+            if publish_match(fx, args.privacy, args.dry_run, args.variant, next_fx=next_fx) and not args.dry_run:
                 _mark(fx["match_id"])
                 n += 1
         except Exception as exc:  # noqa: BLE001

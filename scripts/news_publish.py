@@ -260,6 +260,7 @@ def write_news_article(story, source_text):
     )
     body = _chat([{"role": "user", "content": prompt}], max_tokens=2600, temperature=0.35)
     best = normalize_news_sections(clean_forbidden_phrases(body))
+    best = ensure_required_sections(best, story.get("source_urls", []))
 
     # Expand until comfortably above the 750-word publish gate. The model often
     # under-delivers on a single expand pass (and can even shorten the draft),
@@ -278,6 +279,7 @@ def write_news_article(story, source_text):
         expanded = normalize_news_sections(clean_forbidden_phrases(
             _chat([{"role": "user", "content": expand_prompt}], max_tokens=3000, temperature=0.3)
         ))
+        expanded = ensure_required_sections(expanded, story.get("source_urls", []))
         if len(expanded.split()) > len(best.split()):
             best = expanded
     return best
@@ -306,6 +308,17 @@ def normalize_news_sections(body):
     watch_block = text[start:end].strip()
     without_watch = (text[:start] + text[end:]).rstrip()
     return without_watch + "\n\n" + watch_block + "\n"
+
+
+def ensure_required_sections(body, source_urls):
+    """Fallback for LLMs that omit required sections: append a minimal Sources block
+    from the verified source URLs so the quality gate doesn't reject a usable draft."""
+    text = (body or "").rstrip()
+    if "## Sources" not in text:
+        links = "\n".join(f"- [{u}]({u})" for u in (source_urls or []) if u)
+        if links:
+            text += f"\n\n## Sources\n\n{links}\n"
+    return text
 
 
 def news_quality_issues(body):

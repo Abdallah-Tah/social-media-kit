@@ -2,6 +2,7 @@ import React from "react";
 import { Composition } from "remotion";
 import { Short, ShortProps } from "./Short";
 import { Prediction, PredictionProps } from "./Prediction";
+import { PredictionShort, PredictionShortProps } from "./shorts/PredictionShort";
 import { DailySlate, DailyProps } from "./DailySlate";
 import { Explainer, ExplainerProps } from "./Explainer";
 import { DataDive, DataDiveProps } from "./DataDive";
@@ -79,6 +80,31 @@ const PRED_DEFAULT: PredictionProps = {
   homeFlag: "flag_home.png", awayFlag: "flag_away.png",
 };
 
+const PSHORT_DEFAULT: PredictionShortProps = {
+  variant: "key-factor-mystery", home: "England", away: "Croatia", competition: "World Cup 2026",
+  homeFlag: "flag_home.png", awayFlag: "flag_away.png",
+  leader: "England", confidence: 58,
+  winProb: 58, drawProb: 24, lossProb: 18,
+  verdict: "England to win",
+  credibilityChip: "AI record 19-12 · 61.3%",
+  hook: "One stat changed the England vs Croatia prediction.",
+  subheadline: "The model still favors England — but not by much.",
+  factorLabel: "THE STAT THAT CHANGED IT",
+  factors: [
+    "England's attack rates higher in the model",
+    "Croatia can control midfield — the model's edge case",
+    "First goal swings it across the model's runs",
+  ],
+  tensionLabel: "TIGHT MATCHUP",
+  tensionFactors: [
+    "England's attack rates higher in the model",
+    "Croatia can control midfield — the model's edge case",
+    "First goal swings it across the model's runs",
+  ],
+  cta: "Follow BuildWithAbdallah for the next AI World Cup prediction.",
+  durations: [2, 4, 7, 4, 3], hasAudio: false, audioFile: "voiceover.mp3",
+};
+
 const DEFAULT: ShortProps = {
   scenes: [
     { kind: "title_card", title: "Build With Abdallah", caption: "Animated brand Shorts via Remotion.", takeaway: "Pass a plan JSON to render any topic." },
@@ -117,6 +143,58 @@ export const RemotionRoot: React.FC = () => {
       defaultProps={PRED_DEFAULT}
       calculateMetadata={({ props }) => {
         const secs = (props.durations || []).reduce((a, b) => a + (b || 5), 0) || 27;
+        return { durationInFrames: Math.max(FPS, Math.round(secs * FPS)) };
+      }}
+    />
+    <Composition
+      id="PredictionShort"
+      component={PredictionShort}
+      durationInFrames={Math.round(20 * FPS)}
+      fps={FPS}
+      width={W}
+      height={H}
+      defaultProps={PSHORT_DEFAULT}
+      calculateMetadata={({ props }) => {
+        const secs = (props.durations || []).reduce((a, b) => a + (b || 4), 0) || 20;
+        return { durationInFrames: Math.max(FPS, Math.round(secs * FPS)) };
+      }}
+    />
+    <Composition
+      id="PredictionShort-KeyFactor"
+      component={PredictionShort}
+      durationInFrames={Math.round(20 * FPS)}
+      fps={FPS}
+      width={W}
+      height={H}
+      defaultProps={{ ...PSHORT_DEFAULT, variant: "key-factor-mystery" }}
+      calculateMetadata={({ props }) => {
+        const secs = (props.durations || []).reduce((a, b) => a + (b || 4), 0) || 20;
+        return { durationInFrames: Math.max(FPS, Math.round(secs * FPS)) };
+      }}
+    />
+    <Composition
+      id="PredictionShort-MatchTension"
+      component={PredictionShort}
+      durationInFrames={Math.round(23 * FPS)}
+      fps={FPS}
+      width={W}
+      height={H}
+      defaultProps={{ ...PSHORT_DEFAULT, variant: "match-tension" }}
+      calculateMetadata={({ props }) => {
+        const secs = (props.durations || []).reduce((a, b) => a + (b || 4), 0) || 23;
+        return { durationInFrames: Math.max(FPS, Math.round(secs * FPS)) };
+      }}
+    />
+    <Composition
+      id="PredictionShort-ResultCuriosity"
+      component={PredictionShort}
+      durationInFrames={Math.round(21 * FPS)}
+      fps={FPS}
+      width={W}
+      height={H}
+      defaultProps={{ ...PSHORT_DEFAULT, variant: "result-curiosity" }}
+      calculateMetadata={({ props }) => {
+        const secs = (props.durations || []).reduce((a, b) => a + (b || 4), 0) || 21;
         return { durationInFrames: Math.max(FPS, Math.round(secs * FPS)) };
       }}
     />

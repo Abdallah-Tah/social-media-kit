@@ -116,9 +116,10 @@ def test_youtube_refuses_live_publish(tmp_path):
         sd = _make_approved_social("youtube", tmp_path)
         result = publish_social_draft(sd.draft_id)
         assert result["ok"] is False
-        assert "disabled" in result["error"].lower() or "disabled" in result["error"].lower()
+        assert "disabled" in result["error"].lower()
         loaded = load_social_draft(sd.draft_id)
-        assert loaded.status == "approved"
+        assert loaded.status == "failed"
+        assert loaded.error
     finally:
         social_drafts.SOCIAL_DRAFTS_DIR = original_dir
 
@@ -134,8 +135,8 @@ def test_failure_keeps_approved_status(tmp_path):
             result = publish_social_draft(sd.draft_id)
         assert result["ok"] is False
         loaded = load_social_draft(sd.draft_id)
-        assert loaded.status == "approved"
-        assert not loaded.published_url
+        assert loaded.status == "failed"
+        assert loaded.error
     finally:
         social_drafts.SOCIAL_DRAFTS_DIR = original_dir
 

@@ -13,6 +13,17 @@ from pathlib import Path
 KIT = Path(__file__).resolve().parents[1]
 LEDGER = KIT / "content" / "linkedin_daily_posts.json"
 LOCAL_TZ = _dt.datetime.now().astimezone().tzinfo
+MAX_DAILY = 3  # back-compat alias (news limit)
+# Per-kind daily LinkedIn limits. "worldcup" = ML/Elo prediction & result posts.
+DAILY_LIMITS = {"news": 3, "worldcup": 2}
+
+
+def _day_entries(data: dict, today: str) -> list:
+    """Posts logged for `today`, tolerating the legacy single-dict format."""
+    v = data.get(today)
+    if v is None:
+        return []
+    return v if isinstance(v, list) else [v]
 
 
 def _today() -> str:
@@ -33,24 +44,24 @@ def _write(data: dict) -> None:
 
 def allowed(kind: str | None = None) -> tuple[bool, str]:
     post_kind = (kind or os.environ.get("LINKEDIN_POST_KIND") or "").strip().lower()
-    if post_kind != "news":
-        return False, "LinkedIn skipped: policy allows news posts only."
-    data = _read()
+    if post_kind not in DAILY_LIMITS:
+        return False, f"LinkedIn skipped: policy allows {'/'.join(DAILY_LIMITS)} posts only."
     today = _today()
-    if today in data:
-        prior = data[today]
-        return False, (
-            "LinkedIn skipped: daily news post already used"
-            f" ({prior.get('kind', 'news')} {prior.get('id', '')})."
-        )
-    return True, "LinkedIn allowed."
+    limit = DAILY_LIMITS[post_kind]
+    same = [e for e in _day_entries(_read(), today) if (e.get("kind") or "news") == post_kind]
+    if len(same) >= limit:
+        return False, f"LinkedIn skipped: daily {post_kind} limit reached ({len(same)}/{limit})."
+    return True, f"LinkedIn allowed ({len(same) + 1}/{limit} {post_kind})."
 
 
 def mark_posted(kind: str | None = None, post_id: str = "") -> None:
     data = _read()
-    data[_today()] = {
+    today = _today()
+    entries = _day_entries(data, today)
+    entries.append({
         "kind": (kind or os.environ.get("LINKEDIN_POST_KIND") or "news").strip().lower(),
         "id": post_id,
         "posted_at": _dt.datetime.now(tz=LOCAL_TZ).isoformat(timespec="seconds"),
-    }
+    })
+    data[today] = entries
     _write(data)
