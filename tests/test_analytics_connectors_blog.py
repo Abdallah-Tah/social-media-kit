@@ -22,78 +22,181 @@ from agent.analytics_connectors.blog import (
 )
 
 
-def test_fetch_blog_analytics_ok_and_cache(tmp_path):
+def _make_connector(tmp_path):
     from agent import analytics_connectors
     analytics_connectors.blog.CACHE_DIR = tmp_path / "cache"
     analytics_connectors.blog.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    return analytics_connectors.blog
 
+
+def test_fetch_blog_analytics_nested_metrics_and_cache(tmp_path):
+    blog = _make_connector(tmp_path)
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {
-        "data": {
-            "page_views": 1200,
-            "unique_visitors": 900,
-            "clicks": 45,
-            "average_read_time_seconds": 124,
-            "referrers": {"google": 600, "linkedin": 300},
-            "published_at": "2026-07-09T19:01:26Z",
-        }
+        "status": "connected",
+        "slug": "my-post",
+        "blog_url": "https://example.com/tutorials/my-post",
+        "published_at": "2026-07-09T19:01:26Z",
+        "period": {"from": "2026-07-01", "to": "2026-07-09"},
+        "metrics": {
+            "page_views": 1250,
+            "unique_visitors": 930,
+            "clicks": 145,
+            "average_read_time_seconds": 224,
+            "referrers": [
+                {"source": "google", "visits": 410},
+                {"source": "linkedin", "visits": 320},
+            ],
+        },
     }
 
-    with patch("agent.analytics_connectors.blog._load_credentials", return_value=("https://example.com/api/v1", "token")):
+    with patch.object(blog, "_load_credentials", return_value=("https://example.com/api/v1", "token")):
         with patch("requests.get", return_value=mock_resp):
             result = fetch_blog_analytics("https://example.com/tutorials/my-post")
 
-    assert result.status == "ok"
-    assert result.page_views == 1200
-    assert result.unique_visitors == 900
-    assert result.clicks == 45
-    assert result.average_read_time_seconds == 124
-    assert result.referrers["google"] == 600
-    assert result.publication_date == "2026-07-09T19:01:26Z"
+    assert result.status == "connected"
+    assert result.page_views == 1250
+    assert result.unique_visitors == 930
+    assert result.clicks == 145
+    assert result.average_read_time_seconds == 224
+    assert result.referrers == [
+        {"source": "google", "visits": 410},
+        {"source": "linkedin", "visits": 320},
+    ]
+    assert result.period == {"from": "2026-07-01", "to": "2026-07-09"}
 
     # Cache hit
     cached = fetch_blog_analytics("https://example.com/tutorials/my-post")
-    assert cached.page_views == 1200
-    assert cached.last_sync_at == result.last_sync_at
+    assert cached.page_views == 1250
 
 
-def test_fetch_blog_analytics_not_connected(tmp_path):
-    from agent import analytics_connectors
-    analytics_connectors.blog.CACHE_DIR = tmp_path / "cache"
-    analytics_connectors.blog.CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
+def test_fetch_blog_analytics_flat_legacy_response(tmp_path):
+    blog = _make_connector(tmp_path)
     mock_resp = MagicMock()
-    mock_resp.status_code = 404
-    mock_resp.text = "not found"
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "status": "connected",
+        "page_views": 88,
+        "unique_visitors": 77,
+        "clicks": 5,
+        "average_read_time_seconds": 60,
+        "referrers": {"facebook": 30, "twitter": 7},
+    }
 
-    with patch("agent.analytics_connectors.blog._load_credentials", return_value=("https://example.com/api/v1", "token")):
+    with patch.object(blog, "_load_credentials", return_value=("https://example.com/api/v1", "token")):
+        with patch("requests.get", return_value=mock_resp):
+            result = fetch_blog_analytics("https://example.com/tutorials/legacy-post")
+
+    assert result.status == "connected"
+    assert result.page_views == 88
+    assert result.referrers == [
+        {"source": "facebook", "visits": 30},
+        {"source": "twitter", "visits": 7},
+    ]
+
+
+def test_fetch_blog_analytics_not_connected_response(tmp_path):
+    blog = _make_connector(tmp_path)
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "status": "not_connected",
+        "slug": "my-post",
+        "blog_url": "https://example.com/tutorials/my-post",
+        "published_at": "2026-07-09T19:01:26Z",
+        "period": {"from": "2026-07-01", "to": "2026-07-09"},
+        "metrics": {
+            "page_views": None,
+            "unique_visitors": None,
+            "clicks": None,
+            "average_read_time_seconds": None,
+            "referrers": [],
+        },
+    }
+
+    with patch.object(blog, "_load_credentials", return_value=("https://example.com/api/v1", "token")):
         with patch("requests.get", return_value=mock_resp):
             result = fetch_blog_analytics("https://example.com/tutorials/my-post")
 
     assert result.status == "not_connected"
     assert result.page_views is None
-    assert result.error == "Analytics endpoint not available for this post"
+    assert result.referrers == []
 
 
-def test_fetch_blog_analytics_error(tmp_path):
-    from agent import analytics_connectors
-    analytics_connectors.blog.CACHE_DIR = tmp_path / "cache"
-    analytics_connectors.blog.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+def test_fetch_blog_analytics_not_found_404(tmp_path):
+    blog = _make_connector(tmp_path)
+    mock_resp = MagicMock()
+    mock_resp.status_code = 404
+    mock_resp.text = "not found"
 
-    with patch("agent.analytics_connectors.blog._load_credentials", return_value=("https://example.com/api/v1", "token")):
-        with patch("requests.get", side_effect=Exception("timeout")):
-            result = fetch_blog_analytics("https://example.com/tutorials/my-post")
+    with patch.object(blog, "_load_credentials", return_value=("https://example.com/api/v1", "token")):
+        with patch("requests.get", return_value=mock_resp):
+            result = fetch_blog_analytics("https://example.com/tutorials/missing-post")
 
-    assert result.status == "error"
-    assert "timeout" in result.error
+    assert result.status == "not_found"
+    assert result.error == "Post not found"
     assert result.page_views is None
 
 
+def test_fetch_blog_analytics_unauthorized_401(tmp_path):
+    blog = _make_connector(tmp_path)
+    mock_resp = MagicMock()
+    mock_resp.status_code = 401
+    mock_resp.text = "unauthenticated"
+
+    with patch.object(blog, "_load_credentials", return_value=("https://example.com/api/v1", "token")):
+        with patch("requests.get", return_value=mock_resp):
+            result = fetch_blog_analytics("https://example.com/tutorials/my-post")
+
+    assert result.status == "unauthorized"
+    assert "token" in result.error.lower()
+
+
+def test_fetch_blog_analytics_date_range_query_params(tmp_path):
+    blog = _make_connector(tmp_path)
+    captured = {}
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        captured["params"] = kwargs.get("params")
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"status": "connected", "metrics": {"page_views": 100}}
+        return resp
+
+    with patch.object(blog, "_load_credentials", return_value=("https://example.com/api/v1", "token")):
+        with patch("requests.get", side_effect=fake_get):
+            fetch_blog_analytics("https://example.com/tutorials/dated-post", from_date="2026-07-01", to_date="2026-07-09")
+
+    assert captured["params"] == {"from": "2026-07-01", "to": "2026-07-09"}
+
+
+def test_separate_caches_for_different_date_ranges(tmp_path):
+    blog = _make_connector(tmp_path)
+
+    def make_resp(views):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"status": "connected", "metrics": {"page_views": views}}
+        return resp
+
+    with patch.object(blog, "_load_credentials", return_value=("https://example.com/api/v1", "token")):
+        with patch("requests.get", side_effect=[make_resp(100), make_resp(200)]):
+            all_time = fetch_blog_analytics("https://example.com/tutorials/range-post")
+            week = fetch_blog_analytics("https://example.com/tutorials/range-post", from_date="2026-07-01", to_date="2026-07-09")
+
+    assert all_time.page_views == 100
+    assert week.page_views == 200
+
+    # Re-read both caches
+    assert fetch_blog_analytics("https://example.com/tutorials/range-post").page_views == 100
+    assert fetch_blog_analytics("https://example.com/tutorials/range-post", from_date="2026-07-01", to_date="2026-07-09").page_views == 200
+
+
 def test_sync_blog_analytics_with_published_draft(tmp_path):
-    from agent import analytics_connectors, drafts
-    analytics_connectors.blog.CACHE_DIR = tmp_path / "cache"
-    analytics_connectors.blog.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    from agent import drafts
+    blog = _make_connector(tmp_path)
     drafts.DRAFTS_DIR = tmp_path / "drafts"
     drafts.DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -108,22 +211,25 @@ def test_sync_blog_analytics_with_published_draft(tmp_path):
 
     mock_resp = MagicMock()
     mock_resp.status_code = 200
-    mock_resp.json.return_value = {"data": {"page_views": 500}}
+    mock_resp.json.return_value = {
+        "status": "connected",
+        "metrics": {"page_views": 500, "referrers": [{"source": "linkedin", "visits": 50}]},
+    }
 
-    with patch("agent.analytics_connectors.blog._load_credentials", return_value=("https://example.com/api/v1", "token")):
+    with patch.object(blog, "_load_credentials", return_value=("https://example.com/api/v1", "token")):
         with patch("requests.get", return_value=mock_resp):
             result = sync_blog_analytics(draft_dir=drafts.DRAFTS_DIR)
 
     assert result["ok"]
     assert result["synced"] == 1
-    assert result["ok_count"] == 1
+    assert result["connected_count"] == 1
     assert result["results"][0]["page_views"] == 500
+    assert result["results"][0]["referrers"] == [{"source": "linkedin", "visits": 50}]
 
 
 def test_sync_blog_analytics_ignores_unpublished_draft(tmp_path):
-    from agent import analytics_connectors, drafts
-    analytics_connectors.blog.CACHE_DIR = tmp_path / "cache"
-    analytics_connectors.blog.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    from agent import drafts
+    blog = _make_connector(tmp_path)
     drafts.DRAFTS_DIR = tmp_path / "drafts"
     drafts.DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
 

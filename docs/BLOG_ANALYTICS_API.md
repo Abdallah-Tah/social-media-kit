@@ -94,7 +94,46 @@ If analytics tracking is not installed or no data has been collected yet, return
 }
 ```
 
-The smkit connector treats this as "endpoint available but no analytics yet".
+The smkit connector translates these statuses as follows:
+
+| API status | HTTP | Connector status | Meaning |
+|------------|------|------------------|---------|
+| `connected` | 200 | `connected` | Analytics available, metrics present. |
+| `not_connected` | 200 | `not_connected` | Endpoint exists but analytics tracking is not configured yet. |
+| - | 404 | `not_found` | The requested post slug does not exist. |
+| - | 401/403 | `unauthorized` | Invalid/missing token or insufficient permissions. |
+| - | other | `error` | Network or unexpected failure. |
+
+Connector status values are therefore: `connected`, `not_connected`, `not_found`, `unauthorized`, `error`.
+
+The response body is expected to look like:
+
+```json
+{
+  "status": "connected",
+  "slug": "example-post",
+  "blog_url": "https://buildwithabdallah.com/tutorials/example-post",
+  "published_at": "2026-07-09T18:30:00Z",
+  "period": {
+    "from": "2026-07-01",
+    "to": "2026-07-09"
+  },
+  "metrics": {
+    "page_views": 1250,
+    "unique_visitors": 930,
+    "clicks": 145,
+    "average_read_time_seconds": 224,
+    "referrers": [
+      {"source": "linkedin", "visits": 320},
+      {"source": "facebook", "visits": 180},
+      {"source": "google", "visits": 410},
+      {"source": "direct", "visits": 340}
+    ]
+  }
+}
+```
+
+`referrers` is an array of `{source, visits}` objects. For backward compatibility the connector also accepts a legacy flat response where `metrics` fields appear at the top level and `referrers` may be an object map (`{"google": 410}`). However, new implementations should use the nested `metrics` object with a list of referrers.
 
 ## Error responses
 
@@ -108,7 +147,7 @@ Use only when the post slug does not exist.
 }
 ```
 
-The smkit connector translates 404 to `status: not_connected` to distinguish missing posts from future analytics availability.
+The smkit connector translates 404 to `status: not_found` to distinguish missing posts from future analytics availability.
 
 ### 401 Unauthorized
 

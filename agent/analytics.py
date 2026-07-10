@@ -286,7 +286,9 @@ def compute_analytics(
 
     performance = _performance_placeholder()
     # Merge external blog metrics if cached.
-    performance["blog_metrics"] = _load_blog_metrics(drafts)
+    from_date_str = start.strftime("%Y-%m-%d") if start != dt.datetime.min.replace(tzinfo=dt.timezone.utc) else None
+    to_date_str = end.strftime("%Y-%m-%d")
+    performance["blog_metrics"] = _load_blog_metrics(drafts, from_date_str, to_date_str)
 
     return AnalyticsSnapshot(
         generated_at=now.isoformat(),
@@ -302,14 +304,14 @@ def compute_analytics(
     )
 
 
-def _load_blog_metrics(drafts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _load_blog_metrics(drafts: list[dict[str, Any]], from_date: str | None = None, to_date: str | None = None) -> list[dict[str, Any]]:
     """Load any cached blog analytics for published drafts in this window."""
     from .analytics_connectors.blog import _cache_path
     metrics = []
     for d in drafts:
         if d.get("status") != "published" or not d.get("blog_url"):
             continue
-        cache = _cache_path(d["blog_url"])
+        cache = _cache_path(d["blog_url"], from_date, to_date)
         if not cache.exists():
             continue
         try:
@@ -324,7 +326,8 @@ def _load_blog_metrics(drafts: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "unique_visitors": data.get("unique_visitors"),
             "clicks": data.get("clicks"),
             "average_read_time_seconds": data.get("average_read_time_seconds"),
-            "referrers": data.get("referrers", {}),
+            "referrers": data.get("referrers", []),
+            "period": data.get("period", {}),
             "last_sync_at": data.get("last_sync_at"),
         })
     return metrics
