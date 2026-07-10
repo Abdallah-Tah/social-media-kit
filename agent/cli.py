@@ -1119,6 +1119,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_social.add_argument("--dry-run", action="store_true", help="Preview scheduled posts without publishing")
     p_social.set_defaults(func=cmd_social)
 
+    p_analytics = sub.add_parser("analytics", help="Read-only publishing analytics")
+    p_analytics.add_argument("--days", type=int, default=30, help="Window in days (default 30, 0 for all time)")
+    p_analytics.add_argument("--platform", default=None, help="Filter by platform")
+    p_analytics.add_argument("--json", action="store_true", help="Output JSON")
+    p_analytics.add_argument("--save", action="store_true", help="Save snapshot to content/analytics/")
+    p_analytics.set_defaults(func=cmd_analytics)
+
     return parser
 
 
@@ -1128,6 +1135,20 @@ def cmd_social(args: argparse.Namespace) -> int:
 
     result = publish_due_social_drafts(dry_run=args.dry_run)
     print(json.dumps(result, indent=2))
+    return 0
+
+
+def cmd_analytics(args: argparse.Namespace) -> int:
+    """Read-only analytics from persisted records."""
+    from .analytics import compute_analytics, export_json, save_analytics
+
+    days = None if args.days == 0 else args.days
+    snapshot = compute_analytics(days=days, platform_filter=args.platform)
+    if args.save:
+        path = save_analytics(snapshot)
+        print(f"Saved: {path}")
+    if args.json or not args.save:
+        print(export_json(snapshot))
     return 0
 
 

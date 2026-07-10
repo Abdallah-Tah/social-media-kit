@@ -198,8 +198,23 @@ def _make_handler():
         def do_GET(self):
             path = urlparse(self.path).path
             query = parse_qs(urlparse(self.path).query)
+            # Analytics page
+            if path == "/analytics":
+                from .dashboard_analytics import handle_analytics_page, handle_analytics_api, handle_export, handle_save
+                page, ctype = handle_analytics_page()
+                return self._send(200, page, ctype)
+            if path == "/api/analytics":
+                from .dashboard_analytics import handle_analytics_page, handle_analytics_api, handle_export, handle_save
+                return self._send(200, handle_analytics_api(query))
+            if path == "/api/analytics/export":
+                from .dashboard_analytics import handle_analytics_page, handle_analytics_api, handle_export, handle_save
+                page, ctype = handle_export(query)
+                return self._send(200, page, ctype)
+            if path == "/api/analytics/save":
+                from .dashboard_analytics import handle_analytics_page, handle_analytics_api, handle_export, handle_save
+                return self._send(200, handle_save())
             if path == "/":
-                # Default landing page is the Intelligence dashboard.
+                # Redirect root to Intelligence dashboard.
                 self.send_response(302)
                 self.send_header("Location", "/intelligence")
                 self.send_header("Content-Length", "0")
