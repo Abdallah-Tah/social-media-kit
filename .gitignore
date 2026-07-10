@@ -13,10 +13,18 @@ dist/
 artifacts/
 pitch_agent.db*
 
-# Content
+# Content (runtime generated)
 content/raw/
 content/drafts/
 content/assets/
+content/social_drafts/*
+!content/social_drafts/.gitkeep
+content/analytics/connector_cache/*
+!content/analytics/connector_cache/.gitkeep
+content/analytics/*.json
+content/feed/seen.json
+content/feed/*.json
+!content/feed/.gitkeep
 
 # Python
 __pycache__/
