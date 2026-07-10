@@ -159,6 +159,24 @@ def test_dashboard_legacy_repurpose_page_still_serves(server):
     assert b"Social Media Agent" in body or b"Repurpose" in body
 
 
+
+
+def test_dashboard_root_frontend_asset_serves_or_404s(server):
+    for asset in ["/favicon.svg", "/robots.txt", "/manifest.webmanifest"]:
+        status, body, _ = _get(server + asset)
+        assert status in {200, 404}
+        if status == 200:
+            assert body
+            assert b"<!doctype html" not in body.lower()
+        else:
+            assert json.loads(body)["error"] == "not found"
+
+
+def test_dashboard_missing_file_like_path_returns_404(server):
+    status, body, _ = _get(server + "/missing.js")
+    assert status == 404
+    assert json.loads(body)["error"] == "not found"
+
 def test_dashboard_assets_serve_static_content(server):
     # Ensure build exists; skip if not.
     dist = Path(__file__).resolve().parents[1] / "frontend" / "dist"

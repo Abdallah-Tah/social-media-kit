@@ -42,6 +42,7 @@ REACT_ROUTES = {
 }
 
 FILE_CATEGORIES = ("news", "tutorials", "videos", "images", "other")
+ROOT_FRONTEND_ASSETS = {"/favicon.svg", "/robots.txt", "/manifest.webmanifest"}
 MAX_UPLOAD_BYTES = 600 * 1024 * 1024  # 600 MB cap for added files/videos
 
 
@@ -249,14 +250,23 @@ def _make_handler():
         def _is_static_asset(self, path: str) -> bool:
             return path.startswith("/assets/")
 
+        def _is_root_frontend_asset(self, path: str) -> bool:
+            return path in ROOT_FRONTEND_ASSETS
+
+        def _is_file_like_path(self, path: str) -> bool:
+            name = path.rsplit("/", 1)[-1]
+            return "." in name
+
         def do_GET(self):
             path = urlparse(self.path).path
             query = parse_qs(urlparse(self.path).query)
 
-            if self._is_static_asset(path):
+            if self._is_static_asset(path) or self._is_root_frontend_asset(path):
                 return self._serve_static(path.lstrip("/"))
             if path in REACT_ROUTES:
                 return self._serve_spa_index()
+            if self._is_file_like_path(path):
+                return self._send(404, {"error": "not found"})
 
             # Legacy HTML dashboards.
             if path == "/legacy/dashboard":
