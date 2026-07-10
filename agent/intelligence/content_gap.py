@@ -198,6 +198,20 @@ def detect_content_gap(
     best_match, best_score = scored_items[0]
     related = [item for item, score in scored_items[:3] if score > 0.05]
 
+    normalized_title = _normalize(opportunity_title)
+    normalized_slug = _normalize(opportunity_title.replace("-", " "))
+    for item, _score in scored_items:
+        if normalized_title == _normalize(item.title) or (
+            item.slug and normalized_slug == _normalize(item.slug.replace("-", " "))
+        ):
+            return ContentGapResult(
+                gap_score=10,
+                duplicate_risk="high",
+                action="skip",
+                related_items=related,
+                reason=f"Exact content already exists ({item.url}).",
+            )
+
     if best_score >= 0.65:
         age_days = _days_since(best_match.published_at)
         if age_days is not None and age_days <= 14:
