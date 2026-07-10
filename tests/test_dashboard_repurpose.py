@@ -179,6 +179,13 @@ def test_dashboard_api_remains_json(server):
     assert "profiles" in data and "history" in data and "drafts" in data
 
 
+def test_dashboard_unknown_api_returns_json_404(server):
+    status, body, _ = _get(server + "/api/unknown")
+    data = json.loads(body)
+    assert status == 404
+    assert data["error"] == "not found"
+
+
 def test_dashboard_intelligence_snapshots_api_remains_json(server):
     status, body, _ = _get(server + "/api/intelligence/snapshots")
     data = json.loads(body)

@@ -329,6 +329,8 @@ def _make_handler():
                 self.end_headers()
                 self.wfile.write(data)
                 return
+            if self._is_api_path(path):
+                return self._send(404, {"error": "not found"})
             return self._serve_spa_index()
 
         def do_POST(self):
