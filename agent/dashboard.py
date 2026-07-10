@@ -13,6 +13,7 @@ import json
 import mimetypes
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 from . import history
@@ -23,9 +24,16 @@ from .prompts import build_goal
 CONTENT_DIR = ROOT / "content"
 DRAFTS_DIR = CONTENT_DIR / "drafts"
 UPLOADS_DIR = CONTENT_DIR / "uploads"
+FRONTEND_DIST_DIR = ROOT / "frontend" / "dist"
+FRONTEND_INDEX = FRONTEND_DIST_DIR / "index.html"
+ROOT_FRONTEND_FILES = {"favicon.svg", "robots.txt", "manifest.webmanifest"}
+LEGACY_PATHS = {"/legacy/dashboard", "/legacy/intelligence", "/legacy/analytics"}
 
 FILE_CATEGORIES = ("news", "tutorials", "videos", "images", "other")
 MAX_UPLOAD_BYTES = 600 * 1024 * 1024  # 600 MB cap for added files/videos
+
+mimetypes.add_type("image/svg+xml", ".svg")
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 
 def list_files():
@@ -82,6 +90,24 @@ def resolve_content_path(relpath):
     except ValueError:
         return None
     return target if target.is_file() else None
+
+
+def resolve_frontend_path(request_path):
+    """Resolve a frontend asset path safely under frontend/dist."""
+    rel = request_path.lstrip("/")
+    if not rel or "\x00" in rel:
+        return None
+    target = (FRONTEND_DIST_DIR / rel).resolve()
+    try:
+        target.relative_to(FRONTEND_DIST_DIR.resolve())
+    except ValueError:
+        return None
+    return target if target.is_file() else None
+
+
+def is_file_like_path(request_path):
+    """Return true for URL paths that look like file requests."""
+    return bool(Path(urlparse(request_path).path).suffix)
 
 PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
@@ -175,10 +201,43 @@ def _make_handler():
             self.end_headers()
             self.wfile.write(data)
 
+        def _send_file(self, target):
+            data = target.read_bytes()
+            ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _send_spa_index(self):
+            if FRONTEND_INDEX.is_file():
+                return self._send_file(FRONTEND_INDEX)
+            return self._send(404, {"error": "frontend build not found"})
+
         def do_GET(self):
             path = urlparse(self.path).path
-            if path == "/":
+            if path in LEGACY_PATHS:
                 return self._send(200, PAGE.encode(), "text/html; charset=utf-8")
+            if path.startswith("/assets/"):
+                rel = path[len("/assets/"):]
+                if not rel or "\x00" in rel:
+                    return self._send(404, {"error": "not found"})
+                assets_root = (FRONTEND_DIST_DIR / "assets").resolve()
+                target = (assets_root / rel).resolve()
+                try:
+                    target.relative_to(assets_root)
+                except ValueError:
+                    return self._send(404, {"error": "not found"})
+                if target.is_file():
+                    return self._send_file(target)
+                return self._send(404, {"error": "not found"})
+            root_name = path.lstrip("/")
+            if "/" not in root_name and root_name in ROOT_FRONTEND_FILES:
+                target = resolve_frontend_path(path)
+                if target:
+                    return self._send_file(target)
+                return self._send(404, {"error": "not found"})
             if path == "/api/state":
                 drafts = sorted(p.name for p in DRAFTS_DIR.glob("*.md")) \
                     if DRAFTS_DIR.exists() else []
@@ -211,7 +270,11 @@ def _make_handler():
                 self.end_headers()
                 self.wfile.write(data)
                 return
-            return self._send(404, {"error": "not found"})
+            if path.startswith("/api/"):
+                return self._send(404, {"error": "not found"})
+            if is_file_like_path(path):
+                return self._send(404, {"error": "not found"})
+            return self._send_spa_index()
 
         def do_POST(self):
             path = urlparse(self.path).path
