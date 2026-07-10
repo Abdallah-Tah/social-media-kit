@@ -234,6 +234,7 @@ def _performance_placeholder() -> dict[str, Any]:
         "metrics": {p: {"impressions": None, "clicks": None, "ctr": None, "likes": None,
                         "comments": None, "shares": None, "views": None,
                         "watch_time": None, "page_views": None} for p in EXTERNAL_PLATFORMS},
+        "blog_metrics": [],
     }
 
 
@@ -283,6 +284,10 @@ def compute_analytics(
     socials = _load_json_files(SOCIAL_DIR)
     socials = [s for s in socials if _within_range(s.get("created_at", ""), start, end)]
 
+    performance = _performance_placeholder()
+    # Merge external blog metrics if cached.
+    performance["blog_metrics"] = _load_blog_metrics(drafts)
+
     return AnalyticsSnapshot(
         generated_at=now.isoformat(),
         start_date=start.isoformat(),
@@ -292,9 +297,37 @@ def compute_analytics(
         editorial_funnel=_editorial_funnel(drafts),
         social=_social_metrics(socials, platform_filter),
         timing=_timing_metrics(drafts, socials),
-        performance=_performance_placeholder(),
+        performance=performance,
         recent_activity=_recent_activity(drafts, socials),
     )
+
+
+def _load_blog_metrics(drafts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Load any cached blog analytics for published drafts in this window."""
+    from .analytics_connectors.blog import _cache_path
+    metrics = []
+    for d in drafts:
+        if d.get("status") != "published" or not d.get("blog_url"):
+            continue
+        cache = _cache_path(d["blog_url"])
+        if not cache.exists():
+            continue
+        try:
+            data = json.loads(cache.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        metrics.append({
+            "draft_id": d.get("draft_id"),
+            "blog_url": d.get("blog_url"),
+            "status": data.get("status"),
+            "page_views": data.get("page_views"),
+            "unique_visitors": data.get("unique_visitors"),
+            "clicks": data.get("clicks"),
+            "average_read_time_seconds": data.get("average_read_time_seconds"),
+            "referrers": data.get("referrers", {}),
+            "last_sync_at": data.get("last_sync_at"),
+        })
+    return metrics
 
 
 def save_analytics(snapshot: AnalyticsSnapshot, path: Path | None = None) -> Path:

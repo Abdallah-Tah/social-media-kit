@@ -1124,6 +1124,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_analytics.add_argument("--platform", default=None, help="Filter by platform")
     p_analytics.add_argument("--json", action="store_true", help="Output JSON")
     p_analytics.add_argument("--save", action="store_true", help="Save snapshot to content/analytics/")
+    p_analytics.add_argument("--sync", action="store_true", help="Sync external analytics connectors (blog only for now)")
     p_analytics.set_defaults(func=cmd_analytics)
 
     return parser
@@ -1141,6 +1142,11 @@ def cmd_social(args: argparse.Namespace) -> int:
 def cmd_analytics(args: argparse.Namespace) -> int:
     """Read-only analytics from persisted records."""
     from .analytics import compute_analytics, export_json, save_analytics
+
+    if args.sync:
+        from .analytics_connectors.blog import sync_blog_analytics
+        print(json.dumps(sync_blog_analytics(), indent=2))
+        return 0
 
     days = None if args.days == 0 else args.days
     snapshot = compute_analytics(days=days, platform_filter=args.platform)

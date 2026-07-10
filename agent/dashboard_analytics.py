@@ -35,6 +35,7 @@ th{color:var(--muted);font-weight:600}.barwrap{background:#243049;border-radius:
   <div><label class=muted>Days</label><select id=days><option value="">All time</option><option value=7>7 days</option><option value=30 selected>30 days</option><option value=90>90 days</option></select></div>
   <div><label class=muted>Platform</label><select id=platform><option value="">All</option><option value=linkedin>LinkedIn</option><option value=facebook>Facebook</option><option value=x>X</option><option value=threads>Threads</option><option value=reddit>Reddit</option><option value=newsletter>Newsletter</option><option value=youtube>YouTube</option></select></div>
   <button onclick=loadAnalytics()>Refresh</button>
+  <button class=secondary onclick=syncAnalytics()>Sync Blog Analytics</button>
   <button class=secondary onclick=saveSnapshot()>Save Snapshot</button>
   <button class=secondary onclick=exportCSV()>Export CSV</button>
   <button class=secondary onclick=exportJSON()>Export JSON</button>
@@ -112,6 +113,10 @@ async function loadAnalytics(){
   </div>
  `;
 }
+async function syncAnalytics(){
+ const data=await (await fetch('/api/analytics/sync',{method:'POST'})).json();
+ alert(data.ok?`Synced ${data.synced} blog posts`:`Failed: ${data.error||'unknown'}`);
+}
 async function saveSnapshot(){
  const data=await (await fetch('/api/analytics/save',{method:'POST'})).json();
  alert(data.ok?'Snapshot saved':'Failed');
@@ -154,3 +159,8 @@ def handle_save() -> dict[str, Any]:
     snapshot = compute_analytics()
     path = save_analytics(snapshot)
     return {"ok": True, "path": str(path)}
+
+
+def handle_sync() -> dict[str, Any]:
+    from .analytics_connectors.blog import sync_blog_analytics
+    return sync_blog_analytics()

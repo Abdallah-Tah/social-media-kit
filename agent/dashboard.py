@@ -213,6 +213,9 @@ def _make_handler():
             if path == "/api/analytics/save":
                 from .dashboard_analytics import handle_analytics_page, handle_analytics_api, handle_export, handle_save
                 return self._send(200, handle_save())
+            if path == "/api/analytics/sync":
+                from .dashboard_analytics import handle_analytics_page, handle_analytics_api, handle_export, handle_save, handle_sync
+                return self._send(200, handle_sync())
             if path == "/":
                 # Redirect root to Intelligence dashboard.
                 self.send_response(302)
