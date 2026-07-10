@@ -286,11 +286,12 @@ def _make_handler():
                 body = self._read_json()
                 return self._send(200, handle_sync(body))
 
-            # Intelligence dashboard API
-            if path.startswith("/api/intelligence/"):
+            # Intelligence, draft, social draft, and scheduler API.
+            if self._is_intelligence_module_api(path):
                 intel = intelligence_routes(path, query)
                 if isinstance(intel, dict):
-                    return self._send(200, intel)
+                    status = 404 if intel.get("error") == "not found" else 200
+                    return self._send(status, intel)
                 if isinstance(intel, tuple):
                     page, ctype = intel
                     return self._send(200, page, ctype)
@@ -339,9 +340,10 @@ def _make_handler():
             if path == "/api/analytics/sync":
                 from .dashboard_analytics import handle_sync
                 return self._send(200, handle_sync(body))
-            if path.startswith("/api/intelligence/"):
+            if self._is_intelligence_module_api(path):
                 result = intelligence_routes(path, query, body)
-                return self._send(200, result)
+                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
+                return self._send(status, result)
             if path != "/api/run":
                 return self._send(404, {"error": "not found"})
             try:
@@ -349,6 +351,25 @@ def _make_handler():
             except Exception as exc:  # surface any failure to the browser
                 return self._send(200, {"ok": False, "error": str(exc)})
             return self._send(200, result)
+
+        def do_PATCH(self):
+            path = urlparse(self.path).path
+            query = parse_qs(urlparse(self.path).query)
+            body = self._read_json()
+            if self._is_intelligence_module_api(path):
+                result = intelligence_routes(path, query, body)
+                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
+                return self._send(status, result)
+            return self._send(404, {"error": "not found"})
+
+        def _is_intelligence_module_api(self, path: str) -> bool:
+            return (
+                path.startswith("/api/intelligence/")
+                or path == "/api/drafts"
+                or path.startswith("/api/drafts/")
+                or path == "/api/social_drafts"
+                or path.startswith("/api/social_drafts/")
+            )
 
         def _upload(self):
             q = parse_qs(urlparse(self.path).query)

@@ -1,12 +1,15 @@
 import type {
   AnalyticsSnapshot,
+  ContentDraft,
   CreateDraftResponse,
   GenerateBriefResponse,
   IntelligenceCard,
   IntelligenceFilters,
+  MutationResult,
   RunIntelligenceResponse,
   Snapshot,
   SnapshotSummary,
+  SocialDraft,
 } from './models'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
@@ -73,7 +76,7 @@ export const api = {
     }),
 
   saveSnapshot: () =>
-    request<{ ok: boolean; path?: string; error?: string }>('/intelligence/save', {
+    request<{ ok: boolean; path?: string; name?: string; error?: string }>('/intelligence/save', {
       method: 'POST',
       body: JSON.stringify({}),
     }),
@@ -82,28 +85,48 @@ export const api = {
     window.open(`${API_BASE}/intelligence/export?format=${format}`, '_blank')
   },
 
-  getDrafts: () => request<unknown[]>('/drafts'),
-  getDraft: (id: string) => request<Record<string, unknown>>(`/drafts/${id}`),
-  saveDraft: (id: string, body: Record<string, unknown>) =>
-    request<Record<string, unknown>>(`/drafts/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  getDrafts: async () => {
+    const data = await request<{ ok: boolean; drafts?: ContentDraft[]; error?: string }>('/drafts')
+    return data.drafts || []
+  },
+  getDraft: (id: string) => request<{ ok: boolean; draft?: ContentDraft; error?: string }>(`/drafts/${id}`),
+  saveDraft: (id: string, body: Partial<ContentDraft>) =>
+    request<{ ok: boolean; draft?: ContentDraft; error?: string }>(`/drafts/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
 
-  getSocialDrafts: () => request<unknown[]>('/social_drafts'),
+  getSocialDrafts: async () => {
+    const data = await request<{ ok: boolean; drafts?: SocialDraft[]; error?: string }>('/social_drafts')
+    return data.drafts || []
+  },
+  getSocialDraft: (id: string) => request<{ ok: boolean; draft?: SocialDraft; error?: string }>(`/social_drafts/${id}`),
+  saveSocialDraft: (id: string, body: Partial<SocialDraft>) =>
+    request<{ ok: boolean; draft?: SocialDraft; error?: string }>(`/social_drafts/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
   publishSocialDrafts: (ids: string[], dryRun = true) =>
-    request<Record<string, unknown>>('/social_drafts/publish', {
+    request<MutationResult>('/social_drafts/publish', {
       method: 'POST',
       body: JSON.stringify({ ids, dry_run: dryRun }),
     }),
+  publishDueSocialDrafts: (dryRun = true) =>
+    request<MutationResult>('/social_drafts/publish_due', {
+      method: 'POST',
+      body: JSON.stringify({ dry_run: dryRun }),
+    }),
   scheduleSocialDrafts: (ids: string[], scheduledAt: string) =>
-    request<Record<string, unknown>>('/social_drafts/schedule', {
+    request<MutationResult>('/social_drafts/schedule', {
       method: 'POST',
       body: JSON.stringify({ ids, scheduled_at: scheduledAt }),
     }),
 
   publishBlog: (id: string) =>
-    request<Record<string, unknown>>(`/drafts/${id}/publish`, { method: 'POST' }),
+    request<{ ok: boolean; draft?: ContentDraft; blog_url?: string; error?: string }>(`/drafts/${id}/publish`, { method: 'POST' }),
 
   createSocialDrafts: (draftId: string, platforms: string[]) =>
-    request<Record<string, unknown>>(`/drafts/${draftId}/social`, {
+    request<{ ok: boolean; drafts?: SocialDraft[]; error?: string }>(`/drafts/${draftId}/social`, {
       method: 'POST',
       body: JSON.stringify({ platforms }),
     }),

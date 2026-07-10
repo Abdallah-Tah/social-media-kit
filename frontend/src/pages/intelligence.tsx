@@ -73,14 +73,16 @@ type BriefMap = Record<number, Brief | null | undefined>
 type GeneratingBriefSet = Record<number, boolean>
 
 const quickFilters = [
-  { key: 'hot', label: 'Hot Now', icon: Flame, min: 80, trend: 'all', format: 'all' },
-  { key: 'gems', label: 'Hidden Gems', icon: Gem, min: 50, trend: 'all', format: 'all' },
+  { key: 'hot', label: 'Hot Now', icon: Flame, min: 0, trend: 'all', format: 'all' },
+  { key: 'gems', label: 'Hidden Gems', icon: Gem, min: 0, trend: 'all', format: 'all' },
   { key: 'exploding', label: 'Exploding', icon: Rocket, min: 0, trend: 'exploding', format: 'all' },
   { key: 'growing', label: 'Growing', icon: TrendingUp, min: 0, trend: 'growing', format: 'all' },
   { key: 'authority', label: 'High Authority', icon: Crown, min: 0, trend: 'all', format: 'all' },
-  { key: 'shorts', label: 'Best for Shorts', icon: Clapperboard, min: 0, trend: 'all', format: 'youtube' },
-  { key: 'linkedin', label: 'Best for LinkedIn', icon: BriefcaseBusiness, min: 0, trend: 'all', format: 'linkedin' },
+  { key: 'shorts', label: 'Best for Shorts', icon: Clapperboard, min: 0, trend: 'all', format: 'youtube_short' },
+  { key: 'linkedin', label: 'Best for LinkedIn', icon: BriefcaseBusiness, min: 0, trend: 'all', format: 'linkedin_post' },
 ] as const
+
+type QuickFilterKey = (typeof quickFilters)[number]['key'] | null
 
 export function IntelligencePage() {
   const [filters, setFilters] = useState<FilterForm>(defaultFilters)
@@ -88,6 +90,7 @@ export function IntelligencePage() {
   const [briefs, setBriefs] = useState<BriefMap>({})
   const [generatingBrief, setGeneratingBrief] = useState<GeneratingBriefSet>({})
   const [displayCards, setDisplayCards] = useState<IntelligenceCard[]>([])
+  const [activeQuickFilter, setActiveQuickFilter] = useState<QuickFilterKey>(null)
 
   const { register, handleSubmit, control, watch, setValue } = useForm<FilterForm>({
     defaultValues: defaultFilters,
@@ -114,7 +117,7 @@ export function IntelligencePage() {
   })
 
   const cards = displayCards
-  const filteredCards = applyLocalFilters(cards, filters)
+  const filteredCards = applyLocalFilters(cards, filters, activeQuickFilter)
   const isRunning = runIntelligenceMutation.isPending
   const runError = runIntelligenceMutation.error
   const refetch = () => runIntelligenceMutation.mutate(filters)
@@ -187,10 +190,20 @@ export function IntelligencePage() {
   }
 
   const applyQuickFilter = (qf: (typeof quickFilters)[number]) => {
+    setActiveQuickFilter(qf.key)
     setValue('min_score', qf.min)
     setValue('trend', qf.trend as IntelligenceFilters['trend'])
     setValue('format', qf.format as IntelligenceFilters['format'])
     const next = { ...filters, min_score: qf.min, trend: qf.trend as IntelligenceFilters['trend'], format: qf.format as IntelligenceFilters['format'] }
+    setFilters(next)
+  }
+
+  const clearLocalFilters = () => {
+    setActiveQuickFilter(null)
+    setValue('min_score', 0)
+    setValue('trend', 'all')
+    setValue('format', 'all')
+    const next = { ...filters, min_score: 0, trend: 'all' as const, format: 'all' as const }
     setFilters(next)
   }
 
@@ -295,7 +308,9 @@ export function IntelligencePage() {
                         <SelectItem value="threads">Threads</SelectItem>
                         <SelectItem value="reddit">Reddit</SelectItem>
                         <SelectItem value="newsletter">Newsletter</SelectItem>
-                        <SelectItem value="youtube">YouTube Short</SelectItem>
+                        <SelectItem value="youtube_short">YouTube Short</SelectItem>
+                        <SelectItem value="linkedin_post">LinkedIn Post</SelectItem>
+                        <SelectItem value="twitter_thread">Thread</SelectItem>
                         <SelectItem value="reel">Reel</SelectItem>
                       </SelectContent>
                     </Select>
@@ -324,10 +339,7 @@ export function IntelligencePage() {
             <div className="flex flex-wrap gap-2">
               {quickFilters.map((qf) => {
                 const Icon = qf.icon
-                const active =
-                  filters.min_score === qf.min &&
-                  filters.trend === qf.trend &&
-                  filters.format === qf.format
+                const active = activeQuickFilter === qf.key
                 return (
                   <Button
                     key={qf.key}
@@ -408,7 +420,10 @@ export function IntelligencePage() {
       {!isRunning && runIntelligenceMutation.isSuccess && filteredCards.length === 0 && cards.length > 0 && (
         <Card>
           <CardContent className="pt-6 text-center text-muted-foreground">
-            No cards match the current filters. Try relaxing them.
+            <div>No cards match the current filters.</div>
+            <Button variant="outline" size="sm" className="mt-3" onClick={clearLocalFilters}>
+              Show all {cards.length} cards
+            </Button>
           </CardContent>
         </Card>
       )}
@@ -451,14 +466,45 @@ export function IntelligencePage() {
   )
 }
 
-function applyLocalFilters(cards: IntelligenceCard[], filters: FilterForm): IntelligenceCard[] {
+function applyLocalFilters(cards: IntelligenceCard[], filters: FilterForm, quickFilter: QuickFilterKey): IntelligenceCard[] {
   return cards.filter((card) => {
     const score = card.opportunity?.opportunity_score ?? 0
     if (score < filters.min_score) return false
-    if (filters.trend !== 'all' && card.trend?.direction !== filters.trend) return false
-    if (filters.format !== 'all' && card.recommendation?.recommendation !== filters.format) return false
+    if (!matchesTrend(card.trend?.direction, filters.trend)) return false
+    if (!matchesFormat(card, filters.format)) return false
+    if (!matchesQuickFilter(card, quickFilter)) return false
     return true
   })
+}
+
+function matchesTrend(direction: string | undefined, filter: IntelligenceFilters['trend']) {
+  if (!filter || filter === 'all') return true
+  if (filter === 'up') return direction === 'growing' || direction === 'exploding'
+  if (filter === 'down') return direction === 'declining' || direction === 'dead'
+  return direction === filter
+}
+
+function matchesFormat(card: IntelligenceCard, filter: IntelligenceFilters['format']) {
+  if (!filter || filter === 'all') return true
+  const recommendation = card.recommendation?.recommendation
+  if (recommendation === filter) return true
+  return card.platform_fit?.some((fit) => fit.platform === filter && fit.score >= 50) || false
+}
+
+function normalisedAuthority(score: number | undefined) {
+  const value = score ?? 0
+  return value <= 1 ? value * 100 : value
+}
+
+function matchesQuickFilter(card: IntelligenceCard, quickFilter: QuickFilterKey) {
+  if (!quickFilter) return true
+  const score = card.opportunity?.opportunity_score ?? 0
+  const signals = card.opportunity?.signals || []
+  const hasSignal = (needle: string) => signals.some((signal: string) => signal.toLowerCase().includes(needle))
+  if (quickFilter === 'hot') return score >= 50 && ['growing', 'exploding'].includes(card.trend?.direction || '')
+  if (quickFilter === 'gems') return score >= 50 && score < 80 && (hasSignal('low competition') || hasSignal('content gap'))
+  if (quickFilter === 'authority') return normalisedAuthority(card.authority?.final_score) >= 80
+  return true
 }
 
 function AiSummaryPanel({ cards }: { cards: IntelligenceCard[] }) {
@@ -466,16 +512,6 @@ function AiSummaryPanel({ cards }: { cards: IntelligenceCard[] }) {
   const top = cards[0]
   const actionable = cards.filter((c) => (c.opportunity?.opportunity_score || 0) >= 60 && c.recommendation?.recommendation !== 'skip')
   const rec = top.recommendation?.recommendation || 'none'
-  const production: Record<string, string> = {
-    youtube: '7 min',
-    linkedin: '5 min',
-    x: '8 min',
-    threads: '8 min',
-    newsletter: '12 min',
-    blog: '60 min',
-    reel: '7 min',
-  }
-
   return (
     <Card className="border-primary/20 bg-primary/5">
       <CardContent className="p-4">
@@ -487,7 +523,7 @@ function AiSummaryPanel({ cards }: { cards: IntelligenceCard[] }) {
           <SummaryBox label="Best opportunity" value={top.cluster?.headline || '—'} />
           <SummaryBox label="Stories worth creating" value={`${actionable.length}`} />
           <SummaryBox label="Recommended format" value={rec.replace(/_/g, ' ')} />
-          <SummaryBox label="Est. production" value={production[rec] || '15 min'} />
+          <SummaryBox label="Top score" value={`${top.opportunity?.opportunity_score || 0}`} />
         </div>
       </CardContent>
     </Card>

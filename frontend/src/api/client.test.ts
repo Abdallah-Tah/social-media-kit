@@ -54,4 +54,35 @@ describe('API client error handling', () => {
     expect(calledUrl).not.toContain('min_score=')
     expect(calledUrl).not.toContain('trend=')
   })
+
+  it('getDrafts unwraps the dashboard draft envelope', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: true, drafts: [{ draft_id: 'd1', title: 'Draft' }] }), { status: 200 })
+    )
+
+    await expect(api.getDrafts()).resolves.toEqual([{ draft_id: 'd1', title: 'Draft' }])
+  })
+
+  it('getSocialDrafts unwraps the dashboard social draft envelope', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: true, drafts: [{ draft_id: 's1', platform: 'linkedin' }] }), { status: 200 })
+    )
+
+    await expect(api.getSocialDrafts()).resolves.toEqual([{ draft_id: 's1', platform: 'linkedin' }])
+  })
+
+  it('posts to the publish-due scheduler endpoint with dry-run by default', async () => {
+    let calledUrl = ''
+    let calledBody = ''
+    vi.mocked(globalThis.fetch).mockImplementationOnce((url, init) => {
+      calledUrl = String(url)
+      calledBody = String(init?.body)
+      return Promise.resolve(new Response(JSON.stringify({ ok: true, results: {} }), { status: 200 }))
+    })
+
+    await api.publishDueSocialDrafts()
+    expect(calledUrl).toContain('/api/social_drafts/publish_due')
+    expect(calledBody).toContain('"dry_run":true')
+  })
+
 })

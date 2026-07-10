@@ -39,6 +39,7 @@ from .social_drafts import (
     create_social_drafts_from_blog,
     list_social_drafts,
     load_social_draft,
+    publish_due_social_drafts,
     publish_selected_social_drafts,
     schedule_social_drafts,
     update_social_draft,
@@ -46,6 +47,7 @@ from .social_drafts import (
 
 INTEL_DIR = Path(__file__).resolve().parents[1] / "content" / "feed" / "intelligence"
 SNAPSHOTS_DIR = INTEL_DIR
+_LAST_RUN_CARDS: list[dict[str, Any]] = []
 
 INTELLIGENCE_PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
@@ -685,6 +687,8 @@ def handle_run(query: dict[str, list[str]]) -> dict[str, Any]:
     )
     dict_cards = [c.to_dict() for c in cards]
     filtered = filter_cards(dict_cards, min_score, trend, content_type)
+    global _LAST_RUN_CARDS
+    _LAST_RUN_CARDS = filtered
     return {"ok": True, "cards": filtered, "total": len(dict_cards), "filtered": len(filtered)}
 
 
@@ -697,6 +701,21 @@ def handle_snapshot(name: str) -> dict[str, Any]:
     if "error" in data:
         return {"ok": False, "error": data["error"]}
     return {"ok": True, "name": name, "cards": data.get("cards", []), "top_brief": data.get("top_brief")}
+
+def handle_save_snapshot() -> dict[str, Any]:
+    """Persist the most recent dashboard intelligence result."""
+    if not _LAST_RUN_CARDS:
+        return {"ok": False, "error": "no intelligence run to save"}
+    INTEL_DIR.mkdir(parents=True, exist_ok=True)
+    name = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d-%H%M%S.json")
+    path = INTEL_DIR / name
+    payload = {
+        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "count": len(_LAST_RUN_CARDS),
+        "cards": _LAST_RUN_CARDS,
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return {"ok": True, "path": str(path), "name": name}
 
 
 def _card_from_dict(card_data: dict[str, Any]) -> tuple[Any, Any]:
@@ -797,7 +816,7 @@ def handle_create_draft(body: dict[str, Any]) -> dict[str, Any]:
     card = body.get("card", {})
     brief = body.get("brief", {})
     draft = create_draft(card, brief)
-    return {"ok": True, "draft": draft.to_dict()}
+    return {"ok": True, "draft_id": draft.draft_id, "draft": draft.to_dict()}
 
 
 def handle_list_drafts() -> dict[str, Any]:
@@ -834,6 +853,12 @@ def handle_publish_social(body: dict[str, Any]) -> dict[str, Any]:
     return publish_selected_social_drafts(ids, dry_run=dry_run)
 
 
+def handle_publish_due_social(body: dict[str, Any]) -> dict[str, Any]:
+    """Publish scheduled social drafts whose scheduled time has passed."""
+    dry_run = bool(body.get("dry_run", True))
+    return publish_due_social_drafts(dry_run=dry_run)
+
+
 def handle_schedule_social(body: dict[str, Any]) -> dict[str, Any]:
     """Schedule selected approved social drafts."""
     ids = body.get("ids", [])
@@ -863,7 +888,7 @@ def handle_create_social_drafts(draft_id: str, body: dict[str, Any]) -> dict[str
     return {"ok": True, "drafts": [d.to_dict() for d in created]}
 
 
-def handle_list_social_drafts(source_draft_id: str) -> dict[str, Any]:
+def handle_list_social_drafts(source_draft_id: str | None = None) -> dict[str, Any]:
     return {"ok": True, "drafts": list_social_drafts(source_draft_id=source_draft_id)}
 
 
@@ -902,6 +927,8 @@ def register_routes(path: str, query: dict[str, list[str]], body: dict[str, Any]
         return handle_brief(body or {})
     if path == "/api/intelligence/briefs":
         return handle_briefs(body or {})
+    if path == "/api/intelligence/save":
+        return handle_save_snapshot()
     if path == "/api/intelligence/draft":
         return handle_create_draft(body or {})
     if path.startswith("/api/drafts/") and path.endswith("/publish"):
@@ -919,8 +946,12 @@ def register_routes(path: str, query: dict[str, list[str]], body: dict[str, Any]
         return handle_get_draft(draft_id)
     if path == "/api/drafts":
         return handle_list_drafts()
+    if path == "/api/social_drafts":
+        return handle_list_social_drafts()
     if path == "/api/social_drafts/publish":
         return handle_publish_social(body or {})
+    if path == "/api/social_drafts/publish_due":
+        return handle_publish_due_social(body or {})
     if path == "/api/social_drafts/schedule":
         return handle_schedule_social(body or {})
     if path.startswith("/api/social_drafts/"):

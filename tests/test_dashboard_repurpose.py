@@ -113,6 +113,21 @@ def _get_with_headers(url):
     with urllib.request.urlopen(req, timeout=5) as r:
         return r.status, r.read(), dict(r.headers)
 
+def _post_json(url, payload):
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, method="POST")
+    req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, timeout=5) as r:
+        return r.status, r.read()
+
+
+def _patch_json(url, payload):
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, method="PATCH")
+    req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, timeout=5) as r:
+        return r.status, r.read()
+
 
 def test_dashboard_root_serves_react_spa(server):
     status, body, _ = _get(server + "/")
@@ -228,3 +243,80 @@ def test_dashboard_run_dry(server):
         data = json.loads(r.read())
     # Empty input is rejected cleanly (no crash, structured error).
     assert data["ok"] is False and "topic" in data["error"].lower()
+
+
+def test_dashboard_drafts_api_is_exposed(server, monkeypatch, tmp_path):
+    from agent import drafts
+
+    original_dir = drafts.DRAFTS_DIR
+    monkeypatch.setattr(drafts, "DRAFTS_DIR", tmp_path)
+    draft = drafts.ContentDraft(title="Dashboard Draft", body="Body")
+    drafts.save_draft(draft)
+    try:
+        status, body, _ = _get(server + "/api/drafts")
+        data = json.loads(body)
+        assert status == 200
+        assert data["ok"] is True
+        assert data["drafts"][0]["title"] == "Dashboard Draft"
+    finally:
+        monkeypatch.setattr(drafts, "DRAFTS_DIR", original_dir)
+
+
+def test_dashboard_patch_draft_api_is_exposed(server, monkeypatch, tmp_path):
+    from agent import drafts
+
+    original_dir = drafts.DRAFTS_DIR
+    monkeypatch.setattr(drafts, "DRAFTS_DIR", tmp_path)
+    draft = drafts.ContentDraft(title="Needs Review", body="Body")
+    drafts.save_draft(draft)
+    try:
+        status, body = _patch_json(server + f"/api/drafts/{draft.draft_id}", {"status": "approved"})
+        data = json.loads(body)
+        assert status == 200
+        assert data["ok"] is True
+        assert data["draft"]["status"] == "approved"
+    finally:
+        monkeypatch.setattr(drafts, "DRAFTS_DIR", original_dir)
+
+
+def test_dashboard_social_drafts_api_and_publish_due_are_exposed(server, monkeypatch, tmp_path):
+    from agent import social_drafts
+
+    original_dir = social_drafts.SOCIAL_DRAFTS_DIR
+    monkeypatch.setattr(social_drafts, "SOCIAL_DRAFTS_DIR", tmp_path)
+    created = social_drafts.create_social_drafts_from_blog(
+        "source", "https://example.com/blog", "Social Title", "Body", ["linkedin"]
+    )[0]
+    created.status = "approved"
+    social_drafts.save_social_draft(created)
+    try:
+        status, body, _ = _get(server + "/api/social_drafts")
+        data = json.loads(body)
+        assert status == 200
+        assert data["ok"] is True
+        assert data["drafts"][0]["title"] == "Social Title"
+
+        when = "2000-01-01T00:00:00+00:00"
+        status, body = _post_json(server + "/api/social_drafts/schedule", {"ids": [created.draft_id], "scheduled_at": when})
+        data = json.loads(body)
+        assert status == 200
+        assert data["results"][created.draft_id]["ok"] is True
+
+        status, body = _post_json(server + "/api/social_drafts/publish_due", {"dry_run": True})
+        data = json.loads(body)
+        assert status == 200
+        assert data["ok"] is True
+        assert data["results"][created.draft_id]["ok"] is True
+    finally:
+        monkeypatch.setattr(social_drafts, "SOCIAL_DRAFTS_DIR", original_dir)
+
+
+def test_dashboard_intelligence_save_requires_run(server, monkeypatch):
+    from agent import dashboard_intelligence
+
+    monkeypatch.setattr(dashboard_intelligence, "_LAST_RUN_CARDS", [])
+    status, body = _post_json(server + "/api/intelligence/save", {})
+    data = json.loads(body)
+    assert status == 200
+    assert data["ok"] is False
+    assert "no intelligence run" in data["error"]

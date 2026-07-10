@@ -3,7 +3,7 @@ export interface IntelligenceFilters {
   include_seen?: boolean
   min_score?: number
   trend?: 'all' | 'up' | 'down' | 'stable' | 'exploding' | 'growing'
-  format?: 'all' | 'blog' | 'linkedin' | 'facebook' | 'x' | 'threads' | 'reddit' | 'newsletter' | 'youtube' | 'reel' | 'skip'
+  format?: 'all' | 'blog' | 'linkedin' | 'linkedin_post' | 'facebook' | 'x' | 'threads' | 'reddit' | 'newsletter' | 'youtube' | 'youtube_short' | 'twitter_thread' | 'reel' | 'skip'
 }
 
 export interface SnapshotSummary {
@@ -48,6 +48,7 @@ export interface BlogMetric {
 export interface IntelligenceOpportunity {
   opportunity_score: number
   signal: string
+  signals?: string[]
   urgency: number
   originality: number
   commercial_value: number
@@ -82,6 +83,9 @@ export interface Brief {
   angle: string
   key_points: string[]
   call_to_action: string
+  markdown?: string
+  draft_body?: string
+  excerpt?: string
 }
 
 export interface IntelligenceCard {
@@ -124,6 +128,52 @@ export interface IntelligenceSnapshot {
   count: number
   cards: IntelligenceCard[]
   top_brief?: Brief
+}
+
+export type ContentDraftStatus = 'draft' | 'reviewed' | 'approved' | 'published'
+
+export interface ContentDraft {
+  draft_id: string
+  source_cluster: Record<string, unknown>
+  recommendation: Record<string, unknown>
+  content_type: string
+  title: string
+  slug: string
+  brief: Record<string, unknown>
+  body: string
+  source_urls: string[]
+  status: ContentDraftStatus
+  blog_url: string
+  published_at: string
+  created_at: string
+  updated_at: string
+}
+
+export type SocialDraftStatus = 'draft' | 'reviewed' | 'approved' | 'scheduled' | 'published' | 'failed'
+
+export interface SocialDraft {
+  draft_id: string
+  source_draft_id: string
+  platform: string
+  blog_url: string
+  title: string
+  text: string
+  description: string
+  tags: string[]
+  hashtags: string[]
+  status: SocialDraftStatus
+  scheduled_at: string
+  published_url: string
+  published_at: string
+  error: string
+  created_at: string
+  updated_at: string
+}
+
+export interface MutationResult {
+  ok: boolean
+  error?: string
+  results?: Record<string, { ok: boolean; error?: string; skipped?: boolean; published_url?: string }>
 }
 
 export interface AnalyticsSnapshot {
@@ -197,7 +247,7 @@ export interface GenerateBriefResponse {
 export interface CreateDraftResponse {
   ok: boolean
   draft_id?: string
-  draft?: Record<string, unknown>
+  draft?: ContentDraft
   error?: string
 }
 
