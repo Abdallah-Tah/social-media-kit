@@ -21,8 +21,24 @@ from agent.intelligence.models import AudienceSignal
 
 class CrossPlatformClusteringTests(unittest.TestCase):
     def test_cross_platform_pain_boosts_frequency(self):
-        config = IntelligenceConfig()
-        pains = collect_audience_pain(config, live=False, text_fallback=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            audience_dir = Path(tmp) / ".openclaw" / "workspace" / "audience"
+            audience_dir.mkdir(parents=True)
+            question = "How do I deploy Laravel on a Raspberry Pi?"
+            (audience_dir / "telegram_comments.txt").write_text(question)
+            (audience_dir / "youtube_comments.txt").write_text(question)
+
+            original_home = os.environ.get("HOME")
+            os.environ["HOME"] = tmp
+            try:
+                config = IntelligenceConfig()
+                pains = collect_audience_pain(config, live=False, text_fallback=True)
+            finally:
+                if original_home is None:
+                    os.environ.pop("HOME", None)
+                else:
+                    os.environ["HOME"] = original_home
+
         cross = [p for p in pains if p.cross_platform]
         self.assertGreater(len(cross), 0)
         for pain in cross:
