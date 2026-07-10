@@ -8,17 +8,22 @@ Phase L: React SPA migration for the smkit dashboard.
 - TanStack Router (file-based routing)
 - TanStack Query (data fetching)
 - Tailwind CSS v4 (dark mode first)
+
+Note: Tailwind v4 is CSS-first and does not require a `tailwind.config.js` file.
+The theme is defined in `src/index.css` using `@theme`.
+
 - shadcn/ui-style base components
 - Recharts (charts)
 - React Hook Form (forms)
 - Zustand (state)
 - Sonner (toasts)
+- Vitest + React Testing Library + jsdom (testing)
 
 ## Development
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
