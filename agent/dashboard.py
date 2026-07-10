@@ -220,8 +220,16 @@ def _make_handler():
             if path in LEGACY_PATHS:
                 return self._send(200, PAGE.encode(), "text/html; charset=utf-8")
             if path.startswith("/assets/"):
-                target = resolve_frontend_path(path)
-                if target:
+                rel = path[len("/assets/"):]
+                if not rel or "\x00" in rel:
+                    return self._send(404, {"error": "not found"})
+                assets_root = (FRONTEND_DIST_DIR / "assets").resolve()
+                target = (assets_root / rel).resolve()
+                try:
+                    target.relative_to(assets_root)
+                except ValueError:
+                    return self._send(404, {"error": "not found"})
+                if target.is_file():
                     return self._send_file(target)
                 return self._send(404, {"error": "not found"})
             root_name = path.lstrip("/")
