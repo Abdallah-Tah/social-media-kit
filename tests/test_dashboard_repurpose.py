@@ -108,22 +108,93 @@ def _get(url, follow_redirects=False):
         return exc.code, exc.read(), url
 
 
-def test_dashboard_root_redirects_to_intelligence(server):
-    status, body, final_url = _get(server + "/")
-    assert status == 200, f"expected redirect then 200, got {status}"
-    assert "/intelligence" in final_url, f"expected redirect to /intelligence, got {final_url}"
+def _get_with_headers(url):
+    req = urllib.request.Request(url, method="GET")
+    with urllib.request.urlopen(req, timeout=5) as r:
+        return r.status, r.read(), dict(r.headers)
 
 
-def test_dashboard_intelligence_serves_page(server):
-    status, body, _ = _get(server + "/intelligence")
+def test_dashboard_root_serves_react_spa(server):
+    status, body, _ = _get(server + "/")
+    assert status == 200
+    assert b"SMKit Content OS" in body or b"root" in body.lower() or b"<div id=\"root\"></div>" in body
+
+
+def test_dashboard_react_route_fallback(server):
+    status, body, _ = _get(server + "/drafts")
+    assert status == 200
+    assert b"SMKit Content OS" in body or b"<div id=\"root\"></div>" in body
+
+
+def test_dashboard_unknown_react_route_falls_back(server):
+    status, body, _ = _get(server + "/unknown/react/path")
+    assert status == 200
+    assert b"SMKit Content OS" in body or b"<div id=\"root\"></div>" in body
+
+
+def test_dashboard_intelligence_legacy_page_still_serves(server):
+    status, body, _ = _get(server + "/legacy/intelligence")
     assert status == 200
     assert b"smkit Intelligence" in body or b"AI Content Operating System" in body
 
 
 def test_dashboard_legacy_repurpose_page_still_serves(server):
-    status, body, _ = _get(server + "/dashboard")
+    status, body, _ = _get(server + "/legacy/dashboard")
     assert status == 200
     assert b"Social Media Agent" in body or b"Repurpose" in body
+
+
+def test_dashboard_assets_serve_static_content(server):
+    # Ensure build exists; skip if not.
+    dist = Path(__file__).resolve().parents[1] / "frontend" / "dist"
+    assets = list(dist.glob("assets/*.*"))
+    if not assets:
+        pytest.skip("no built frontend assets")
+    asset = assets[0]
+    status, body, headers = _get_with_headers(server + "/assets/" + asset.name)
+    assert status == 200
+    assert len(body) > 0
+    assert headers["Content-Type"]
+
+
+def test_dashboard_api_remains_json(server):
+    status, body, _ = _get(server + "/api/state")
+    data = json.loads(body)
+    assert status == 200
+    assert "profiles" in data and "history" in data and "drafts" in data
+
+
+def test_dashboard_intelligence_snapshots_api_remains_json(server):
+    status, body, _ = _get(server + "/api/intelligence/snapshots")
+    data = json.loads(body)
+    assert status == 200
+    assert data["ok"] is True
+    assert "snapshots" in data
+
+
+def test_dashboard_missing_frontend_build_returns_setup_message(server, monkeypatch, tmp_path):
+    monkeypatch.setattr(dashboard, "FRONTEND_DIST", tmp_path / "no_dist")
+    status, body, _ = _get(server + "/")
+    assert status == 503
+    data = json.loads(body)
+    assert "npm ci" in data.get("message", "")
+
+
+def test_dashboard_root_redirects_to_intelligence(server):
+    status, body, final_url = _get(server + "/")
+    assert status == 200, f"expected 200, got {status}"
+    assert b"SMKit Content OS" in body or b"<div id=\"root\"></div>" in body
+
+
+def test_dashboard_intelligence_serves_page(server):
+    status, body, _ = _get(server + "/intelligence")
+    assert status == 200
+    assert b"SMKit Content OS" in body or b"<div id=\"root\"></div>" in body
+
+
+def test_dashboard_legacy_dashboard_redirect_or_serve(server):
+    status, body, _ = _get(server + "/dashboard")
+    assert status == 200
 
 
 def test_dashboard_state_endpoint(server):

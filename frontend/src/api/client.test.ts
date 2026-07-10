@@ -38,4 +38,20 @@ describe('API client error handling', () => {
     expect(calledUrl).toContain('/api/analytics?days=30')
     expect(calledUrl).toContain('platform=linkedin')
   })
+
+  it('does not request intelligence briefs by default', async () => {
+    let calledUrl = ''
+    vi.mocked(globalThis.fetch).mockImplementationOnce((url) => {
+      calledUrl = String(url)
+      return Promise.resolve(new Response(JSON.stringify({ ok: true, cards: [] }), { status: 200 }))
+    })
+
+    await api.runIntelligence({ topic: 'AI', include_seen: false, min_score: 80, trend: 'exploding' })
+    expect(calledUrl).toContain('/api/intelligence/run?')
+    expect(calledUrl).toContain('topic=AI')
+    expect(calledUrl).toContain('include_seen=false')
+    expect(calledUrl).not.toContain('brief=')
+    expect(calledUrl).not.toContain('min_score=')
+    expect(calledUrl).not.toContain('trend=')
+  })
 })

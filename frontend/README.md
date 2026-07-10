@@ -38,10 +38,30 @@ Then open http://localhost:5173.
 ## Build
 
 ```bash
+cd frontend
+npm ci
 npm run build
 ```
 
 Output goes to `frontend/dist/`.
+
+## Production dashboard
+
+Build the React assets first, then run the Python dashboard on localhost:
+
+```bash
+cd frontend
+npm ci
+npm run build
+smkit dashboard --host 127.0.0.1 --port 8801
+```
+
+The Python backend serves `frontend/dist` directly and falls back to
+`frontend/dist/index.html` for React routes. Keep Cloudflare pointed at
+`127.0.0.1:8801`; do not expose a public Vite development server.
+
+If `frontend/dist` is missing, the backend returns a setup message with the
+commands above instead of crashing.
 
 ## Architecture
 

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useForm, Controller } from 'react-hook-form'
 import { toast } from 'sonner'
 import {
@@ -22,6 +22,16 @@ import {
   Megaphone,
   Download,
   RefreshCw,
+  Flame,
+  Gem,
+  Rocket,
+  Crown,
+  Clapperboard,
+  BriefcaseBusiness,
+  History,
+  Bot,
+  Calendar,
+  Loader2,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -31,6 +41,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Slider } from '@/components/ui/slider'
+import { Separator } from '@/components/ui/separator'
 import {
   Select,
   SelectContent,
@@ -40,7 +51,7 @@ import {
 } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { api } from '@/api/client'
-import type { Brief, IntelligenceCard, IntelligenceFilters } from '@/api/models'
+import type { Brief, IntelligenceCard, IntelligenceFilters, SnapshotSummary } from '@/api/models'
 
 interface FilterForm {
   topic: string
@@ -58,11 +69,27 @@ const defaultFilters: FilterForm = {
   format: 'all',
 }
 
+type BriefMap = Record<number, Brief | null | undefined>
+type GeneratingBriefSet = Record<number, boolean>
+
+const quickFilters = [
+  { key: 'hot', label: 'Hot Now', icon: Flame, min: 80, trend: 'all', format: 'all' },
+  { key: 'gems', label: 'Hidden Gems', icon: Gem, min: 50, trend: 'all', format: 'all' },
+  { key: 'exploding', label: 'Exploding', icon: Rocket, min: 0, trend: 'exploding', format: 'all' },
+  { key: 'growing', label: 'Growing', icon: TrendingUp, min: 0, trend: 'growing', format: 'all' },
+  { key: 'authority', label: 'High Authority', icon: Crown, min: 0, trend: 'all', format: 'all' },
+  { key: 'shorts', label: 'Best for Shorts', icon: Clapperboard, min: 0, trend: 'all', format: 'youtube' },
+  { key: 'linkedin', label: 'Best for LinkedIn', icon: BriefcaseBusiness, min: 0, trend: 'all', format: 'linkedin' },
+] as const
+
 export function IntelligencePage() {
   const [filters, setFilters] = useState<FilterForm>(defaultFilters)
   const [expanded, setExpanded] = useState<Record<number, boolean>>({})
+  const [briefs, setBriefs] = useState<BriefMap>({})
+  const [generatingBrief, setGeneratingBrief] = useState<GeneratingBriefSet>({})
+  const [displayCards, setDisplayCards] = useState<IntelligenceCard[]>([])
 
-  const { register, handleSubmit, control, watch } = useForm<FilterForm>({
+  const { register, handleSubmit, control, watch, setValue } = useForm<FilterForm>({
     defaultValues: defaultFilters,
   })
 
@@ -72,33 +99,66 @@ export function IntelligencePage() {
         topic: values.topic,
         include_seen: values.include_seen,
       }),
-    onSuccess: () => {
-      toast.success('Intelligence run complete')
+    onSuccess: (data) => {
+      toast.success(`Intelligence run complete · ${data.total ?? 0} stories`)
+      setDisplayCards(data.cards || [])
+      setBriefs({})
     },
     onError: (err: Error) => toast.error(err.message),
   })
 
-  const cards = runIntelligenceMutation.data?.cards || []
+  const { data: snapshotsData } = useQuery({
+    queryKey: ['intelligence', 'snapshots'],
+    queryFn: api.getSnapshots,
+    staleTime: 60_000,
+  })
+
+  const cards = displayCards
   const filteredCards = applyLocalFilters(cards, filters)
   const isRunning = runIntelligenceMutation.isPending
   const runError = runIntelligenceMutation.error
   const refetch = () => runIntelligenceMutation.mutate(filters)
 
   const briefMutation = useMutation({
-    mutationFn: (rank: number) => api.generateBrief(rank),
-    onSuccess: (data) => {
-      if (data.ok) {
+    mutationFn: (card: IntelligenceCard) => api.generateBrief(card),
+    onMutate: (card) => {
+      setGeneratingBrief((prev) => ({ ...prev, [card.rank]: true }))
+    },
+    onSuccess: (data, card) => {
+      setGeneratingBrief((prev) => ({ ...prev, [card.rank]: false }))
+      if (data.ok && data.brief) {
+        setBriefs((prev) => ({ ...prev, [card.rank]: data.brief }))
         toast.success('Brief generated')
       } else {
         toast.error(data.error || 'Brief failed')
+      }
+    },
+    onError: (err: Error, card) => {
+      setGeneratingBrief((prev) => ({ ...prev, [card.rank]: false }))
+      toast.error(err.message)
+    },
+  })
+
+  const bulkBriefMutation = useMutation({
+    mutationFn: () => api.generateBriefs(filteredCards.slice(0, 5)),
+    onSuccess: (data) => {
+      if (data.ok) {
+        const next: BriefMap = { ...briefs }
+        data.briefs.forEach((b) => {
+          next[b.rank] = b.brief
+        })
+        setBriefs(next)
+        toast.success(`Generated ${data.briefs.length} briefs`)
+      } else {
+        toast.error(data.error || 'Bulk brief failed')
       }
     },
     onError: (err: Error) => toast.error(err.message),
   })
 
   const draftMutation = useMutation({
-    mutationFn: ({ rank, brief }: { rank: number; brief?: Brief | null }) =>
-      api.createDraftFromBrief(rank, (brief || {}) as Record<string, unknown>),
+    mutationFn: ({ card, brief }: { card: IntelligenceCard; brief?: Brief | null }) =>
+      api.createDraftFromBrief(card, (brief || {}) as Record<string, unknown>),
     onSuccess: (data) => {
       if (data.ok) {
         toast.success(`Draft created${data.draft_id ? `: ${data.draft_id}` : ''}`)
@@ -121,27 +181,35 @@ export function IntelligencePage() {
     onError: (err: Error) => toast.error(err.message),
   })
 
-  const bulkBriefMutation = useMutation({
-    mutationFn: () =>
-      api.generateBriefs(filteredCards.slice(0, 5).map((c) => c.rank)),
-    onSuccess: (data) => {
-      if (data.ok) {
-        toast.success(`Generated ${data.briefs.length} briefs`)
-      } else {
-        toast.error(data.error || 'Bulk brief failed')
-      }
-    },
-    onError: (err: Error) => toast.error(err.message),
-  })
-
   const onSubmit = (values: FilterForm) => {
     setFilters(values)
     runIntelligenceMutation.mutate(values)
   }
 
+  const applyQuickFilter = (qf: (typeof quickFilters)[number]) => {
+    setValue('min_score', qf.min)
+    setValue('trend', qf.trend as IntelligenceFilters['trend'])
+    setValue('format', qf.format as IntelligenceFilters['format'])
+    const next = { ...filters, min_score: qf.min, trend: qf.trend as IntelligenceFilters['trend'], format: qf.format as IntelligenceFilters['format'] }
+    setFilters(next)
+  }
+
+  const loadSnapshot = (name: string) => {
+    api.getSnapshot(name).then((data) => {
+      if (data.cards) {
+        setDisplayCards(data.cards)
+        setFilters((f) => ({ ...f }))
+        setBriefs({})
+        toast.success(`Loaded snapshot ${name}`)
+      }
+    })
+  }
+
   const toggleExpand = (rank: number) => {
     setExpanded((prev) => ({ ...prev, [rank]: !prev[rank] }))
   }
+
+  const activeBriefFor = (card: IntelligenceCard) => briefs[card.rank] ?? card.brief
 
   return (
     <div className="space-y-6">
@@ -164,6 +232,8 @@ export function IntelligencePage() {
           </Button>
         </div>
       </div>
+
+      {cards.length > 0 && <AiSummaryPanel cards={filteredCards} />}
 
       <Card>
         <CardHeader className="pb-3">
@@ -199,6 +269,7 @@ export function IntelligencePage() {
                         <SelectItem value="down">Down</SelectItem>
                         <SelectItem value="stable">Stable</SelectItem>
                         <SelectItem value="exploding">Exploding</SelectItem>
+                        <SelectItem value="growing">Growing</SelectItem>
                       </SelectContent>
                     </Select>
                   )}
@@ -224,7 +295,7 @@ export function IntelligencePage() {
                         <SelectItem value="threads">Threads</SelectItem>
                         <SelectItem value="reddit">Reddit</SelectItem>
                         <SelectItem value="newsletter">Newsletter</SelectItem>
-                        <SelectItem value="youtube">YouTube</SelectItem>
+                        <SelectItem value="youtube">YouTube Short</SelectItem>
                         <SelectItem value="reel">Reel</SelectItem>
                       </SelectContent>
                     </Select>
@@ -250,6 +321,30 @@ export function IntelligencePage() {
               </div>
             </div>
 
+            <div className="flex flex-wrap gap-2">
+              {quickFilters.map((qf) => {
+                const Icon = qf.icon
+                const active =
+                  filters.min_score === qf.min &&
+                  filters.trend === qf.trend &&
+                  filters.format === qf.format
+                return (
+                  <Button
+                    key={qf.key}
+                    type="button"
+                    size="sm"
+                    variant={active ? 'default' : 'outline'}
+                    onClick={() => applyQuickFilter(qf)}
+                  >
+                    <Icon className="h-3.5 w-3.5 mr-1" />
+                    {qf.label}
+                  </Button>
+                )
+              })}
+            </div>
+
+            <Separator />
+
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
                 <Controller
@@ -265,7 +360,7 @@ export function IntelligencePage() {
                   )}
                 />
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Button type="submit" disabled={isRunning}>
                   {isRunning ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1" />}
                   Run Intelligence
@@ -280,7 +375,7 @@ export function IntelligencePage() {
                   onClick={() => bulkBriefMutation.mutate()}
                   disabled={filteredCards.length === 0 || bulkBriefMutation.isPending}
                 >
-                  <Sparkles className="h-4 w-4 mr-1" />
+                  {bulkBriefMutation.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1" />}
                   Bulk Top 5
                 </Button>
               </div>
@@ -288,6 +383,10 @@ export function IntelligencePage() {
           </form>
         </CardContent>
       </Card>
+
+      {snapshotsData && snapshotsData.snapshots.length > 0 && (
+        <SnapshotsPanel snapshots={snapshotsData.snapshots} onLoad={loadSnapshot} />
+      )}
 
       {isRunning && <IntelligenceSkeleton />}
 
@@ -304,9 +403,7 @@ export function IntelligencePage() {
         </Card>
       )}
 
-      {!isRunning && cards.length > 0 && (
-        <KpiStrip cards={filteredCards} total={cards.length} />
-      )}
+      {!isRunning && cards.length > 0 && <KpiStrip cards={filteredCards} total={cards.length} />}
 
       {!isRunning && runIntelligenceMutation.isSuccess && filteredCards.length === 0 && cards.length > 0 && (
         <Card>
@@ -329,12 +426,24 @@ export function IntelligencePage() {
           <OpportunityCard
             key={card.rank}
             card={card}
+            brief={activeBriefFor(card)}
             expanded={!!expanded[card.rank]}
             onToggle={() => toggleExpand(card.rank)}
-            onBrief={() => briefMutation.mutate(card.rank)}
-            onDraft={() => draftMutation.mutate({ rank: card.rank, brief: card.brief })}
-            isBriefLoading={briefMutation.isPending && briefMutation.variables === card.rank}
-            isDraftLoading={draftMutation.isPending && draftMutation.variables?.rank === card.rank}
+            onBrief={() => {
+              if (!generatingBrief[card.rank]) {
+                briefMutation.mutate(card)
+              }
+            }}
+            onDraft={() => {
+              const b = activeBriefFor(card)
+              if (!b) {
+                toast.info('Generate a brief first')
+                return
+              }
+              draftMutation.mutate({ card, brief: b })
+            }}
+            isBriefLoading={!!generatingBrief[card.rank]}
+            isDraftLoading={draftMutation.isPending && draftMutation.variables?.card.rank === card.rank}
           />
         ))}
       </div>
@@ -350,6 +459,71 @@ function applyLocalFilters(cards: IntelligenceCard[], filters: FilterForm): Inte
     if (filters.format !== 'all' && card.recommendation?.recommendation !== filters.format) return false
     return true
   })
+}
+
+function AiSummaryPanel({ cards }: { cards: IntelligenceCard[] }) {
+  if (!cards.length) return null
+  const top = cards[0]
+  const actionable = cards.filter((c) => (c.opportunity?.opportunity_score || 0) >= 60 && c.recommendation?.recommendation !== 'skip')
+  const rec = top.recommendation?.recommendation || 'none'
+  const production: Record<string, string> = {
+    youtube: '7 min',
+    linkedin: '5 min',
+    x: '8 min',
+    threads: '8 min',
+    newsletter: '12 min',
+    blog: '60 min',
+    reel: '7 min',
+  }
+
+  return (
+    <Card className="border-primary/20 bg-primary/5">
+      <CardContent className="p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Bot className="h-5 w-5 text-primary" />
+          <h2 className="font-semibold">AI Daily Summary</h2>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <SummaryBox label="Best opportunity" value={top.cluster?.headline || '—'} />
+          <SummaryBox label="Stories worth creating" value={`${actionable.length}`} />
+          <SummaryBox label="Recommended format" value={rec.replace(/_/g, ' ')} />
+          <SummaryBox label="Est. production" value={production[rec] || '15 min'} />
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function SummaryBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border bg-card/60 p-3">
+      <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
+      <div className="text-sm font-medium leading-snug line-clamp-2">{value}</div>
+    </div>
+  )
+}
+
+function SnapshotsPanel({ snapshots, onLoad }: { snapshots: SnapshotSummary[]; onLoad: (name: string) => void }) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base flex items-center gap-2">
+          <History className="h-4 w-4" />
+          Recent Snapshots
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-wrap gap-2">
+          {snapshots.slice(0, 12).map((snapshot) => (
+            <Button key={snapshot.name} variant="outline" size="sm" onClick={() => onLoad(snapshot.name)}>
+              <Calendar className="h-3.5 w-3.5 mr-1" />
+              {snapshot.name.replace('.json', '')}
+            </Button>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
 function KpiStrip({ cards, total }: { cards: IntelligenceCard[]; total: number }) {
@@ -388,6 +562,7 @@ function Kpi({ label, value, icon: Icon }: { label: string; value: number; icon:
 
 function OpportunityCard({
   card,
+  brief,
   expanded,
   onToggle,
   onBrief,
@@ -396,6 +571,7 @@ function OpportunityCard({
   isDraftLoading,
 }: {
   card: IntelligenceCard
+  brief?: Brief | null
   expanded: boolean
   onToggle: () => void
   onBrief: () => void
@@ -406,6 +582,7 @@ function OpportunityCard({
   const score = card.opportunity?.opportunity_score ?? 0
   const scoreColor = score >= 70 ? 'text-emerald-400' : score >= 50 ? 'text-amber-400' : 'text-red-400'
   const scoreBarColor = score >= 70 ? 'bg-emerald-400' : score >= 50 ? 'bg-amber-400' : 'bg-red-400'
+  const hasBrief = !!brief
 
   return (
     <Card className="overflow-hidden">
@@ -415,7 +592,12 @@ function OpportunityCard({
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-lg font-semibold leading-snug">{card.cluster?.headline || 'Untitled'}</h3>
-                {card.previously_seen && <Badge variant="secondary">Seen</Badge>}
+                {card.previously_seen && (
+                  <Badge variant="secondary" className="text-amber-400 border-amber-400/30">
+                    <History className="h-3 w-3 mr-1" />
+                    Seen
+                  </Badge>
+                )}
               </div>
               <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{card.cluster?.summary}</p>
 
@@ -435,9 +617,7 @@ function OpportunityCard({
                   <Shield className="h-3 w-3" />
                   Auth {card.authority?.final_score ?? 0}
                 </Badge>
-                {card.estimated_difficulty && (
-                  <Badge variant="outline">{card.estimated_difficulty}</Badge>
-                )}
+                {card.estimated_difficulty && <Badge variant="outline">{card.estimated_difficulty}</Badge>}
               </div>
             </div>
 
@@ -449,6 +629,15 @@ function OpportunityCard({
               </div>
             </div>
           </div>
+
+          {card.history_delta && (card.history_delta.previous !== null && card.history_delta.previous !== undefined) && (
+            <div className="mt-3 text-xs text-muted-foreground">
+              History delta:{' '}
+              <span className={card.history_delta.trend === 'up' ? 'text-emerald-400' : 'text-red-400'}>
+                {card.history_delta.trend === 'up' ? '▲' : '▼'} {Math.abs((card.history_delta.delta ?? 0))} from {card.history_delta.previous}
+              </span>
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-2 mt-4">
             {card.platform_fit?.slice(0, 4).map((fit) => (
@@ -475,7 +664,7 @@ function OpportunityCard({
               {isBriefLoading ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <FileText className="h-4 w-4 mr-1" />}
               Generate Brief
             </Button>
-            <Button size="sm" onClick={onDraft} disabled={isDraftLoading || !card.brief}>
+            <Button size="sm" onClick={onDraft} disabled={isDraftLoading || !hasBrief}>
               {isDraftLoading ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
               Create Draft
             </Button>
@@ -504,20 +693,43 @@ function OpportunityCard({
                 <div>
                   <h4 className="text-sm font-semibold mb-2">Score breakdown</h4>
                   <div className="space-y-2">
-                    {card.score_breakdown?.map((item) => (
-                      <div key={item.name} className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">{item.name}</span>
+                    {card.score_breakdown?.map((item) => {
+                      const label = item.name || item.label || 'Score'
+                      const value = item.score ?? item.points ?? 0
+                      return (
+                      <div key={label} className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">{label}</span>
                         <div className="flex items-center gap-2 flex-1 mx-3">
                           <div className="h-1.5 flex-1 bg-muted rounded-full overflow-hidden">
                             <div
                               className="h-full bg-primary"
-                              style={{ width: `${Math.min(item.score, 100)}%` }}
+                              style={{ width: `${Math.min(value, 100)}%` }}
                             />
                           </div>
-                          <span className="text-xs w-8 text-right">{item.score}</span>
+                          <span className="text-xs w-8 text-right">{value}</span>
                         </div>
                       </div>
-                    ))}
+                    )})}
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">Source consensus</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {card.cluster?.sources?.length ? (
+                      <>
+                        {card.cluster.sources.length > 1 && (
+                          <Badge variant="outline">{card.cluster.sources.length} sources</Badge>
+                        )}
+                        {card.cluster.sources.map((s) => (
+                          <Badge key={s} variant="secondary" className="capitalize">
+                            {s}
+                          </Badge>
+                        ))}
+                      </>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">No source data</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -545,14 +757,15 @@ function OpportunityCard({
                   </div>
                 </div>
 
-                {card.brief && (
+                {hasBrief && brief && (
                   <div className="rounded-lg border bg-background p-3">
                     <h4 className="text-sm font-semibold mb-1 flex items-center gap-1">
                       <FileText className="h-4 w-4" />
                       Generated brief
                     </h4>
-                    <p className="text-sm font-medium">{card.brief.title}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{card.brief.hook}</p>
+                    <p className="text-sm font-medium">{brief.title}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{brief.hook}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{brief.angle}</p>
                   </div>
                 )}
               </div>
@@ -590,3 +803,5 @@ function IntelligenceSkeleton() {
     </div>
   )
 }
+
+export default IntelligencePage

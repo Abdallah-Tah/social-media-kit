@@ -1,14 +1,21 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { lazy, Suspense } from 'react'
+import { Skeleton } from '@/components/ui/skeleton'
+
+const SourcesPage = lazy(() => import('@/pages/sources'))
 
 export const Route = createFileRoute('/sources')({
-  component: SourcesPage,
+  component: () => (
+    <Suspense
+      fallback={
+        <div className="space-y-4">
+          <Skeleton className="h-28" />
+          <Skeleton className="h-28" />
+          <Skeleton className="h-28" />
+        </div>
+      }
+    >
+      <SourcesPage />
+    </Suspense>
+  ),
 })
-
-function SourcesPage() {
-  return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold tracking-tight">Sources</h1>
-      <p className="text-muted-foreground">Sources page — coming soon.</p>
-    </div>
-  )
-}

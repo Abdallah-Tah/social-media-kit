@@ -3,38 +3,36 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { IntelligencePage } from './intelligence'
 import * as client from '@/api/client'
-import type { IntelligenceCard } from '@/api/models'
+import type { Brief, IntelligenceCard } from '@/api/models'
 
-const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: false } },
-})
+function makeQueryClient() {
+  return new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+}
 
-function TestWrapper({ children }: { children: React.ReactNode }) {
-  return (
+function renderPage() {
+  const queryClient = makeQueryClient()
+  render(
     <QueryClientProvider client={queryClient}>
-      <div data-testid="test-wrapper">{children}</div>
+      <IntelligencePage />
     </QueryClientProvider>
   )
 }
 
-function renderPage() {
-  const Page = () => (
-    <TestWrapper>
-      <IntelligencePage />
-    </TestWrapper>
-  )
-  render(<Page />)
-}
-
-function makeCard(overrides: Partial<IntelligenceCard> = {}): IntelligenceCard {
-  const brief: NonNullable<IntelligenceCard['brief']> = {
+function makeBrief(overrides: Partial<Brief> = {}): Brief {
+  return {
     content_type: 'blog',
-    title: 'How AI Agents Are Changing Developer Workflows',
+    title: 'Generated AI Agent Brief',
     hook: 'Stop doing X manually',
     angle: 'practical guide',
     key_points: ['agents', 'workflows'],
     call_to_action: 'Try it today',
+    ...overrides,
   }
+}
+
+function makeCard(overrides: Partial<IntelligenceCard> = {}): IntelligenceCard {
   return {
     rank: 1,
     previously_seen: false,
@@ -46,7 +44,7 @@ function makeCard(overrides: Partial<IntelligenceCard> = {}): IntelligenceCard {
       latest: new Date().toISOString(),
     },
     authority: { final_score: 78, source_trust: 80, recency_score: 75, domain_authority: 70 },
-    trend: { direction: 'up', strength: 0.8, velocity: 1.2, sparkline: [10, 20, 30], age_hours: 12 },
+    trend: { direction: 'growing', strength: 0.8, velocity: 1.2, sparkline: [10, 20, 30], age_hours: 12 },
     opportunity: {
       opportunity_score: 82,
       signal: 'strong',
@@ -63,14 +61,14 @@ function makeCard(overrides: Partial<IntelligenceCard> = {}): IntelligenceCard {
       suggested_hook: 'Stop doing X manually',
       reason: 'High authority + trending',
     },
-    brief,
+    brief: null,
     score_breakdown: [
       { name: 'Authority', score: 78, weight: 0.25 },
       { name: 'Trend', score: 80, weight: 0.25 },
     ],
     platform_fit: [
       { platform: 'linkedin', score: 85, reason: 'B2B audience' },
-      { platform: 'x', score: 60, reason: 'Dev community' },
+      { platform: 'youtube', score: 60, reason: 'Dev community' },
     ],
     why_care: {
       summary: 'AI agents are a major shift.',
@@ -87,19 +85,18 @@ function makeCard(overrides: Partial<IntelligenceCard> = {}): IntelligenceCard {
 
 describe('IntelligencePage', () => {
   beforeEach(() => {
-    queryClient.clear()
     vi.restoreAllMocks()
+    vi.spyOn(client.api, 'getSnapshots').mockResolvedValue({ snapshots: [] })
   })
 
   function clickRun() {
-    const button = screen.getByRole('button', { name: /Run Intelligence/i })
-    fireEvent.click(button)
+    fireEvent.click(screen.getByRole('button', { name: /Run Intelligence/i }))
   }
 
-  it('renders fetched opportunities', async () => {
+  it('renders fetched opportunities with AI summary', async () => {
     vi.spyOn(client.api, 'runIntelligence').mockResolvedValueOnce({
       ok: true,
-      cards: [makeCard({ rank: 1, cluster: { ...makeCard().cluster, headline: 'Fetched Opportunity' } })],
+      cards: [makeCard({ cluster: { ...makeCard().cluster, headline: 'Fetched Opportunity' } })],
       total: 1,
       filtered: 1,
     })
@@ -108,80 +105,92 @@ describe('IntelligencePage', () => {
     clickRun()
 
     await waitFor(() => expect(screen.getAllByText('Fetched Opportunity')[0]).toBeInTheDocument())
+    expect(screen.getByText('AI Daily Summary')).toBeInTheDocument()
     expect(screen.getAllByText('82')[0]).toBeInTheDocument()
   })
 
-  it('updates filters and includes seen', async () => {
+  it('runs intelligence with only server-supported filters', async () => {
     const spy = vi.spyOn(client.api, 'runIntelligence').mockResolvedValue({ ok: true, cards: [], total: 0, filtered: 0 })
     renderPage()
 
     fireEvent.change(screen.getByPlaceholderText('e.g. AI, Laravel, Raspberry Pi'), { target: { value: 'Laravel' } })
     fireEvent.click(screen.getByLabelText('Include seen stories'))
+    fireEvent.click(screen.getByRole('button', { name: /Hot Now/i }))
     clickRun()
 
-    await waitFor(
-      () =>
-        expect(spy).toHaveBeenCalledWith(
-          expect.objectContaining({ topic: 'Laravel', include_seen: true })
-        ),
-      { timeout: 5000 }
-    )
+    await waitFor(() => {
+      expect(spy).toHaveBeenCalledWith({ topic: 'Laravel', include_seen: true })
+    })
   })
 
-  it('shows empty state when no cards', async () => {
-    vi.spyOn(client.api, 'runIntelligence').mockResolvedValueOnce({ ok: true, cards: [], total: 0, filtered: 0 })
-    renderPage()
-    clickRun()
-
-    await waitFor(() => expect(screen.getByText(/No opportunities found/)).toBeInTheDocument())
-  })
-
-  it('shows error state with retry', async () => {
-    vi.spyOn(client.api, 'runIntelligence').mockRejectedValueOnce(new Error('Network down'))
-    renderPage()
-    clickRun()
-
-    await waitFor(() => expect(screen.getByText(/Network down/)).toBeInTheDocument())
-    expect(screen.getByText('Retry')).toBeInTheDocument()
-  })
-
-  it('expands card to show details', async () => {
+  it('applies quick filters locally', async () => {
     vi.spyOn(client.api, 'runIntelligence').mockResolvedValueOnce({
       ok: true,
-      cards: [makeCard({ brief: undefined })],
-      total: 1,
-      filtered: 1,
+      cards: [
+        makeCard({ rank: 1, cluster: { ...makeCard().cluster, headline: 'Hot Story' }, opportunity: { ...makeCard().opportunity, opportunity_score: 90 } }),
+        makeCard({ rank: 2, cluster: { ...makeCard().cluster, headline: 'Low Story' }, opportunity: { ...makeCard().opportunity, opportunity_score: 40 } }),
+      ],
+      total: 2,
+      filtered: 2,
     })
 
     renderPage()
     clickRun()
-    await waitFor(() => expect(screen.getByText('AI agents reshape dev workflows')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getAllByText('Hot Story')[0]).toBeInTheDocument())
 
-    fireEvent.click(screen.getByText('Details'))
-    await waitFor(() => expect(screen.getByText('Why care')).toBeInTheDocument())
-    expect(screen.getByText('Score breakdown')).toBeInTheDocument()
-    expect(screen.getByText('Platform fit')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Hot Now/i }))
+    expect(screen.getAllByText('Hot Story')[0]).toBeInTheDocument()
+    expect(screen.queryByText('Low Story')).not.toBeInTheDocument()
   })
 
-  it('calls brief and draft actions', async () => {
-    const card = makeCard()
-    const briefSpy = vi.spyOn(client.api, 'generateBrief').mockResolvedValue({ ok: true, brief: card.brief })
+  it('generated brief updates the card and Create Draft uses it', async () => {
+    const card = makeCard({ brief: null })
+    const newBrief = makeBrief({ title: 'Fresh Generated Brief' })
+    vi.spyOn(client.api, 'runIntelligence').mockResolvedValueOnce({ ok: true, cards: [card], total: 1, filtered: 1 })
+    const briefSpy = vi.spyOn(client.api, 'generateBrief').mockResolvedValue({ ok: true, brief: newBrief })
     const draftSpy = vi.spyOn(client.api, 'createDraftFromBrief').mockResolvedValue({ ok: true, draft_id: 'draft-1' })
-    vi.spyOn(client.api, 'runIntelligence').mockResolvedValueOnce({
-      ok: true,
-      cards: [card],
-      total: 1,
-      filtered: 1,
-    })
 
     renderPage()
     clickRun()
-    await waitFor(() => expect(screen.getByText('AI agents reshape dev workflows')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getAllByText('AI agents reshape dev workflows')[0]).toBeInTheDocument())
 
-    fireEvent.click(screen.getByText('Generate Brief'))
-    await waitFor(() => expect(briefSpy).toHaveBeenCalledWith(1))
+    const draftButton = screen.getByRole('button', { name: /Create Draft/i })
+    expect(draftButton).toBeDisabled()
 
-    fireEvent.click(screen.getByText('Create Draft'))
-    await waitFor(() => expect(draftSpy).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: /Generate Brief/i }))
+    await waitFor(() => expect(briefSpy).toHaveBeenCalledWith(card))
+
+    fireEvent.click(screen.getByRole('button', { name: /Details/i }))
+    await waitFor(() => expect(screen.getByText('Fresh Generated Brief')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: /Create Draft/i }))
+    await waitFor(() => expect(draftSpy).toHaveBeenCalledWith(card, newBrief))
+  })
+
+  it('shows snapshot panel and loads a snapshot', async () => {
+    vi.spyOn(client.api, 'getSnapshots').mockResolvedValue({ snapshots: [{ name: 'latest.json', when: 'today' }] })
+    vi.spyOn(client.api, 'getSnapshot').mockResolvedValue({
+      generated_at: new Date().toISOString(),
+      count: 1,
+      cards: [makeCard({ cluster: { ...makeCard().cluster, headline: 'Snapshot Story' } })],
+    })
+
+    renderPage()
+    await waitFor(() => expect(screen.getByText('Recent Snapshots')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /latest/i }))
+
+    await waitFor(() => expect(screen.getAllByText('Snapshot Story')[0]).toBeInTheDocument())
+  })
+
+  it('shows empty and error states', async () => {
+    const runSpy = vi.spyOn(client.api, 'runIntelligence')
+    runSpy.mockResolvedValueOnce({ ok: true, cards: [], total: 0, filtered: 0 })
+    renderPage()
+    clickRun()
+    await waitFor(() => expect(screen.getByText(/No opportunities found/)).toBeInTheDocument())
+
+    runSpy.mockRejectedValueOnce(new Error('Network down'))
+    fireEvent.click(screen.getByRole('button', { name: /Run Intelligence/i }))
+    await waitFor(() => expect(screen.getByText(/Network down/)).toBeInTheDocument())
   })
 })

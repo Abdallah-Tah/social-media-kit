@@ -739,7 +739,13 @@ def _card_from_dict(card_data: dict[str, Any]) -> tuple[Any, Any]:
 
 def handle_brief(body: dict[str, Any]) -> dict[str, Any]:
     """Generate a content brief for a single card. No publishing."""
-    cluster, rec = _card_from_dict(body.get("card", {}))
+    if "rank" in body and body.get("rank"):
+        card = _load_card_by_rank(int(body["rank"]))
+        if card is None:
+            return {"ok": False, "error": "card not found"}
+        cluster, rec = _card_from_dict(card)
+    else:
+        cluster, rec = _card_from_dict(body.get("card", {}))
     brief = build_brief(cluster, rec)
     return {"ok": True, "brief": brief.to_dict()}
 
@@ -747,11 +753,43 @@ def handle_brief(body: dict[str, Any]) -> dict[str, Any]:
 def handle_briefs(body: dict[str, Any]) -> dict[str, Any]:
     """Generate briefs for multiple cards. No publishing."""
     out = []
-    for card_data in body.get("cards", []):
-        cluster, rec = _card_from_dict(card_data)
+    if body.get("cards"):
+        for card in body.get("cards", []):
+            rank = int(card.get("rank", 0))
+            cluster, rec = _card_from_dict(card)
+            brief = build_brief(cluster, rec)
+            brief_data = brief.to_dict()
+            out.append({"rank": rank, "brief": brief_data, **brief_data})
+        return {"ok": True, "briefs": out}
+    for rank in body.get("ranks", []):
+        card = _load_card_by_rank(int(rank))
+        if card is None:
+            continue
+        cluster, rec = _card_from_dict(card)
         brief = build_brief(cluster, rec)
-        out.append(brief.to_dict())
+        brief_data = brief.to_dict()
+        out.append({"rank": int(rank), "brief": brief_data, **brief_data})
     return {"ok": True, "briefs": out}
+
+
+def _load_card_by_rank(rank: int) -> dict[str, Any] | None:
+    """Find the most recent intelligence card matching a rank.
+
+    Searches the latest run result from the current dashboard process first,
+    then falls back to the most recent saved snapshot.
+    """
+    if not SNAPSHOTS_DIR.exists():
+        return None
+    snapshots = sorted(SNAPSHOTS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for snapshot in snapshots[:3]:
+        try:
+            data = json.loads(snapshot.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        for card in data.get("cards", []):
+            if int(card.get("rank", 0)) == rank:
+                return card
+    return None
 
 
 def handle_create_draft(body: dict[str, Any]) -> dict[str, Any]:
@@ -778,17 +816,6 @@ def handle_update_draft(draft_id: str, body: dict[str, Any]) -> dict[str, Any]:
     if draft is None:
         return {"ok": False, "error": "draft not found or invalid status"}
     return {"ok": True, "draft": draft.to_dict()}
-
-
-def handle_draft_publish(draft_id: str) -> dict[str, Any]:
-    """Publish an approved draft to the blog."""
-    result = publish_blog(draft_id)
-    if result.get("ok"):
-        draft = load_draft(draft_id)
-        return {"ok": True, "draft": draft.to_dict() if draft else {}, "blog_url": result.get("blog_url")}
-    return {"ok": False, "error": result.get("error", "publish failed")}
-
-
 
 
 def handle_draft_publish(draft_id: str) -> dict[str, Any]:

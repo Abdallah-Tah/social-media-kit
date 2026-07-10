@@ -14,6 +14,7 @@ import json
 import mimetypes
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 from . import history
@@ -25,6 +26,20 @@ from .prompts import build_goal
 CONTENT_DIR = ROOT / "content"
 DRAFTS_DIR = CONTENT_DIR / "drafts"
 UPLOADS_DIR = CONTENT_DIR / "uploads"
+FRONTEND_DIST = ROOT / "frontend" / "dist"
+
+# Routes that should be served by the React SPA index.html.
+REACT_ROUTES = {
+    "/",
+    "/intelligence",
+    "/drafts",
+    "/social",
+    "/scheduler",
+    "/analytics",
+    "/sources",
+    "/settings",
+    "/assistant",
+}
 
 FILE_CATEGORIES = ("news", "tutorials", "videos", "images", "other")
 MAX_UPLOAD_BYTES = 600 * 1024 * 1024  # 600 MB cap for added files/videos
@@ -177,18 +192,6 @@ def _make_handler():
             self.end_headers()
             self.wfile.write(data)
 
-        def do_POST(self):
-            path = urlparse(self.path).path
-            body = self._read_json()
-            if path == "/api/analytics/sync":
-                from .dashboard_analytics import handle_sync
-                return self._send(200, handle_sync(body))
-            # Intelligence dashboard routes
-            intel = intelligence_routes(path, {}, body=body)
-            if isinstance(intel, dict) and "error" not in intel:
-                return self._send(200, intel)
-            return self._send(404, {"error": "not found"})
-
         def _read_json(self):
             length = int(self.headers.get("Content-Length", "0"))
             if not length:
@@ -198,46 +201,101 @@ def _make_handler():
             except (json.JSONDecodeError, UnicodeDecodeError):
                 return {}
 
+        def _serve_spa_index(self):
+            if not FRONTEND_DIST.exists():
+                self._send(503, {
+                    "error": "React frontend build not found",
+                    "message": "Run: cd frontend && npm ci && npm run build",
+                    "path": str(FRONTEND_DIST),
+                })
+                return
+            index_path = FRONTEND_DIST / "index.html"
+            if not index_path.exists():
+                self._send(503, {
+                    "error": "React index.html not found",
+                    "message": "Run: cd frontend && npm ci && npm run build",
+                    "path": str(index_path),
+                })
+                return
+            data = index_path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _serve_static(self, relative_path: str):
+            if not FRONTEND_DIST.exists():
+                self._send(503, {"error": "frontend build missing"})
+                return
+            target = (FRONTEND_DIST / relative_path).resolve()
+            try:
+                target.relative_to(FRONTEND_DIST.resolve())
+            except ValueError:
+                return self._send(404, {"error": "not found"})
+            if not target.is_file():
+                return self._send(404, {"error": "not found"})
+            data = target.read_bytes()
+            ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _is_api_path(self, path: str) -> bool:
+            return path.startswith("/api/")
+
+        def _is_static_asset(self, path: str) -> bool:
+            return path.startswith("/assets/")
+
         def do_GET(self):
             path = urlparse(self.path).path
             query = parse_qs(urlparse(self.path).query)
-            # Analytics page
-            if path == "/analytics":
-                from .dashboard_analytics import handle_analytics_page, handle_analytics_api, handle_export, handle_save
+
+            if self._is_static_asset(path):
+                return self._serve_static(path.lstrip("/"))
+            if path in REACT_ROUTES:
+                return self._serve_spa_index()
+
+            # Legacy HTML dashboards.
+            if path == "/legacy/dashboard":
+                return self._send(200, PAGE.encode(), "text/html; charset=utf-8")
+            if path == "/legacy/intelligence":
+                from .dashboard_intelligence import handle_intelligence_get
+                page, ctype = handle_intelligence_get()
+                return self._send(200, page, ctype)
+            if path == "/legacy/analytics":
+                from .dashboard_analytics import handle_analytics_page
                 page, ctype = handle_analytics_page()
                 return self._send(200, page, ctype)
+
+            # Analytics API
             if path == "/api/analytics":
-                from .dashboard_analytics import handle_analytics_page, handle_analytics_api, handle_export, handle_save
+                from .dashboard_analytics import handle_analytics_api
                 return self._send(200, handle_analytics_api(query))
             if path == "/api/analytics/export":
-                from .dashboard_analytics import handle_analytics_page, handle_analytics_api, handle_export, handle_save
+                from .dashboard_analytics import handle_export
                 page, ctype = handle_export(query)
                 return self._send(200, page, ctype)
             if path == "/api/analytics/save":
-                from .dashboard_analytics import handle_analytics_page, handle_analytics_api, handle_export, handle_save
+                from .dashboard_analytics import handle_save
                 return self._send(200, handle_save())
             if path == "/api/analytics/sync":
-                from .dashboard_analytics import handle_analytics_page, handle_analytics_api, handle_export, handle_save, handle_sync
+                from .dashboard_analytics import handle_sync
                 body = self._read_json()
                 return self._send(200, handle_sync(body))
-            if path == "/":
-                # Redirect root to Intelligence dashboard.
-                self.send_response(302)
-                self.send_header("Location", "/intelligence")
-                self.send_header("Content-Length", "0")
-                self.end_headers()
-                return
-            if path == "/dashboard":
-                return self._send(200, PAGE.encode(), "text/html; charset=utf-8")
-            # Intelligence dashboard routes
-            intel = intelligence_routes(path, query)
-            if isinstance(intel, tuple):
-                page, ctype = intel
-                return self._send(200, page, ctype)
-            if isinstance(intel, dict) and "error" not in intel:
-                return self._send(200, intel)
-            if path == "/":
-                return self._send(200, PAGE.encode(), "text/html; charset=utf-8")
+
+            # Intelligence dashboard API
+            if path.startswith("/api/intelligence/"):
+                intel = intelligence_routes(path, query)
+                if isinstance(intel, dict):
+                    return self._send(200, intel)
+                if isinstance(intel, tuple):
+                    page, ctype = intel
+                    return self._send(200, page, ctype)
+                return self._send(404, {"error": "not found"})
+
             if path == "/api/state":
                 drafts = sorted(p.name for p in DRAFTS_DIR.glob("*.md")) \
                     if DRAFTS_DIR.exists() else []
@@ -270,34 +328,24 @@ def _make_handler():
                 self.end_headers()
                 self.wfile.write(data)
                 return
-            return self._send(404, {"error": "not found"})
+            return self._serve_spa_index()
 
         def do_POST(self):
             path = urlparse(self.path).path
             query = parse_qs(urlparse(self.path).query)
+            body = self._read_json()
             if path == "/api/upload":
                 return self._upload()
             if path == "/api/analytics/sync":
                 from .dashboard_analytics import handle_sync
-                body = self._read_json()
                 return self._send(200, handle_sync(body))
             if path.startswith("/api/intelligence/"):
-                length = int(self.headers.get("Content-Length", 0))
-                try:
-                    body = json.loads(self.rfile.read(length) or b"{}")
-                except json.JSONDecodeError:
-                    return self._send(400, {"error": "bad json"})
                 result = intelligence_routes(path, query, body)
                 return self._send(200, result)
             if path != "/api/run":
                 return self._send(404, {"error": "not found"})
-            length = int(self.headers.get("Content-Length", 0))
             try:
-                req = json.loads(self.rfile.read(length) or b"{}")
-            except json.JSONDecodeError:
-                return self._send(400, {"error": "bad json"})
-            try:
-                result = self._run(req)
+                result = self._run(body)
             except Exception as exc:  # surface any failure to the browser
                 return self._send(200, {"ok": False, "error": str(exc)})
             return self._send(200, result)

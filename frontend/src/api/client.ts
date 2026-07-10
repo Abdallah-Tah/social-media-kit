@@ -6,6 +6,7 @@ import type {
   IntelligenceFilters,
   RunIntelligenceResponse,
   Snapshot,
+  SnapshotSummary,
 } from './models'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
@@ -43,33 +44,32 @@ export const api = {
     const params = new URLSearchParams()
     if (filters.topic) params.set('topic', filters.topic)
     params.set('include_seen', String(filters.include_seen ?? false))
-    params.set('brief', 'true')
     return request<RunIntelligenceResponse>(`/intelligence/run?${params.toString()}`)
   },
 
-  getSnapshots: () => request<{ snapshots: string[] }>('/intelligence/snapshots'),
+  getSnapshots: () => request<{ snapshots: SnapshotSummary[] }>('/intelligence/snapshots'),
 
   getSnapshot: (name: string) => request<Snapshot>(`/intelligence/snapshot?name=${encodeURIComponent(name)}`),
 
-  generateBrief: (cardId: number) =>
+  generateBrief: (card: IntelligenceCard) =>
     request<GenerateBriefResponse>('/intelligence/brief', {
       method: 'POST',
-      body: JSON.stringify({ rank: cardId }),
+      body: JSON.stringify({ card }),
     }),
 
-  generateBriefs: (ranks: number[]) =>
+  generateBriefs: (cards: IntelligenceCard[]) =>
     request<{ ok: boolean; briefs: Array<{ rank: number; brief: IntelligenceCard['brief'] }>; error?: string }>(
       '/intelligence/briefs',
       {
         method: 'POST',
-        body: JSON.stringify({ ranks }),
+        body: JSON.stringify({ cards }),
       }
     ),
 
-  createDraftFromBrief: (rank: number, brief: Record<string, unknown>) =>
+  createDraftFromBrief: (card: IntelligenceCard, brief: Record<string, unknown>) =>
     request<CreateDraftResponse>('/intelligence/draft', {
       method: 'POST',
-      body: JSON.stringify({ rank, brief }),
+      body: JSON.stringify({ card, brief }),
     }),
 
   saveSnapshot: () =>

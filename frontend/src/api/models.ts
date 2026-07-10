@@ -2,20 +2,28 @@ export interface IntelligenceFilters {
   topic?: string
   include_seen?: boolean
   min_score?: number
-  trend?: 'all' | 'up' | 'down' | 'stable' | 'exploding'
+  trend?: 'all' | 'up' | 'down' | 'stable' | 'exploding' | 'growing'
   format?: 'all' | 'blog' | 'linkedin' | 'facebook' | 'x' | 'threads' | 'reddit' | 'newsletter' | 'youtube' | 'reel' | 'skip'
 }
 
-export interface ScoreBreakdownItem {
+export interface SnapshotSummary {
   name: string
-  score: number
+  path?: string
+  when?: string
+}
+
+export interface ScoreBreakdownItem {
+  name?: string
+  score?: number
+  label?: string
+  points?: number
   weight: number
 }
 
 export interface PlatformFit {
   platform: string
   score: number
-  reason: string
+  reason?: string
 }
 
 export interface Referrer {
@@ -197,4 +205,5 @@ export interface Snapshot {
   generated_at: string
   count: number
   cards: IntelligenceCard[]
+  top_brief?: Brief | null
 }
