@@ -175,6 +175,8 @@ def test_dashboard_unknown_api_is_json_404(server):
 
 
 def test_dashboard_blocks_frontend_path_traversal(server):
+    # If traversal were incorrectly allowed, this would be served from dist/.
+    (dashboard.FRONTEND_DIST_DIR / "secret.js").write_text("secret", encoding="utf-8")
     status, _body, _ctype = _get_error(server + "/assets/../secret.js")
     assert status == 404
 
