@@ -2,6 +2,7 @@
 import json
 import sys
 import threading
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -99,19 +100,57 @@ def server():
 
 def _get(url):
     with urllib.request.urlopen(url, timeout=5) as r:
-        return r.status, r.read()
+        return r.status, r.read(), r.headers.get("Content-Type")
+
+
+def _get_error(url):
+    try:
+        return _get(url)
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read(), exc.headers.get("Content-Type")
 
 
 def test_dashboard_serves_page(server):
-    status, body = _get(server + "/")
+    status, body, _ctype = _get(server + "/")
     assert status == 200 and b"Social Media Agent" in body
 
 
 def test_dashboard_state_endpoint(server):
-    status, body = _get(server + "/api/state")
+    status, body, _ctype = _get(server + "/api/state")
     data = json.loads(body)
     assert status == 200
     assert "profiles" in data and "history" in data and "drafts" in data
+
+
+def test_dashboard_favicon_is_static_svg(server):
+    status, body, ctype = _get(server + "/favicon.svg")
+    assert status == 200
+    assert ctype.startswith("image/svg+xml")
+    assert body.startswith(b"<svg")
+
+
+def test_dashboard_missing_file_like_path_is_404(server):
+    status, _body, _ctype = _get_error(server + "/missing.js")
+    assert status == 404
+
+
+def test_dashboard_missing_asset_is_404(server):
+    status, _body, _ctype = _get_error(server + "/assets/missing.js")
+    assert status == 404
+
+
+def test_dashboard_unknown_react_route_gets_index(server):
+    status, body, ctype = _get(server + "/unknown-react-route")
+    assert status == 200
+    assert ctype.startswith("text/html")
+    assert b"Social Media Agent" in body
+
+
+def test_dashboard_unknown_api_is_json_404(server):
+    status, body, ctype = _get_error(server + "/api/unknown")
+    assert status == 404
+    assert ctype.startswith("application/json")
+    assert json.loads(body)["error"] == "not found"
 
 
 def test_dashboard_port_in_use_is_friendly(capsys):
