@@ -27,7 +27,7 @@ UPLOADS_DIR = CONTENT_DIR / "uploads"
 FRONTEND_DIST_DIR = ROOT / "frontend" / "dist"
 FRONTEND_INDEX = FRONTEND_DIST_DIR / "index.html"
 ROOT_FRONTEND_FILES = {"favicon.svg", "robots.txt", "manifest.webmanifest"}
-LEGACY_PATHS = {"/"}
+LEGACY_PATHS = {"/legacy/dashboard", "/legacy/intelligence", "/legacy/analytics"}
 
 FILE_CATEGORIES = ("news", "tutorials", "videos", "images", "other")
 MAX_UPLOAD_BYTES = 600 * 1024 * 1024  # 600 MB cap for added files/videos
@@ -92,21 +92,22 @@ def resolve_content_path(relpath):
     return target if target.is_file() else None
 
 
-def _safe_static_file(base: Path, request_path: str):
-    """Return a safe static file under *base*, or None."""
+def resolve_frontend_path(request_path):
+    """Resolve a frontend asset path safely under frontend/dist."""
     rel = request_path.lstrip("/")
     if not rel or "\x00" in rel:
         return None
-    target = (base / rel).resolve()
+    target = (FRONTEND_DIST_DIR / rel).resolve()
     try:
-        target.relative_to(base.resolve())
+        target.relative_to(FRONTEND_DIST_DIR.resolve())
     except ValueError:
         return None
     return target if target.is_file() else None
 
 
-def _has_file_suffix(path: str) -> bool:
-    return bool(Path(urlparse(path).path).suffix)
+def is_file_like_path(request_path):
+    """Return true for URL paths that look like file requests."""
+    return bool(Path(urlparse(request_path).path).suffix)
 
 PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
@@ -212,20 +213,20 @@ def _make_handler():
         def _send_spa_index(self):
             if FRONTEND_INDEX.is_file():
                 return self._send_file(FRONTEND_INDEX)
-            return self._send(200, PAGE.encode(), "text/html; charset=utf-8")
+            return self._send(404, {"error": "frontend build not found"})
 
         def do_GET(self):
             path = urlparse(self.path).path
             if path in LEGACY_PATHS:
                 return self._send(200, PAGE.encode(), "text/html; charset=utf-8")
             if path.startswith("/assets/"):
-                target = _safe_static_file(FRONTEND_DIST_DIR, path)
+                target = resolve_frontend_path(path)
                 if target:
                     return self._send_file(target)
                 return self._send(404, {"error": "not found"})
             root_name = path.lstrip("/")
             if "/" not in root_name and root_name in ROOT_FRONTEND_FILES:
-                target = _safe_static_file(FRONTEND_DIST_DIR, path)
+                target = resolve_frontend_path(path)
                 if target:
                     return self._send_file(target)
                 return self._send(404, {"error": "not found"})
@@ -263,7 +264,7 @@ def _make_handler():
                 return
             if path.startswith("/api/"):
                 return self._send(404, {"error": "not found"})
-            if _has_file_suffix(path):
+            if is_file_like_path(path):
                 return self._send(404, {"error": "not found"})
             return self._send_spa_index()
 

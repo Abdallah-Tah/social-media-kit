@@ -91,7 +91,20 @@ def test_repurpose_live_records_history(tmp_path, monkeypatch):
 
 # ── Dashboard HTTP API (real server, localhost) ──────────────────────────
 @pytest.fixture
-def server():
+def server(tmp_path, monkeypatch):
+    dist = tmp_path / "frontend" / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text(
+        "<!doctype html><html><body><div id=\"root\"></div></body></html>",
+        encoding="utf-8",
+    )
+    (dist / "favicon.svg").write_text(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>",
+        encoding="utf-8",
+    )
+    (dist / "assets" / "app.js").write_text("console.log('app')", encoding="utf-8")
+    monkeypatch.setattr(dashboard, "FRONTEND_DIST_DIR", dist)
+    monkeypatch.setattr(dashboard, "FRONTEND_INDEX", dist / "index.html")
     srv = dashboard.ThreadingHTTPServer(("127.0.0.1", 0), dashboard._make_handler())
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{srv.server_address[1]}"
@@ -110,9 +123,17 @@ def _get_error(url):
         return exc.code, exc.read(), exc.headers.get("Content-Type")
 
 
-def test_dashboard_serves_page(server):
-    status, body, _ctype = _get(server + "/")
+def test_dashboard_legacy_page_stays_under_legacy_path(server):
+    status, body, ctype = _get(server + "/legacy/dashboard")
     assert status == 200 and b"Social Media Agent" in body
+    assert ctype.startswith("text/html")
+
+
+def test_dashboard_root_serves_react_spa(server):
+    status, body, ctype = _get(server + "/")
+    assert status == 200
+    assert ctype.startswith("text/html")
+    assert b'id="root"' in body
 
 
 def test_dashboard_state_endpoint(server):
@@ -143,7 +164,7 @@ def test_dashboard_unknown_react_route_gets_index(server):
     status, body, ctype = _get(server + "/unknown-react-route")
     assert status == 200
     assert ctype.startswith("text/html")
-    assert b"Social Media Agent" in body
+    assert b'id="root"' in body
 
 
 def test_dashboard_unknown_api_is_json_404(server):
@@ -151,6 +172,11 @@ def test_dashboard_unknown_api_is_json_404(server):
     assert status == 404
     assert ctype.startswith("application/json")
     assert json.loads(body)["error"] == "not found"
+
+
+def test_dashboard_blocks_frontend_path_traversal(server):
+    status, _body, _ctype = _get_error(server + "/assets/../secret.js")
+    assert status == 404
 
 
 def test_dashboard_port_in_use_is_friendly(capsys):
