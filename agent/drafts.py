@@ -37,6 +37,7 @@ class ContentDraft:
     source_urls: list[str] = field(default_factory=list)
     status: str = "draft"
     blog_url: str = ""
+    cover_image_url: str = ""
     published_at: str = ""
     created_at: str = ""
     updated_at: str = ""
@@ -67,6 +68,7 @@ class ContentDraft:
             "source_urls": self.source_urls,
             "status": self.status,
             "blog_url": self.blog_url,
+            "cover_image_url": self.cover_image_url,
             "published_at": self.published_at,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -227,12 +229,15 @@ def publish_blog(draft_id: str) -> dict[str, Any]:
         sys.path.insert(0, scripts_dir)
     from blog_publisher import publish_article
 
+    cover = _generate_cover_for_draft(draft)
+    cover_image_url = cover.get("url") or cover.get("path") or draft.cover_image_url
     post = publish_article(
         title=draft.title,
         slug=draft.slug,
         content=draft.body,
         excerpt=draft.brief.get("excerpt", ""),
         publish=True,
+        cover_image_url=cover_image_url,
     )
     if not post:
         return {"ok": False, "error": "blog publish failed"}
@@ -242,11 +247,42 @@ def publish_blog(draft_id: str) -> dict[str, Any]:
     blog_url = f"{base_url}/tutorials/{slug}"
 
     draft.blog_url = blog_url
+    draft.cover_image_url = (
+        post.get("cover_image")
+        or post.get("featured_image")
+        or post.get("feature_image")
+        or cover_image_url
+        or ""
+    )
     draft.published_at = dt.datetime.now(dt.timezone.utc).isoformat()
     draft.status = "published"
     save_draft(draft)
 
-    return {"ok": True, "blog_url": blog_url, "post": post}
+    return {"ok": True, "blog_url": blog_url, "cover_image_url": draft.cover_image_url, "post": post}
+
+
+def _generate_cover_for_draft(draft: ContentDraft) -> dict[str, Any]:
+    """Generate a cover for a blog publish, falling back gracefully."""
+    if draft.cover_image_url:
+        return {"url": draft.cover_image_url}
+    scripts_dir = str(ROOT / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    try:
+        from image_generator import generate_cover
+
+        assets_dir = ROOT / "content" / "assets"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        out_path = assets_dir / f"{dt.date.today().isoformat()}_{draft.slug or draft.draft_id}-cover.png"
+        result = generate_cover(
+            draft.title,
+            out_path=str(out_path),
+            branding={"accent_color": "#2563eb"},
+        )
+        return result or {}
+    except Exception as exc:
+        print(f"cover generation failed for draft {draft.draft_id}: {exc}")
+        return {}
 
 
 def _blog_base_url() -> str:

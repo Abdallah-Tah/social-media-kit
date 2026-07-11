@@ -161,15 +161,21 @@ def test_approved_draft_publishes_blog_and_saves_url(tmp_path):
     try:
         draft = create_draft(SAMPLE_CARD, SAMPLE_BRIEF)
         transition_status(draft.draft_id, "approved")
-        with patch("blog_publisher.publish_article") as mock_pub:
-            mock_pub.return_value = {"id": 999, "slug": draft.slug}
+        with patch("agent.drafts._generate_cover_for_draft") as mock_cover, \
+                patch("blog_publisher.publish_article") as mock_pub:
+            mock_cover.return_value = {"url": "https://example.com/cover.png"}
+            mock_pub.return_value = {"id": 999, "slug": draft.slug, "cover_image": "https://example.com/hosted-cover.png"}
             result = publish_blog(draft.draft_id)
         assert result["ok"] is True
         assert result["blog_url"].endswith(f"/tutorials/{draft.slug}")
+        assert result["cover_image_url"] == "https://example.com/hosted-cover.png"
+        mock_pub.assert_called_once()
+        assert mock_pub.call_args.kwargs["cover_image_url"] == "https://example.com/cover.png"
 
         loaded = load_draft(draft.draft_id)
         assert loaded.status == "published"
         assert loaded.blog_url == result["blog_url"]
+        assert loaded.cover_image_url == "https://example.com/hosted-cover.png"
         assert loaded.published_at
     finally:
         drafts.DRAFTS_DIR = original_dir
@@ -182,7 +188,9 @@ def test_publish_failure_keeps_draft_approved(tmp_path):
     try:
         draft = create_draft(SAMPLE_CARD, SAMPLE_BRIEF)
         transition_status(draft.draft_id, "approved")
-        with patch("blog_publisher.publish_article") as mock_pub:
+        with patch("agent.drafts._generate_cover_for_draft") as mock_cover, \
+                patch("blog_publisher.publish_article") as mock_pub:
+            mock_cover.return_value = {"url": "https://example.com/cover.png"}
             mock_pub.return_value = None
             result = publish_blog(draft.draft_id)
         assert result["ok"] is False
@@ -200,7 +208,9 @@ def test_publish_blog_no_social_side_effects(tmp_path):
     try:
         draft = create_draft(SAMPLE_CARD, SAMPLE_BRIEF)
         transition_status(draft.draft_id, "approved")
-        with patch("blog_publisher.publish_article") as mock_pub:
+        with patch("agent.drafts._generate_cover_for_draft") as mock_cover, \
+                patch("blog_publisher.publish_article") as mock_pub:
+            mock_cover.return_value = {}
             mock_pub.return_value = {"id": 42, "slug": "test-slug"}
             publish_blog(draft.draft_id)
             mock_pub.assert_called_once()
@@ -245,5 +255,24 @@ def test_cannot_mark_unpublished_draft_as_published(tmp_path):
         loaded = load_draft(draft.draft_id)
         assert loaded.status == "draft"
         assert not loaded.blog_url
+    finally:
+        drafts.DRAFTS_DIR = original_dir
+
+
+def test_publish_blog_continues_when_cover_generation_fails(tmp_path):
+    from agent import drafts
+    original_dir = drafts.DRAFTS_DIR
+    drafts.DRAFTS_DIR = tmp_path
+    try:
+        draft = create_draft(SAMPLE_CARD, SAMPLE_BRIEF)
+        transition_status(draft.draft_id, "approved")
+        with patch("agent.drafts._generate_cover_for_draft") as mock_cover, \
+                patch("blog_publisher.publish_article") as mock_pub:
+            mock_cover.return_value = {}
+            mock_pub.return_value = {"id": 123, "slug": draft.slug}
+            result = publish_blog(draft.draft_id)
+        assert result["ok"] is True
+        assert result["cover_image_url"] == ""
+        assert mock_pub.call_args.kwargs["cover_image_url"] == ""
     finally:
         drafts.DRAFTS_DIR = original_dir
