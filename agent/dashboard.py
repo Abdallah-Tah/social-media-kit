@@ -19,6 +19,7 @@ from urllib.parse import urlparse, parse_qs
 
 from . import history
 from .config import AgentConfig, ROOT, list_profiles, load_profile
+from .dashboard_automation import register_routes as automation_routes
 from .dashboard_intelligence import register_routes as intelligence_routes
 from .orchestrator import run_agent
 from .prompts import build_goal
@@ -339,6 +340,10 @@ def _make_handler():
                 self.end_headers()
                 self.wfile.write(data)
                 return
+            if self._is_automation_api(path):
+                result = automation_routes(path, query)
+                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
+                return self._send(status, result)
             if self._is_api_path(path):
                 return self._send(404, {"error": "not found"})
             return self._serve_spa_index()
@@ -352,6 +357,10 @@ def _make_handler():
             if path == "/api/analytics/sync":
                 from .dashboard_analytics import handle_sync
                 return self._send(200, handle_sync(body))
+            if self._is_automation_api(path):
+                result = automation_routes(path, query, body)
+                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
+                return self._send(status, result)
             if self._is_intelligence_module_api(path):
                 result = intelligence_routes(path, query, body)
                 status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
@@ -368,6 +377,10 @@ def _make_handler():
             path = urlparse(self.path).path
             query = parse_qs(urlparse(self.path).query)
             body = self._read_json()
+            if self._is_automation_api(path):
+                result = automation_routes(path, query, body)
+                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
+                return self._send(status, result)
             if self._is_intelligence_module_api(path):
                 result = intelligence_routes(path, query, body)
                 status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
@@ -381,6 +394,13 @@ def _make_handler():
                 or path.startswith("/api/drafts/")
                 or path == "/api/social_drafts"
                 or path.startswith("/api/social_drafts/")
+            )
+
+        def _is_automation_api(self, path: str) -> bool:
+            return (
+                path == "/api/automations"
+                or path.startswith("/api/automations/")
+                or path == "/api/logs"
             )
 
         def _upload(self):
@@ -428,6 +448,8 @@ def _make_handler():
 
 
 def serve(host="127.0.0.1", port=8800):
+    from .automation import start_scheduler
+    start_scheduler()
     try:
         server = ThreadingHTTPServer((host, port), _make_handler())
     except OSError as exc:

@@ -69,7 +69,7 @@ def test_platform_adapter_publishes_with_mock(platform, tmp_path):
     try:
         sd = _make_approved_social(platform, tmp_path)
         module_map = {
-            "linkedin": "linkedin_org_poster.post_org",
+            "linkedin": "linkedin_poster.post_text",
             "facebook": "fb_poster.post_text",
             "threads": "threads_poster.post",
             "x": "x_poster.post_tweet",

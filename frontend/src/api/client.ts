@@ -1,5 +1,7 @@
 import type {
   AnalyticsSnapshot,
+  Automation,
+  AutomationLog,
   ContentDraft,
   CreateDraftResponse,
   GenerateBriefResponse,
@@ -133,4 +135,22 @@ export const api = {
 
   runAgent: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>('/run', { method: 'POST', body: JSON.stringify(body) }),
+
+  getAutomations: () =>
+    request<{ ok: boolean; automations: Automation[] }>('/automations'),
+
+  updateAutomation: (jobId: string, fields: Partial<Pick<Automation, 'enabled' | 'interval_hours' | 'dry_run'>>) =>
+    request<{ ok: boolean; automation: Automation; error?: string }>(`/automations/${jobId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(fields),
+    }),
+
+  runAutomationNow: (jobId: string) =>
+    request<{ ok: boolean; message?: string; error?: string }>(`/automations/${jobId}/run`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+
+  getLogs: (limit = 100) =>
+    request<{ ok: boolean; logs: AutomationLog[] }>(`/logs?limit=${limit}`),
 }

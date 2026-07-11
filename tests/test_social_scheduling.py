@@ -75,7 +75,7 @@ def test_publish_due_skips_future_drafts(tmp_path):
         sd = _make_draft("approved", tmp_path)
         when = _iso(datetime.now(timezone.utc) + timedelta(hours=1))
         schedule_social_drafts([sd.draft_id], when)
-        with patch("linkedin_org_poster.post_org") as mock_post:
+        with patch("linkedin_poster.post_text") as mock_post:
             mock_post.return_value = {"id": "123"}
             result = publish_due_social_drafts()
         assert result["results"][sd.draft_id]["skipped"] is True
@@ -93,7 +93,7 @@ def test_publish_due_publishes_due_drafts(tmp_path):
         sd = _make_draft("approved", tmp_path)
         when = _iso(datetime.now(timezone.utc) - timedelta(minutes=5))
         schedule_social_drafts([sd.draft_id], when)
-        with patch("linkedin_org_poster.post_org") as mock_post:
+        with patch("linkedin_poster.post_text") as mock_post:
             mock_post.return_value = {"id": "123"}
             result = publish_due_social_drafts()
         assert result["results"][sd.draft_id]["ok"] is True
@@ -112,7 +112,7 @@ def test_publish_due_failure_marks_failed(tmp_path):
         sd = _make_draft("approved", tmp_path)
         when = _iso(datetime.now(timezone.utc) - timedelta(minutes=5))
         schedule_social_drafts([sd.draft_id], when)
-        with patch("linkedin_org_poster.post_org") as mock_post:
+        with patch("linkedin_poster.post_text") as mock_post:
             mock_post.return_value = None
             result = publish_due_social_drafts()
         assert result["results"][sd.draft_id]["ok"] is False
@@ -131,7 +131,7 @@ def test_publish_due_dry_run_does_not_publish_live(tmp_path):
         sd = _make_draft("approved", tmp_path)
         when = _iso(datetime.now(timezone.utc) - timedelta(minutes=5))
         schedule_social_drafts([sd.draft_id], when)
-        with patch("linkedin_org_poster.post_org") as mock_post:
+        with patch("linkedin_poster.post_text") as mock_post:
             result = publish_due_social_drafts(dry_run=True)
         assert result["results"][sd.draft_id]["ok"] is True
         mock_post.assert_not_called()

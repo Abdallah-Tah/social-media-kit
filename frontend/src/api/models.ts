@@ -130,6 +130,27 @@ export interface IntelligenceSnapshot {
   top_brief?: Brief
 }
 
+export interface Automation {
+  job_id: string
+  label: string
+  description: string
+  enabled: boolean
+  interval_hours: number
+  dry_run: boolean
+  last_run?: string | null
+  last_result?: 'ok' | 'error' | null
+  last_error?: string | null
+  next_run?: string | null
+}
+
+export interface AutomationLog {
+  ts: string
+  job_id: string
+  ok: boolean
+  message: string
+  dry_run: boolean
+}
+
 export type ContentDraftStatus = 'draft' | 'reviewed' | 'approved' | 'published'
 
 export interface ContentDraft {

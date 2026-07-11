@@ -57,13 +57,13 @@ def _publish_linkedin(draft: dict[str, Any], dry_run: bool = False) -> dict[str,
     if dry_run:
         return _result(True, published_url="https://linkedin.com/dry-run", dry_run=True)
     try:
-        from linkedin_org_poster import post_org
+        import linkedin_poster
         text = _strip_markdown(draft.get("text", ""))
-        result = post_org(text)
+        result = linkedin_poster.post_text(text)
         if result and result.get("id"):
             urn = result.get("id")
             return _result(True, published_url=f"https://www.linkedin.com/feed/update/{urn}")
-        return _result(False, error="LinkedIn org post returned no id")
+        return _result(False, error="LinkedIn personal post returned no id")
     except Exception as exc:
         return _result(False, error=f"LinkedIn error: {exc}")
 
