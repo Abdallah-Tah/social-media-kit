@@ -117,6 +117,17 @@ def register_routes(
         )
         return post_feed([feed_item], profile_name=profile, dry_run=dry_run)
 
+    if path == "/api/feed/youtube":
+        # Render the story's Short plan into a video and upload to YouTube.
+        # mode "short" keeps #Shorts metadata; "video" strips it for a
+        # regular upload. dry_run renders only (no upload).
+        item = (body or {}).get("item", {})
+        mode = (body or {}).get("mode", "short")
+        dry_run = (body or {}).get("dry_run", True)
+        if not item.get("title") or mode not in ("short", "video"):
+            return {"ok": False, "error": "item with title and mode=short|video are required"}
+        return _post_feed_youtube(item, mode, dry_run)
+
     if path == "/api/feed/publish":
         # Create social drafts from a feed item and optionally publish immediately.
         item = (body or {}).get("item", {})
@@ -190,6 +201,89 @@ def _generate_feed_short(item: dict[str, Any]) -> dict[str, Any]:
         }
     except Exception as exc:
         return {"ok": False, "error": f"short planning failed: {exc}"}
+
+
+def _post_feed_youtube(item: dict[str, Any], mode: str, dry_run: bool) -> dict[str, Any]:
+    """Render a story's Short plan to MP4 and (when live) upload to YouTube.
+
+    Reuses an existing plan from content/shorts_plans/ when present so the
+    user's edits/preview from "Short Script" carry through. Honors the
+    project rule: never claim a live upload without the returned URL.
+    """
+    _ensure_scripts_path()
+    import json as _json
+    import subprocess
+    try:
+        from .shorts import Article, plan_short, render_short, slugify
+
+        title = item.get("title", "Untitled")
+        slug = slugify(title)
+        plans_dir = ROOT / "content" / "shorts_plans"
+        plans_dir.mkdir(parents=True, exist_ok=True)
+        plan_path = plans_dir / f"{slug}.json"
+
+        if not plan_path.exists():
+            summary = item.get("summary", "") or title
+            body = f"# {title}\n\n{summary}\n\nSource: {item.get('source', '')}\n{item.get('url', '')}\n"
+            plan_short(Article(slug=slug, title=title, body=body, url=item.get("url", "")), out_path=plan_path)
+
+        # Render (Playwright scenes + TTS + ffmpeg — takes a few minutes on the Pi).
+        meta = render_short(plan_path)
+        video = meta.get("video", "")
+        if not video or not Path(video).exists():
+            return {"ok": False, "error": "render produced no video"}
+
+        plan = _json.loads(plan_path.read_text(encoding="utf-8"))
+        pmeta = plan.get("publish_metadata", {})
+        yt_title = str(pmeta.get("title") or title)[:95]
+        yt_desc = str(pmeta.get("description") or "")
+        tags = [str(t) for t in (pmeta.get("tags") or [])]
+        if mode == "video":
+            # Regular upload: strip Shorts markers.
+            yt_title = yt_title.replace("#Shorts", "").strip()
+            yt_desc = yt_desc.replace("#Shorts", "").strip()
+            tags = [t for t in tags if t.lower() != "shorts"]
+
+        if dry_run:
+            return {
+                "ok": True,
+                "dry_run": True,
+                "mode": mode,
+                "video": str(Path(video).relative_to(ROOT)),
+                "title": yt_title,
+                "message": "Rendered only — flip to live mode to upload.",
+            }
+
+        cmd = [
+            sys.executable,
+            str(SCRIPTS_DIR / "youtube_shorts_publisher.py"),
+            "upload",
+            "--video", video,
+            "--title", yt_title,
+            "--description", yt_desc,
+            "--privacy", "public",
+            "--tags", ",".join(tags) or "BuildWithAbdallah",
+            "--category-id", str(pmeta.get("category_id") or "28"),
+        ]
+        res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=600)
+        # Honesty rule: only report success with the returned YouTube URL.
+        url = ""
+        for line in res.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("{"):
+                try:
+                    url = _json.loads(line).get("url", "")
+                except _json.JSONDecodeError:
+                    continue
+        if res.returncode == 0 and url:
+            return {"ok": True, "dry_run": False, "mode": mode, "url": url,
+                    "video": str(Path(video).relative_to(ROOT)), "title": yt_title}
+        err = (res.stderr or res.stdout)[-400:]
+        if "invalid_grant" in err:
+            err = "YouTube refresh token expired — re-mint via youtube_shorts_publisher.py auth-url. " + err
+        return {"ok": False, "error": f"upload failed: {err}"}
+    except Exception as exc:
+        return {"ok": False, "error": f"youtube post failed: {exc}"}
 
 
 def _publish_feed_item(item: dict[str, Any], platforms: list[str], dry_run: bool) -> dict[str, Any]:
