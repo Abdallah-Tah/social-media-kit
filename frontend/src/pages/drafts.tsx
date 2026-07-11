@@ -11,8 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 
-const statuses: ContentDraftStatus[] = ['draft', 'reviewed', 'approved', 'published']
-const editableStatuses: ContentDraftStatus[] = ['draft', 'reviewed', 'approved']
+const statuses: ContentDraftStatus[] = ['idea', 'draft', 'needs_review', 'approved', 'published']
+const editableStatuses: ContentDraftStatus[] = ['idea', 'draft', 'needs_review', 'approved']
 const platforms = ['linkedin', 'facebook', 'x', 'threads', 'reddit', 'newsletter', 'youtube']
 
 interface DraftForm {
@@ -52,7 +52,7 @@ export default function DraftsPage() {
     return statuses.reduce<Record<ContentDraftStatus, number>>((acc, status) => {
       acc[status] = drafts.filter((draft) => draft.status === status).length
       return acc
-    }, { draft: 0, reviewed: 0, approved: 0, published: 0 })
+    }, { idea: 0, draft: 0, needs_review: 0, approved: 0, published: 0 })
   }, [drafts])
 
   const refresh = () => {
@@ -120,7 +120,7 @@ export default function DraftsPage() {
           <Card key={status}>
             <CardContent className="p-4">
               <div className="text-2xl font-bold">{counts[status]}</div>
-              <div className="text-xs capitalize text-muted-foreground">{status}</div>
+              <div className="text-xs capitalize text-muted-foreground">{status.replace('_', ' ')}</div>
             </CardContent>
           </Card>
         ))}
@@ -151,7 +151,12 @@ export default function DraftsPage() {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0 truncate font-medium">{draft.title || 'Untitled draft'}</div>
-                    <Badge variant="outline" className="capitalize">{draft.status}</Badge>
+                    <Badge variant="outline" className={`capitalize ${
+                      draft.status === 'published' ? 'border-emerald-500 text-emerald-400' :
+                      draft.status === 'approved' ? 'border-blue-500 text-blue-400' :
+                      draft.status === 'needs_review' ? 'border-amber-500 text-amber-400' :
+                      draft.status === 'idea' ? 'border-slate-500 text-slate-400' : ''
+                    }`}>{draft.status.replace('_', ' ')}</Badge>
                   </div>
                   <div className="mt-1 truncate text-xs text-muted-foreground">{draft.draft_id} · {draft.content_type}</div>
                 </button>

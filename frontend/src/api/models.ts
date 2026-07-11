@@ -151,7 +151,31 @@ export interface AutomationLog {
   dry_run: boolean
 }
 
-export type ContentDraftStatus = 'draft' | 'reviewed' | 'approved' | 'published'
+export interface CampaignSocialStatus {
+  draft_id: string
+  status: SocialDraftStatus
+  published_url: string
+  scheduled_at: string
+}
+
+export interface CampaignPipeline {
+  content: { draft_id: string; status: ContentDraftStatus }
+  social: Record<string, CampaignSocialStatus>
+  overall: 'draft' | 'needs_review' | 'in_progress' | 'published' | 'failed' | 'incomplete'
+}
+
+export interface Campaign {
+  campaign_id: string
+  headline: string
+  content_draft_id: string
+  social_draft_ids: Record<string, string>
+  source_card: Record<string, unknown>
+  created_at: string
+  updated_at: string
+  pipeline?: CampaignPipeline
+}
+
+export type ContentDraftStatus = 'idea' | 'draft' | 'needs_review' | 'approved' | 'published'
 
 export interface ContentDraft {
   draft_id: string
@@ -170,7 +194,7 @@ export interface ContentDraft {
   updated_at: string
 }
 
-export type SocialDraftStatus = 'draft' | 'reviewed' | 'approved' | 'scheduled' | 'published' | 'failed'
+export type SocialDraftStatus = 'idea' | 'draft' | 'needs_review' | 'approved' | 'scheduled' | 'published' | 'failed'
 
 export interface SocialDraft {
   draft_id: string

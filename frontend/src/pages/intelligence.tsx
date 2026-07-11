@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useForm, Controller } from 'react-hook-form'
 import { toast } from 'sonner'
+import * as Dialog from '@radix-ui/react-dialog'
 import {
   Brain,
   Search,
@@ -32,6 +33,10 @@ import {
   Bot,
   Calendar,
   Loader2,
+  Zap,
+  X as XIcon,
+  CheckCircle2,
+  Circle,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -51,7 +56,7 @@ import {
 } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { api } from '@/api/client'
-import type { Brief, IntelligenceCard, IntelligenceFilters, SnapshotSummary } from '@/api/models'
+import type { Brief, Campaign, IntelligenceCard, IntelligenceFilters, SnapshotSummary } from '@/api/models'
 
 interface FilterForm {
   topic: string
@@ -84,6 +89,8 @@ const quickFilters = [
 
 type QuickFilterKey = (typeof quickFilters)[number]['key'] | null
 
+const CAMPAIGN_PLATFORMS = ['linkedin', 'facebook', 'x', 'threads', 'reddit', 'newsletter', 'youtube']
+
 export function IntelligencePage() {
   const [filters, setFilters] = useState<FilterForm>(defaultFilters)
   const [expanded, setExpanded] = useState<Record<number, boolean>>({})
@@ -91,6 +98,9 @@ export function IntelligencePage() {
   const [generatingBrief, setGeneratingBrief] = useState<GeneratingBriefSet>({})
   const [displayCards, setDisplayCards] = useState<IntelligenceCard[]>([])
   const [activeQuickFilter, setActiveQuickFilter] = useState<QuickFilterKey>(null)
+  const [campaignSheet, setCampaignSheet] = useState<{ card: IntelligenceCard; platforms: string[] } | null>(null)
+  const [createdCampaign, setCreatedCampaign] = useState<Campaign | null>(null)
+  const qc = useQueryClient()
 
   const { register, handleSubmit, control, watch, setValue } = useForm<FilterForm>({
     defaultValues: defaultFilters,
@@ -167,6 +177,23 @@ export function IntelligencePage() {
         toast.success(`Draft created${data.draft_id ? `: ${data.draft_id}` : ''}`)
       } else {
         toast.error(data.error || 'Draft failed')
+      }
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
+  const campaignMutation = useMutation({
+    mutationFn: ({ card, platforms }: { card: IntelligenceCard; platforms: string[] }) => {
+      const brief = activeBriefFor(card)
+      return api.createCampaign(card, brief as Record<string, unknown> | null, platforms)
+    },
+    onSuccess: (data) => {
+      if (data.ok && data.campaign) {
+        setCreatedCampaign(data.campaign)
+        qc.invalidateQueries({ queryKey: ['campaigns'] })
+        toast.success('Campaign created — all outputs are in drafts')
+      } else {
+        toast.error(data.error || 'Campaign creation failed')
       }
     },
     onError: (err: Error) => toast.error(err.message),
@@ -457,11 +484,111 @@ export function IntelligencePage() {
               }
               draftMutation.mutate({ card, brief: b })
             }}
+            onCampaign={() => {
+              setCreatedCampaign(null)
+              setCampaignSheet({ card, platforms: [...CAMPAIGN_PLATFORMS] })
+            }}
             isBriefLoading={!!generatingBrief[card.rank]}
             isDraftLoading={draftMutation.isPending && draftMutation.variables?.card.rank === card.rank}
+            isCampaignLoading={campaignMutation.isPending && campaignMutation.variables?.card.rank === card.rank}
           />
         ))}
       </div>
+
+      {/* Campaign creation sheet */}
+      <Dialog.Root open={!!campaignSheet} onOpenChange={(open) => { if (!open) setCampaignSheet(null) }}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-40" />
+          <Dialog.Content
+            className="fixed right-0 top-0 h-full w-full max-w-md bg-card border-l border-border z-50 flex flex-col shadow-xl"
+            aria-describedby="campaign-sheet-desc"
+          >
+            <div className="flex items-center justify-between border-b px-5 py-4">
+              <Dialog.Title className="text-lg font-semibold flex items-center gap-2">
+                <Zap className="h-5 w-5 text-primary" />
+                Create Campaign
+              </Dialog.Title>
+              <Dialog.Close asChild>
+                <Button variant="ghost" size="icon"><XIcon className="h-4 w-4" /></Button>
+              </Dialog.Close>
+            </div>
+
+            {campaignSheet && !createdCampaign && (
+              <div className="flex-1 overflow-auto p-5 space-y-5">
+                <p id="campaign-sheet-desc" className="text-sm text-muted-foreground">
+                  Fan out <strong className="text-foreground">{campaignSheet.card.cluster?.headline}</strong> into
+                  a blog draft + one social draft per selected platform.
+                </p>
+
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold">Platforms</h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    {CAMPAIGN_PLATFORMS.map((p) => {
+                      const selected = campaignSheet.platforms.includes(p)
+                      return (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => {
+                            setCampaignSheet((prev) => {
+                              if (!prev) return prev
+                              const next = selected
+                                ? prev.platforms.filter((x) => x !== p)
+                                : [...prev.platforms, p]
+                              return { ...prev, platforms: next }
+                            })
+                          }}
+                          className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                            selected
+                              ? 'border-primary bg-primary/10 text-primary'
+                              : 'border-border text-muted-foreground hover:border-primary/50'
+                          }`}
+                        >
+                          {selected ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <Circle className="h-4 w-4 shrink-0" />}
+                          <span className="capitalize">{p}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground space-y-1">
+                  <p>All outputs start as <strong>draft</strong> — nothing is published.</p>
+                  <p>Social drafts get a placeholder blog URL, updated when you publish the blog.</p>
+                </div>
+
+                <Button
+                  className="w-full"
+                  disabled={campaignSheet.platforms.length === 0 || campaignMutation.isPending}
+                  onClick={() => {
+                    if (campaignSheet) {
+                      campaignMutation.mutate({ card: campaignSheet.card, platforms: campaignSheet.platforms })
+                    }
+                  }}
+                >
+                  {campaignMutation.isPending
+                    ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Creating…</>
+                    : <><Zap className="h-4 w-4 mr-2" /> Create {campaignSheet.platforms.length} outputs</>}
+                </Button>
+              </div>
+            )}
+
+            {createdCampaign && (
+              <div className="flex-1 overflow-auto p-5 space-y-4">
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <CheckCircle2 className="h-5 w-5" />
+                  <span className="font-semibold">Campaign created</span>
+                </div>
+                <p className="text-sm text-muted-foreground">{createdCampaign.headline}</p>
+                <CampaignPipelineView campaign={createdCampaign} />
+                <Dialog.Close asChild>
+                  <Button variant="outline" className="w-full">Close</Button>
+                </Dialog.Close>
+              </div>
+            )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   )
 }
@@ -603,8 +730,10 @@ function OpportunityCard({
   onToggle,
   onBrief,
   onDraft,
+  onCampaign,
   isBriefLoading,
   isDraftLoading,
+  isCampaignLoading,
 }: {
   card: IntelligenceCard
   brief?: Brief | null
@@ -612,8 +741,10 @@ function OpportunityCard({
   onToggle: () => void
   onBrief: () => void
   onDraft: () => void
+  onCampaign: () => void
   isBriefLoading: boolean
   isDraftLoading: boolean
+  isCampaignLoading: boolean
 }) {
   const score = card.opportunity?.opportunity_score ?? 0
   const scoreColor = score >= 70 ? 'text-emerald-400' : score >= 50 ? 'text-amber-400' : 'text-red-400'
@@ -703,6 +834,10 @@ function OpportunityCard({
             <Button size="sm" onClick={onDraft} disabled={isDraftLoading || !hasBrief}>
               {isDraftLoading ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
               Create Draft
+            </Button>
+            <Button size="sm" variant="secondary" onClick={onCampaign} disabled={isCampaignLoading}>
+              {isCampaignLoading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Zap className="h-4 w-4 mr-1" />}
+              Create Campaign
             </Button>
             {card.cluster?.urls?.[0] && (
               <Button size="sm" variant="ghost" asChild>
@@ -821,6 +956,52 @@ function DetailBox({ label, value, icon: Icon }: { label: string; value: React.R
         {label}
       </div>
       <div className="text-lg font-semibold">{value}</div>
+    </div>
+  )
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  idea: 'bg-slate-500',
+  draft: 'bg-slate-400',
+  needs_review: 'bg-amber-400',
+  approved: 'bg-blue-400',
+  scheduled: 'bg-violet-400',
+  published: 'bg-emerald-400',
+  failed: 'bg-red-500',
+  missing: 'bg-muted',
+}
+
+function StatusDot({ status }: { status: string }) {
+  return (
+    <span className={`inline-block h-2 w-2 rounded-full ${STATUS_COLORS[status] ?? 'bg-muted'}`} title={status} />
+  )
+}
+
+function CampaignPipelineView({ campaign }: { campaign: Campaign }) {
+  const pipeline = campaign.pipeline
+  if (!pipeline) return null
+  const platformIds = campaign.social_draft_ids
+  return (
+    <div className="space-y-2 rounded-lg border p-3 text-sm">
+      <div className="flex items-center justify-between">
+        <span className="text-muted-foreground">Blog draft</span>
+        <div className="flex items-center gap-1.5">
+          <StatusDot status={pipeline.content.status} />
+          <span className="capitalize">{pipeline.content.status}</span>
+        </div>
+      </div>
+      {Object.keys(platformIds).map((platform) => {
+        const info = pipeline.social[platform]
+        return (
+          <div key={platform} className="flex items-center justify-between">
+            <span className="capitalize text-muted-foreground">{platform}</span>
+            <div className="flex items-center gap-1.5">
+              <StatusDot status={info?.status ?? 'missing'} />
+              <span className="capitalize">{info?.status ?? 'missing'}</span>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

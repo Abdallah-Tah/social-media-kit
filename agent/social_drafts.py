@@ -17,7 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SOCIAL_DRAFTS_DIR = ROOT / "content" / "social_drafts"
 SOCIAL_DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
 
-VALID_STATUSES = {"draft", "reviewed", "approved", "scheduled", "published", "failed"}
+VALID_STATUSES = {"idea", "draft", "needs_review", "approved", "scheduled", "published", "failed"}
+_STATUS_ALIASES = {"reviewed": "needs_review"}
 SUPPORTED_PLATFORMS = {
     "linkedin", "facebook", "x", "threads", "reddit", "newsletter", "youtube",
 }
@@ -41,6 +42,8 @@ class SocialDraft:
     error: str = ""
     created_at: str = ""
     updated_at: str = ""
+    history: list[dict[str, Any]] = field(default_factory=list)
+    campaign_id: str = ""
 
     def __post_init__(self):
         if not self.draft_id:
@@ -50,6 +53,7 @@ class SocialDraft:
             self.created_at = now
         if not self.updated_at:
             self.updated_at = now
+        self.status = _STATUS_ALIASES.get(self.status, self.status)
         if self.status not in VALID_STATUSES:
             self.status = "draft"
 
@@ -71,6 +75,8 @@ class SocialDraft:
             "error": self.error,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "history": self.history,
+            "campaign_id": self.campaign_id,
         }
 
     def touch(self) -> None:
@@ -212,14 +218,24 @@ def update_social_draft(draft_id: str, fields: dict[str, Any]) -> SocialDraft | 
     draft = load_social_draft(draft_id)
     if draft is None:
         return None
+    old_status = draft.status
+    if "status" in fields:
+        new_status = _STATUS_ALIASES.get(fields["status"], fields["status"])
+        fields = {**fields, "status": new_status}
+        if new_status not in VALID_STATUSES:
+            return None
     allowed = {"title", "text", "description", "tags", "hashtags", "status"}
     for key, value in fields.items():
         if key in allowed and hasattr(draft, key):
             if key in {"tags", "hashtags"} and isinstance(value, str):
                 value = [v.strip() for v in value.split(",") if v.strip()]
             setattr(draft, key, value)
-    if "status" in fields and fields["status"] not in VALID_STATUSES:
-        return None
+    if "status" in fields and draft.status != old_status:
+        draft.history.append({
+            "ts": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "from": old_status,
+            "to": draft.status,
+        })
     draft.touch()
     save_social_draft(draft)
     return draft

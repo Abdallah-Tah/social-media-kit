@@ -20,6 +20,7 @@ from urllib.parse import urlparse, parse_qs
 from . import history
 from .config import AgentConfig, ROOT, list_profiles, load_profile
 from .dashboard_automation import register_routes as automation_routes
+from .dashboard_campaigns import register_routes as campaign_routes
 from .dashboard_intelligence import register_routes as intelligence_routes
 from .orchestrator import run_agent
 from .prompts import build_goal
@@ -344,6 +345,10 @@ def _make_handler():
                 result = automation_routes(path, query)
                 status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
                 return self._send(status, result)
+            if self._is_campaigns_api(path):
+                result = campaign_routes(path, query)
+                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
+                return self._send(status, result)
             if self._is_api_path(path):
                 return self._send(404, {"error": "not found"})
             return self._serve_spa_index()
@@ -359,6 +364,10 @@ def _make_handler():
                 return self._send(200, handle_sync(body))
             if self._is_automation_api(path):
                 result = automation_routes(path, query, body)
+                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
+                return self._send(status, result)
+            if self._is_campaigns_api(path):
+                result = campaign_routes(path, query, body)
                 status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
                 return self._send(status, result)
             if self._is_intelligence_module_api(path):
@@ -402,6 +411,9 @@ def _make_handler():
                 or path.startswith("/api/automations/")
                 or path == "/api/logs"
             )
+
+        def _is_campaigns_api(self, path: str) -> bool:
+            return path == "/api/campaigns" or path.startswith("/api/campaigns/")
 
         def _upload(self):
             q = parse_qs(urlparse(self.path).query)

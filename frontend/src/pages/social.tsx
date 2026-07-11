@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 
-const statuses: SocialDraftStatus[] = ['draft', 'reviewed', 'approved', 'scheduled', 'published', 'failed']
+const statuses: SocialDraftStatus[] = ['idea', 'draft', 'needs_review', 'approved', 'scheduled', 'published', 'failed']
 
 interface SocialForm {
   title: string
@@ -58,7 +58,7 @@ export default function SocialPage() {
     return statuses.reduce<Record<SocialDraftStatus, number>>((acc, status) => {
       acc[status] = allDrafts.filter((draft) => draft.status === status).length
       return acc
-    }, { draft: 0, reviewed: 0, approved: 0, scheduled: 0, published: 0, failed: 0 })
+    }, { idea: 0, draft: 0, needs_review: 0, approved: 0, scheduled: 0, published: 0, failed: 0 })
   }, [allDrafts])
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['social-drafts'] })
@@ -129,7 +129,7 @@ export default function SocialPage() {
             <Card className={statusFilter === status ? 'border-primary bg-primary/5' : ''}>
               <CardContent className="p-4">
                 <div className="text-2xl font-bold">{counts[status]}</div>
-                <div className="text-xs capitalize text-muted-foreground">{status}</div>
+                <div className="text-xs capitalize text-muted-foreground">{status.replace('_', ' ')}</div>
               </CardContent>
             </Card>
           </button>

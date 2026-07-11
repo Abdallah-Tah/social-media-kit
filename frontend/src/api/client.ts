@@ -2,6 +2,7 @@ import type {
   AnalyticsSnapshot,
   Automation,
   AutomationLog,
+  Campaign,
   ContentDraft,
   CreateDraftResponse,
   GenerateBriefResponse,
@@ -153,4 +154,16 @@ export const api = {
 
   getLogs: (limit = 100) =>
     request<{ ok: boolean; logs: AutomationLog[] }>(`/logs?limit=${limit}`),
+
+  getCampaigns: () =>
+    request<{ ok: boolean; campaigns: Campaign[] }>('/campaigns'),
+
+  getCampaign: (id: string) =>
+    request<{ ok: boolean; campaign: Campaign }>(`/campaigns/${id}`),
+
+  createCampaign: (card: IntelligenceCard, brief: Record<string, unknown> | null, platforms?: string[]) =>
+    request<{ ok: boolean; campaign?: Campaign; error?: string }>('/campaigns', {
+      method: 'POST',
+      body: JSON.stringify({ card, brief, platforms }),
+    }),
 }

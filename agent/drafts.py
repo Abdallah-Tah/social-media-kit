@@ -21,7 +21,9 @@ DRAFTS_DIR = ROOT / "content" / "drafts"
 DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-VALID_STATUSES = {"draft", "reviewed", "approved", "published"}
+VALID_STATUSES = {"idea", "draft", "needs_review", "approved", "published"}
+# Legacy status alias kept for backward compat — mapped on load.
+_STATUS_ALIASES = {"reviewed": "needs_review"}
 
 
 @dataclass
@@ -41,6 +43,10 @@ class ContentDraft:
     published_at: str = ""
     created_at: str = ""
     updated_at: str = ""
+    history: list[dict[str, Any]] = field(default_factory=list)
+    seo_title: str = ""
+    seo_description: str = ""
+    campaign_id: str = ""
 
     def __post_init__(self):
         if not self.draft_id:
@@ -50,6 +56,7 @@ class ContentDraft:
             self.created_at = now
         if not self.updated_at:
             self.updated_at = now
+        self.status = _STATUS_ALIASES.get(self.status, self.status)
         if self.status not in VALID_STATUSES:
             self.status = "draft"
         if not self.slug and self.title:
@@ -72,6 +79,10 @@ class ContentDraft:
             "published_at": self.published_at,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "history": self.history,
+            "seo_title": self.seo_title,
+            "seo_description": self.seo_description,
+            "campaign_id": self.campaign_id,
         }
 
     def touch(self) -> None:
@@ -190,16 +201,24 @@ def update_draft(draft_id: str, fields: dict[str, Any]) -> ContentDraft | None:
     draft = load_draft(draft_id)
     if draft is None:
         return None
+    old_status = draft.status
     if "status" in fields:
-        new_status = fields["status"]
+        new_status = _STATUS_ALIASES.get(fields["status"], fields["status"])
+        fields = {**fields, "status": new_status}
         if new_status not in VALID_STATUSES:
             return None
         if new_status == "published" and not draft.blog_url:
             return None
-    allowed = {"title", "slug", "body", "status"}
+    allowed = {"title", "slug", "body", "status", "seo_title", "seo_description"}
     for key, value in fields.items():
         if key in allowed and hasattr(draft, key):
             setattr(draft, key, value)
+    if "status" in fields and draft.status != old_status:
+        draft.history.append({
+            "ts": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "from": old_status,
+            "to": draft.status,
+        })
     draft.touch()
     save_draft(draft)
     return draft
@@ -207,6 +226,7 @@ def update_draft(draft_id: str, fields: dict[str, Any]) -> ContentDraft | None:
 
 def transition_status(draft_id: str, new_status: str) -> ContentDraft | None:
     """Move a draft through its status workflow."""
+    new_status = _STATUS_ALIASES.get(new_status, new_status)
     if new_status not in VALID_STATUSES:
         return None
     return update_draft(draft_id, {"status": new_status})
