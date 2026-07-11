@@ -1,0 +1,35 @@
+# Feed personalization — interests drive story ranking (higher match = higher score).
+# Loaded by agent/feed.py (load_profile_with_interests / fetch_rss).
+
+interests:
+  - artificial intelligence
+  - AI agents
+  - LLM
+  - machine learning
+  - software engineering
+  - open source
+  - programming languages
+  - frameworks
+  - developer tools
+  - Python
+  - TypeScript
+  - Rust
+  - PHP
+  - Laravel
+  - React
+  - APIs
+  - DevOps
+  - Claude
+  - OpenAI
+  - GitHub
+
+sources:
+  - google_news
+  - hackernews
+  - reddit
+  - rss
+
+# Extra RSS feeds beyond the built-in defaults.
+rss_feeds:
+  - https://news.ycombinator.com/rss
+  - https://github.blog/feed/

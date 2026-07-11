@@ -25,7 +25,14 @@ const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
 }
 
 function sourceLabel(source: string) {
-  return SOURCE_LABELS[source] ?? { label: source, color: 'border-muted text-muted-foreground' }
+  if (SOURCE_LABELS[source]) return SOURCE_LABELS[source]
+  // Prefix matches: "reddit/r/programming" → Reddit badge with subreddit label.
+  if (source.startsWith('reddit')) {
+    const sub = source.split('/r/')[1]
+    return { label: sub ? `r/${sub}` : 'Reddit', color: SOURCE_LABELS.reddit.color }
+  }
+  if (source.startsWith('google_news')) return SOURCE_LABELS.google_news
+  return { label: source, color: 'border-muted text-muted-foreground' }
 }
 
 function fmtAge(iso: string) {

@@ -30,11 +30,13 @@ from agent.feed import FeedItem, canonical_url
 # ── Default feed endpoints ────────────────────────────────────────────────────
 
 GOOGLE_NEWS_TOPICS: dict[str, str] = {
-    "ai": "https://news.google.com/rss/search?q=artificial+intelligence+technology&hl=en-US&gl=US&ceid=US:en",
-    "tech": "https://news.google.com/rss/search?q=technology+developer+news&hl=en-US&gl=US&ceid=US:en",
-    "startups": "https://news.google.com/rss/search?q=startups+developer+tools&hl=en-US&gl=US&ceid=US:en",
-    "laravel": "https://news.google.com/rss/search?q=Laravel+PHP&hl=en-US&gl=US&ceid=US:en",
-    "python": "https://news.google.com/rss/search?q=Python+programming&hl=en-US&gl=US&ceid=US:en",
+    "ai": "https://news.google.com/rss/search?q=artificial+intelligence+LLM&hl=en-US&gl=US&ceid=US:en",
+    "ai_agents": "https://news.google.com/rss/search?q=AI+agents+autonomous+coding&hl=en-US&gl=US&ceid=US:en",
+    "software_engineering": "https://news.google.com/rss/search?q=software+engineering+development&hl=en-US&gl=US&ceid=US:en",
+    "open_source": "https://news.google.com/rss/search?q=open+source+software+release&hl=en-US&gl=US&ceid=US:en",
+    "languages": "https://news.google.com/rss/search?q=programming+language+Python+TypeScript+Rust&hl=en-US&gl=US&ceid=US:en",
+    "frameworks": "https://news.google.com/rss/search?q=web+framework+Laravel+React+developer&hl=en-US&gl=US&ceid=US:en",
+    "dev_tools": "https://news.google.com/rss/search?q=developer+tools+GitHub+API&hl=en-US&gl=US&ceid=US:en",
 }
 
 HACKERNEWS_URLS = [
@@ -43,12 +45,13 @@ HACKERNEWS_URLS = [
 ]
 
 REDDIT_SUBREDDITS = [
-    "technology",
     "programming",
-    "artificial",
-    "machinelearning",
+    "MachineLearning",
+    "LocalLLaMA",
+    "opensource",
+    "ExperiencedDevs",
     "webdev",
-    "startups",
+    "artificial",
 ]
 
 YOUTUBE_CHANNEL_HANDLES: list[str] = []
@@ -99,13 +102,20 @@ def source_status() -> dict[str, Any]:
 # ── Google News RSS ───────────────────────────────────────────────────────────
 
 def fetch_google_news(topic: str | None = None, limit: int = 20) -> list[FeedItem]:
-    url = GOOGLE_NEWS_TOPICS.get("ai", "")
     if topic:
         query = urllib.parse.quote_plus(topic)
         url = f"https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
-    elif not url:
-        url = list(GOOGLE_NEWS_TOPICS.values())[0]
-    return _parse_rss_feed(url, "google_news", limit=limit)
+        return _parse_rss_feed(url, "google_news", limit=limit)
+    # No explicit topic: sweep every configured topic feed so the feed
+    # covers AI, agents, software engineering, open source, languages, etc.
+    per_topic = max(3, limit // max(1, len(GOOGLE_NEWS_TOPICS)))
+    items: list[FeedItem] = []
+    for name, url in GOOGLE_NEWS_TOPICS.items():
+        try:
+            items.extend(_parse_rss_feed(url, "google_news", limit=per_topic))
+        except Exception as exc:
+            print(f"⚠️  google news topic {name} failed: {exc}")
+    return items
 
 
 # ── Hacker News ─────────────────────────────────────────────────────────────

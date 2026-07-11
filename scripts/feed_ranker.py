@@ -63,7 +63,8 @@ def score_item(item: FeedItem, interests: list[str], topic: str | None = None) -
             if _matches(text, term):
                 topic_bonus += 0.15
 
-    interest_score = min(1.0, 0.25 + (0.18 * len(matched)) + topic_bonus)
+    # Low floor so stories matching zero interests sink below matched ones.
+    interest_score = min(1.0, 0.10 + (0.25 * len(matched)) + topic_bonus)
 
     # Freshness
     freshness = _freshness_score(item.published_at)
@@ -92,12 +93,16 @@ def _matches(text: str, phrase: str) -> bool:
     phrase = phrase.lower().strip()
     if not phrase:
         return False
-    # Direct phrase match is stronger.
-    if phrase in text:
+    # Whole-phrase match on word boundaries ("rust" must not match "trusted",
+    # "ai" must not match "hawaii").
+    if re.search(r"\b" + re.escape(phrase) + r"\b", text):
         return True
-    # Word-level partial match for multi-word interests.
-    words = [w for w in re.split(r"[^a-z0-9]+", phrase) if w]
-    return any(w in text for w in words)
+    # Multi-word interests: every significant word must appear somewhere
+    # (previously ANY word matched, which made "AI agents" fire on any "ai").
+    words = [w for w in re.split(r"[^a-z0-9]+", phrase) if len(w) >= 3]
+    if not words or len(words) == len(phrase.split()) == 1:
+        return False
+    return all(re.search(r"\b" + re.escape(w) + r"\b", text) for w in words)
 
 
 def _freshness_score(published_at: str) -> float:
