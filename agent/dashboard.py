@@ -304,6 +304,23 @@ def _make_handler():
                 body = self._read_json()
                 return self._send(200, handle_sync(body))
 
+            if self._is_automation_api(path):
+                result = automation_routes(path, query)
+                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
+                return self._send(status, result)
+            if self._is_campaigns_api(path):
+                result = campaign_routes(path, query)
+                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
+                return self._send(status, result)
+            if self._is_connections_api(path):
+                result = connection_routes(path, query)
+                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
+                return self._send(status, result)
+            if self._is_feed_api(path):
+                result = feed_routes(path, query)
+                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
+                return self._send(status, result)
+
             # Intelligence, draft, social draft, and scheduler API.
             if self._is_intelligence_module_api(path):
                 intel = intelligence_routes(path, query)
@@ -347,22 +364,6 @@ def _make_handler():
                 self.end_headers()
                 self.wfile.write(data)
                 return
-            if self._is_automation_api(path):
-                result = automation_routes(path, query)
-                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
-                return self._send(status, result)
-            if self._is_campaigns_api(path):
-                result = campaign_routes(path, query)
-                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
-                return self._send(status, result)
-            if self._is_connections_api(path):
-                result = connection_routes(path, query)
-                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
-                return self._send(status, result)
-            if self._is_feed_api(path):
-                result = feed_routes(path, query)
-                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
-                return self._send(status, result)
             if self._is_api_path(path):
                 return self._send(404, {"error": "not found"})
             return self._serve_spa_index()
