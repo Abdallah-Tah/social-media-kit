@@ -43,6 +43,7 @@ from .social_drafts import (
     load_social_draft,
     publish_due_social_drafts,
     publish_selected_social_drafts,
+    retry_social_draft,
     schedule_social_drafts,
     update_social_draft,
 )
@@ -974,6 +975,9 @@ def register_routes(path: str, query: dict[str, list[str]], body: dict[str, Any]
         return handle_publish_due_social(body or {})
     if path == "/api/social_drafts/schedule":
         return handle_schedule_social(body or {})
+    if path.startswith("/api/social_drafts/") and path.endswith("/retry"):
+        draft_id = path.replace("/api/social_drafts/", "").replace("/retry", "")
+        return retry_social_draft(draft_id)
     if path.startswith("/api/social_drafts/"):
         draft_id = path.replace("/api/social_drafts/", "")
         if body:

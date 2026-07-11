@@ -3,12 +3,15 @@ import type {
   Automation,
   AutomationLog,
   Campaign,
+  CampaignAnalytics,
   ContentDraft,
   CreateDraftResponse,
   GenerateBriefResponse,
   IntelligenceCard,
   IntelligenceFilters,
+  IntelligenceSourceConfig,
   MutationResult,
+  PlatformConnection,
   RunIntelligenceResponse,
   Snapshot,
   SnapshotSummary,
@@ -183,4 +186,25 @@ export const api = {
       `/drafts/${draftId}/rewrite`,
       { method: 'POST', body: JSON.stringify({ mode }) }
     ),
+
+  retrySocialDraft: (draftId: string) =>
+    request<{ ok: boolean; draft?: SocialDraft; error?: string }>(
+      `/social_drafts/${draftId}/retry`,
+      { method: 'POST', body: JSON.stringify({}) }
+    ),
+
+  getConnections: () =>
+    request<{ ok: boolean; connections: PlatformConnection[] }>('/connections'),
+
+  getSourceConfig: () =>
+    request<{ ok: boolean; config: IntelligenceSourceConfig }>('/intelligence/config'),
+
+  updateSourceConfig: (fields: Partial<IntelligenceSourceConfig>) =>
+    request<{ ok: boolean; config: IntelligenceSourceConfig }>('/intelligence/config', {
+      method: 'POST',
+      body: JSON.stringify(fields),
+    }),
+
+  getCampaignAnalytics: () =>
+    request<{ ok: boolean; campaigns: CampaignAnalytics[] }>('/analytics/campaigns'),
 }

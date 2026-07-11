@@ -130,6 +130,41 @@ export interface IntelligenceSnapshot {
   top_brief?: Brief
 }
 
+export interface PlatformConnection {
+  id: string
+  name: string
+  description: string
+  env_vars: string[]
+  connected: boolean
+  missing_vars: string[]
+  last_publish_status: 'published' | 'failed' | null
+  last_publish_at: string | null
+  last_publish_url: string | null
+  last_publish_error?: string | null
+}
+
+export interface IntelligenceSourceConfig {
+  enable_reddit: boolean
+  enable_hacker_news: boolean
+  enable_github_trending: boolean
+  enable_newsletters: boolean
+  enable_newsletter_mining: boolean
+  reddit_subreddits: string[]
+  hacker_news_queries: string[]
+  github_trending_topics: string[]
+  newsletters: string[]
+}
+
+export interface CampaignAnalytics {
+  campaign_id: string
+  headline: string
+  created_at: string
+  content_status: string
+  blog_url: string
+  platforms: string[]
+  source_card: Record<string, unknown>
+}
+
 export interface Automation {
   job_id: string
   label: string

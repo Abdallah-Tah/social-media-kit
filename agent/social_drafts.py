@@ -351,6 +351,27 @@ def publish_selected_social_drafts(draft_ids: list[str], dry_run: bool = False) 
     return {"ok": True, "results": results}
 
 
+def retry_social_draft(draft_id: str) -> dict[str, Any]:
+    """Reset a failed draft back to approved so it can be retried."""
+    draft = load_social_draft(draft_id)
+    if draft is None:
+        return {"ok": False, "error": "social draft not found"}
+    if draft.status != "failed":
+        return {"ok": False, "error": f"only failed drafts can be retried, current status: {draft.status}"}
+    old_status = draft.status
+    draft.status = "approved"
+    draft.error = ""
+    draft.history.append({
+        "ts": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "from": old_status,
+        "to": "approved",
+        "note": "manual retry",
+    })
+    draft.touch()
+    save_social_draft(draft)
+    return {"ok": True, "draft": draft.to_dict()}
+
+
 def create_social_drafts_from_blog(
     source_draft_id: str,
     blog_url: str,

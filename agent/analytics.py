@@ -131,14 +131,22 @@ def _intelligence_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _editorial_funnel(drafts: list[dict[str, Any]]) -> dict[str, Any]:
-    status_counts: dict[str, int] = {s: 0 for s in {"draft", "reviewed", "approved", "published"}}
+    all_statuses = {"idea", "draft", "needs_review", "reviewed", "approved", "published"}
+    status_counts: dict[str, int] = {s: 0 for s in all_statuses}
     for d in drafts:
-        status_counts[d.get("status", "draft")] = status_counts.get(d.get("status", "draft"), 0) + 1
+        s = d.get("status", "draft")
+        status_counts[s] = status_counts.get(s, 0) + 1
     total = len(drafts)
     created = total
-    reviewed = status_counts["reviewed"] + status_counts["approved"] + status_counts["published"]
-    approved = status_counts["approved"] + status_counts["published"]
-    published = status_counts["published"]
+    # reviewed = needs_review + reviewed (legacy) + approved + published
+    reviewed = (
+        status_counts.get("needs_review", 0)
+        + status_counts.get("reviewed", 0)
+        + status_counts.get("approved", 0)
+        + status_counts.get("published", 0)
+    )
+    approved = status_counts.get("approved", 0) + status_counts.get("published", 0)
+    published = status_counts.get("published", 0)
     def rate(a: int, b: int) -> float:
         return round(a / b * 100, 1) if b else 0
     return {
@@ -150,7 +158,7 @@ def _editorial_funnel(drafts: list[dict[str, Any]]) -> dict[str, Any]:
         "reviewed_to_approved_rate": rate(approved, reviewed),
         "approved_to_published_rate": rate(published, approved),
         "overall_conversion_rate": rate(published, created),
-        "status_counts": status_counts,
+        "status_counts": {k: v for k, v in status_counts.items() if v > 0},
     }
 
 
@@ -331,6 +339,42 @@ def _load_blog_metrics(drafts: list[dict[str, Any]], from_date: str | None = Non
             "last_sync_at": data.get("last_sync_at"),
         })
     return metrics
+
+
+def campaign_analytics() -> list[dict[str, Any]]:
+    """Return campaign-linked publish data for analytics loop-closing."""
+    campaigns_dir = ROOT / "content" / "campaigns"
+    if not campaigns_dir.exists():
+        return []
+    drafts_dir = ROOT / "content" / "drafts"
+    out = []
+    for p in sorted(campaigns_dir.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True)[:20]:
+        try:
+            campaign = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        content_draft_id = campaign.get("content_draft_id", "")
+        content_status = "unknown"
+        blog_url = ""
+        if content_draft_id:
+            dp = drafts_dir / f"{content_draft_id}.json"
+            if dp.exists():
+                try:
+                    d = json.loads(dp.read_text(encoding="utf-8"))
+                    content_status = d.get("status", "unknown")
+                    blog_url = d.get("blog_url", "")
+                except (json.JSONDecodeError, OSError):
+                    pass
+        out.append({
+            "campaign_id": campaign.get("campaign_id"),
+            "headline": campaign.get("headline", ""),
+            "created_at": campaign.get("created_at", ""),
+            "content_status": content_status,
+            "blog_url": blog_url,
+            "platforms": list(campaign.get("social_draft_ids", {}).keys()),
+            "source_card": campaign.get("source_card", {}),
+        })
+    return out
 
 
 def save_analytics(snapshot: AnalyticsSnapshot, path: Path | None = None) -> Path:
