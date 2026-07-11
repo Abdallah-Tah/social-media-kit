@@ -186,8 +186,9 @@ def _job_feed_run(dry_run: bool) -> dict[str, Any]:
     if scripts_dir not in sys.path:
         sys.path.insert(0, scripts_dir)
     from .feed import build_feed, save_feed
-    items = build_feed(limit=20, use_llm=not dry_run)
-    if not dry_run:
+    # include_seen: the browse feed should always show current top stories.
+    items = build_feed(limit=20, use_llm=not dry_run, include_seen=True)
+    if not dry_run and items:  # never overwrite a good snapshot with 0 items
         save_feed(items)
     return {
         "ok": True,

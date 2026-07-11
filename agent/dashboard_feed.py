@@ -74,12 +74,16 @@ def register_routes(
             from .feed import build_feed, save_feed
             dry_run = (body or {}).get("dry_run", True)
             limit = int((body or {}).get("limit", 20))
-            items = build_feed(limit=limit, use_llm=not dry_run)
-            if not dry_run:
+            # Browse mode: include previously-seen stories. The seen-dedupe
+            # exists for notifications; a browsing UI should always show the
+            # current top stories (a repeat refresh must not go blank).
+            include_seen = (body or {}).get("include_seen", True)
+            items = build_feed(limit=limit, use_llm=not dry_run, include_seen=include_seen)
+            saved_name = None
+            # Never overwrite a good snapshot with an empty run.
+            if not dry_run and items:
                 saved = save_feed(items)
                 saved_name = Path(saved).name if saved else None
-            else:
-                saved_name = None
             return {
                 "ok": True,
                 "count": len(items),
