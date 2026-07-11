@@ -188,12 +188,16 @@ def update_draft(draft_id: str, fields: dict[str, Any]) -> ContentDraft | None:
     draft = load_draft(draft_id)
     if draft is None:
         return None
+    if "status" in fields:
+        new_status = fields["status"]
+        if new_status not in VALID_STATUSES:
+            return None
+        if new_status == "published" and not draft.blog_url:
+            return None
     allowed = {"title", "slug", "body", "status"}
     for key, value in fields.items():
         if key in allowed and hasattr(draft, key):
             setattr(draft, key, value)
-    if "status" in fields and fields["status"] not in VALID_STATUSES:
-        return None
     draft.touch()
     save_draft(draft)
     return draft

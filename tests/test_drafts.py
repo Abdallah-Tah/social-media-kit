@@ -88,11 +88,11 @@ def test_status_transitions(tmp_path):
         draft = create_draft(SAMPLE_CARD, SAMPLE_BRIEF)
         assert transition_status(draft.draft_id, "reviewed") is not None
         assert transition_status(draft.draft_id, "approved") is not None
-        assert transition_status(draft.draft_id, "published") is not None
+        assert transition_status(draft.draft_id, "published") is None
         assert transition_status(draft.draft_id, "invalid") is None
 
         loaded = load_draft(draft.draft_id)
-        assert loaded.status == "published"
+        assert loaded.status == "approved"
     finally:
         drafts.DRAFTS_DIR = original_dir
 
@@ -231,5 +231,19 @@ def test_create_draft_builds_body_from_structured_brief(tmp_path):
         assert "## 60-second script" in draft.body
         assert "Use short-term memory" in draft.body
         assert "https://example.com/gpt56" in draft.body
+    finally:
+        drafts.DRAFTS_DIR = original_dir
+
+
+def test_cannot_mark_unpublished_draft_as_published(tmp_path):
+    from agent import drafts
+    original_dir = drafts.DRAFTS_DIR
+    drafts.DRAFTS_DIR = tmp_path
+    try:
+        draft = create_draft(SAMPLE_CARD, SAMPLE_BRIEF)
+        assert update_draft(draft.draft_id, {"status": "published"}) is None
+        loaded = load_draft(draft.draft_id)
+        assert loaded.status == "draft"
+        assert not loaded.blog_url
     finally:
         drafts.DRAFTS_DIR = original_dir

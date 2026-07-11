@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 
 const statuses: ContentDraftStatus[] = ['draft', 'reviewed', 'approved', 'published']
+const editableStatuses: ContentDraftStatus[] = ['draft', 'reviewed', 'approved']
 const platforms = ['linkedin', 'facebook', 'x', 'threads', 'reddit', 'newsletter', 'youtube']
 
 interface DraftForm {
@@ -187,7 +188,9 @@ export default function DraftsPage() {
                       onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as ContentDraftStatus }))}
                       className="h-10 rounded-md border border-input bg-background px-3 text-sm"
                     >
-                      {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                      {(form.status === 'published' ? statuses : editableStatuses).map((status) => (
+                        <option key={status} value={status} disabled={status === 'published'}>{status}</option>
+                      ))}
                     </select>
                   </Field>
                 </div>
