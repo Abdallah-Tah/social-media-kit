@@ -210,3 +210,26 @@ def test_publish_blog_no_social_side_effects(tmp_path):
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_create_draft_builds_body_from_structured_brief(tmp_path):
+    from agent import drafts
+    original_dir = drafts.DRAFTS_DIR
+    drafts.DRAFTS_DIR = tmp_path
+    structured_brief = {
+        "content_type": "youtube_short",
+        "title": "AI Agent Memory in 60 Seconds",
+        "hook": "Choosing memory strategy changes how reliable your agent feels.",
+        "angle": "Decision tree for builders",
+        "key_points": ["Use short-term memory for the current task.", "Use long-term memory for preferences."],
+        "call_to_action": "Follow for more builder news.",
+        "suggested_assets": ["Vertical brand card"],
+    }
+    try:
+        draft = create_draft(SAMPLE_CARD, structured_brief)
+        assert draft.body
+        assert "## 60-second script" in draft.body
+        assert "Use short-term memory" in draft.body
+        assert "https://example.com/gpt56" in draft.body
+    finally:
+        drafts.DRAFTS_DIR = original_dir

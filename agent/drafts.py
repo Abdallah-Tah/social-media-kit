@@ -90,20 +90,77 @@ def _draft_path(draft_id: str) -> Path:
 
 
 def create_draft(card: dict[str, Any], brief: dict[str, Any]) -> ContentDraft:
-    """Create a new draft from an intelligence card + generated brief."""
+    """Create a new draft from intelligence card + brief data."""
     cluster = card.get("cluster", {})
     rec = card.get("recommendation", {})
+    content_type = brief.get("content_type", rec.get("recommendation", "blog"))
+    title = brief.get("title", "Untitled Draft")
     draft = ContentDraft(
         source_cluster=cluster,
         recommendation=rec,
-        content_type=brief.get("content_type", rec.get("recommendation", "blog")),
-        title=brief.get("title", "Untitled Draft"),
+        content_type=content_type,
+        title=title,
         brief=brief,
-        body=brief.get("markdown", "") or brief.get("draft_body", ""),
+        body=_brief_to_markdown(brief, cluster, content_type, title),
         source_urls=cluster.get("urls", []),
     )
     save_draft(draft)
     return draft
+
+
+def _brief_to_markdown(brief: dict[str, Any], cluster: dict[str, Any], content_type: str, title: str) -> str:
+    """Build an editable starter body when the brief is structured only."""
+    explicit_body = brief.get("markdown", "") or brief.get("draft_body", "")
+    if explicit_body:
+        return str(explicit_body)
+
+    hook = str(brief.get("hook", "")).strip()
+    angle = str(brief.get("angle", "")).strip()
+    cta = str(brief.get("call_to_action", "")).strip()
+    points = [str(p).strip() for p in brief.get("key_points", []) if str(p).strip()]
+    source_urls = brief.get("source_urls") or cluster.get("urls", []) or []
+    sources = cluster.get("sources", []) or []
+
+    if content_type == "youtube_short":
+        lines = [f"# {title}", "", "## Hook", hook or title, "", "## 60-second script"]
+        script_beats = points or [angle or "Explain the core story in one clear takeaway."]
+        for index, point in enumerate(script_beats, start=1):
+            lines.append(f"{index}. {point}")
+        lines.extend(["", "## Visual notes"])
+        lines.extend(_asset_lines(brief.get("suggested_assets", [])))
+        lines.extend(["", "## CTA", cta or "Follow for more builder news."])
+    elif content_type in {"linkedin_post", "twitter_thread", "newsletter"}:
+        lines = [f"# {title}", "", hook or title]
+        if angle:
+            lines.extend(["", angle])
+        if points:
+            lines.extend(["", "## Key points"])
+            lines.extend(f"- {point}" for point in points)
+        if cta:
+            lines.extend(["", cta])
+    else:
+        lines = [f"# {title}", "", hook or title]
+        if angle:
+            lines.extend(["", "## Angle", angle])
+        if points:
+            lines.extend(["", "## What to cover"])
+            lines.extend(f"- {point}" for point in points)
+        lines.extend(["", "## Builder takeaway", "Explain why this matters and what the reader should do next."])
+        if cta:
+            lines.extend(["", "## Call to action", cta])
+
+    if sources:
+        lines.extend(["", "## Sources", f"- {', '.join(str(s) for s in sources)}"])
+    if source_urls:
+        lines.extend(["", "## Source links"])
+        lines.extend(f"- {url}" for url in source_urls if url)
+    return "\n".join(lines).strip() + "\n"
+
+
+def _asset_lines(assets: Any) -> list[str]:
+    if not assets:
+        return ["- Add source screenshot or branded visual."]
+    return [f"- {asset}" for asset in assets if str(asset).strip()]
 
 
 def save_draft(draft: ContentDraft) -> Path:
