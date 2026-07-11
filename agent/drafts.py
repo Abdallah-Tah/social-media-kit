@@ -281,10 +281,8 @@ def publish_blog(draft_id: str) -> dict[str, Any]:
     return {"ok": True, "blog_url": blog_url, "cover_image_url": draft.cover_image_url, "post": post}
 
 
-def _generate_cover_for_draft(draft: ContentDraft) -> dict[str, Any]:
+def _generate_cover_for_draft(draft: ContentDraft, extra_prompt: str | None = None) -> dict[str, Any]:
     """Generate a cover for a blog publish, falling back gracefully."""
-    if draft.cover_image_url:
-        return {"url": draft.cover_image_url}
     scripts_dir = str(ROOT / "scripts")
     if scripts_dir not in sys.path:
         sys.path.insert(0, scripts_dir)
@@ -296,6 +294,7 @@ def _generate_cover_for_draft(draft: ContentDraft) -> dict[str, Any]:
         out_path = assets_dir / f"{dt.date.today().isoformat()}_{draft.slug or draft.draft_id}-cover.png"
         result = generate_cover(
             draft.title,
+            prompt=extra_prompt,
             out_path=str(out_path),
             branding={"accent_color": "#2563eb"},
         )
@@ -311,6 +310,59 @@ def _blog_base_url() -> str:
     if "/api" in api_url:
         return api_url.split("/api")[0].rstrip("/")
     return api_url.rstrip("/")
+
+
+COVER_STYLE_PROMPTS: dict[str, str] = {
+    "clean_tech": (
+        "Clean minimal tech article cover, white background, bold typography, "
+        "subtle blue accent, professional developer content"
+    ),
+    "editorial": (
+        "Editorial magazine-style cover, strong typography, dramatic layout, "
+        "developer/engineering theme, high contrast"
+    ),
+    "diagram": (
+        "Technical diagram cover, flowchart aesthetic, clean lines, node-graph style, "
+        "software architecture visualization, minimal color palette"
+    ),
+    "thumbnail": (
+        "YouTube video thumbnail style, vibrant colors, bold text area on left, "
+        "eye-catching visual on right, high contrast, developer channel"
+    ),
+    "social_card": (
+        "Social media card cover, modern gradient background, clean centered text area, "
+        "branded developer content, square-friendly composition"
+    ),
+}
+
+
+def generate_cover_for_draft(draft_id: str, style: str = "clean_tech") -> dict[str, Any]:
+    """Public wrapper: generate or regenerate a cover image for a draft."""
+    draft = load_draft(draft_id)
+    if draft is None:
+        return {"ok": False, "error": "draft not found"}
+    prompt = COVER_STYLE_PROMPTS.get(style, COVER_STYLE_PROMPTS["clean_tech"])
+    result = _generate_cover_for_draft(draft, extra_prompt=prompt)
+    url = result.get("url") or result.get("path") or ""
+    if url:
+        draft.cover_image_url = url
+        save_draft(draft)
+        return {"ok": True, "cover_image_url": url, "style": style}
+    return {"ok": False, "error": result.get("error", "cover generation failed")}
+
+
+def get_cover_info(draft_id: str) -> dict[str, Any]:
+    """Return current cover image info for a draft."""
+    draft = load_draft(draft_id)
+    if draft is None:
+        return {"ok": False, "error": "draft not found"}
+    return {
+        "ok": True,
+        "draft_id": draft_id,
+        "cover_image_url": draft.cover_image_url,
+        "exists": bool(draft.cover_image_url),
+        "styles": list(COVER_STYLE_PROMPTS.keys()),
+    }
 
 
 def list_drafts(status: str | None = None) -> list[dict[str, Any]]:

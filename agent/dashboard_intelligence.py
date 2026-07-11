@@ -23,6 +23,8 @@ from urllib.parse import parse_qs, urlparse
 from .drafts import (
     ContentDraft,
     create_draft,
+    generate_cover_for_draft,
+    get_cover_info,
     list_drafts,
     load_draft,
     publish_blog,
@@ -905,6 +907,18 @@ def handle_update_social_draft(draft_id: str, body: dict[str, Any]) -> dict[str,
         return {"ok": False, "error": "social draft not found or invalid status"}
     return {"ok": True, "draft": draft.to_dict()}
 
+def handle_draft_cover(draft_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    if not body:
+        return get_cover_info(draft_id)
+    style = body.get("style", "clean_tech")
+    return generate_cover_for_draft(draft_id, style=style)
+
+
+def handle_draft_rewrite(draft_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    from .rewriter import rewrite_draft
+    mode = body.get("mode", "")
+    return rewrite_draft(draft_id, mode)
+
 # ── Dispatch for dashboard.py integration ───────────────────────────────────
 
 def register_routes(path: str, query: dict[str, list[str]], body: dict[str, Any] | None = None) -> tuple[bytes, str] | dict[str, Any]:
@@ -939,6 +953,12 @@ def register_routes(path: str, query: dict[str, list[str]], body: dict[str, Any]
         if not body:
             return handle_list_social_drafts(draft_id)
         return handle_create_social_drafts(draft_id, body or {})
+    if path.startswith("/api/drafts/") and path.endswith("/cover"):
+        draft_id = path.replace("/api/drafts/", "").replace("/cover", "")
+        return handle_draft_cover(draft_id, body or {})
+    if path.startswith("/api/drafts/") and path.endswith("/rewrite"):
+        draft_id = path.replace("/api/drafts/", "").replace("/rewrite", "")
+        return handle_draft_rewrite(draft_id, body or {})
     if path.startswith("/api/drafts/"):
         draft_id = path.replace("/api/drafts/", "")
         if body:

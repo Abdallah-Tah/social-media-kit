@@ -166,4 +166,21 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ card, brief, platforms }),
     }),
+
+  getDraftCover: (draftId: string) =>
+    request<{ ok: boolean; cover_image_url: string; exists: boolean; styles: string[]; error?: string }>(
+      `/drafts/${draftId}/cover`
+    ),
+
+  regenerateCover: (draftId: string, style: string) =>
+    request<{ ok: boolean; cover_image_url?: string; style?: string; error?: string }>(
+      `/drafts/${draftId}/cover`,
+      { method: 'POST', body: JSON.stringify({ style }) }
+    ),
+
+  rewriteDraft: (draftId: string, mode: 'shorter' | 'hook' | 'technical' | 'casual') =>
+    request<{ ok: boolean; body?: string; mode?: string; error?: string }>(
+      `/drafts/${draftId}/rewrite`,
+      { method: 'POST', body: JSON.stringify({ mode }) }
+    ),
 }
