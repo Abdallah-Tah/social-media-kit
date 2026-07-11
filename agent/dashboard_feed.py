@@ -100,6 +100,23 @@ def register_routes(
             return _generate_feed_cover(item)
         return _generate_feed_short(item)
 
+    if path == "/api/feed/pipeline":
+        # Full smkit pipeline: research story → write article → publish to
+        # the blog → per-platform social posts that link the blog URL.
+        item = (body or {}).get("item", {})
+        dry_run = (body or {}).get("dry_run", True)
+        profile = (body or {}).get("profile", "default")
+        if not item.get("title"):
+            return {"ok": False, "error": "item with a title is required"}
+        from .feed import FeedItem, post_feed
+        feed_item = FeedItem(
+            title=item.get("title", ""),
+            url=item.get("url", ""),
+            source=item.get("source", ""),
+            summary=item.get("summary", ""),
+        )
+        return post_feed([feed_item], profile_name=profile, dry_run=dry_run)
+
     if path == "/api/feed/publish":
         # Create social drafts from a feed item and optionally publish immediately.
         item = (body or {}).get("item", {})

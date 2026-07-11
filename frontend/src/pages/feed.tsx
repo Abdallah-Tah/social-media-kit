@@ -64,6 +64,9 @@ function FeedCard({
   isGenerating,
   coverUrl,
   shortPlan,
+  onPipeline,
+  isPipelining,
+  pipelineResult,
 }: {
   item: FeedItem
   selectedPlatforms: string[]
@@ -76,6 +79,9 @@ function FeedCard({
   isGenerating: 'cover' | 'short' | null
   coverUrl: string | null
   shortPlan: ShortPlan | null
+  onPipeline: () => void
+  isPipelining: boolean
+  pipelineResult: { ok: boolean; dry_run?: boolean; stdout?: string; error?: string } | null
 }) {
   const src = sourceLabel(item.source)
   const score = Math.round(item.score * 100)
@@ -167,6 +173,17 @@ function FeedCard({
             </Button>
             <Button
               size="sm"
+              variant="secondary"
+              className="text-xs"
+              disabled={isPipelining}
+              onClick={onPipeline}
+              title="Full pipeline: write article → publish to buildwithabdallah.com → social posts linking your blog URL"
+            >
+              {isPipelining ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Newspaper className="h-3 w-3 mr-1" />}
+              Blog → Social
+            </Button>
+            <Button
+              size="sm"
               variant="ghost"
               className="text-xs"
               disabled={isGenerating !== null}
@@ -186,6 +203,25 @@ function FeedCard({
               Short Script
             </Button>
           </div>
+
+          {/* Pipeline result */}
+          {pipelineResult && (
+            <div className={`rounded-lg border p-2 text-xs ${pipelineResult.ok ? 'bg-emerald-500/5 border-emerald-500/30' : 'bg-red-500/5 border-red-500/30'}`}>
+              <div className="flex items-center gap-1.5 font-medium">
+                {pipelineResult.ok
+                  ? <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                  : <AlertTriangle className="h-3 w-3 text-red-400" />}
+                {pipelineResult.ok
+                  ? (pipelineResult.dry_run ? 'Pipeline dry run complete (nothing published)' : 'Article published + social posts created')
+                  : 'Pipeline failed'}
+              </div>
+              {(pipelineResult.stdout || pipelineResult.error) && (
+                <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap text-muted-foreground">
+                  {pipelineResult.error || pipelineResult.stdout}
+                </pre>
+              )}
+            </div>
+          )}
 
           {/* Generated cover preview */}
           {coverUrl && (
@@ -269,6 +305,8 @@ export default function FeedPage() {
   const [itemCovers, setItemCovers] = useState<Record<string, string>>({})
   const [itemShorts, setItemShorts] = useState<Record<string, ShortPlan>>({})
   const [generating, setGenerating] = useState<{ url: string; what: 'cover' | 'short' } | null>(null)
+  const [pipelineUrl, setPipelineUrl] = useState<string | null>(null)
+  const [pipelineResults, setPipelineResults] = useState<Record<string, { ok: boolean; dry_run?: boolean; stdout?: string; error?: string }>>({})
 
   const feedQuery = useQuery({
     queryKey: ['feed'],
@@ -338,6 +376,23 @@ export default function FeedPage() {
       }
     },
     onError: (err: Error) => { setGenerating(null); toast.error(err.message) },
+  })
+
+  const pipelineMutation = useMutation({
+    mutationFn: (item: FeedItem) => api.runFeedPipeline(item, dryRun),
+    onMutate: (item) => setPipelineUrl(item.url),
+    onSuccess: (data, item) => {
+      setPipelineUrl(null)
+      setPipelineResults((prev) => ({ ...prev, [item.url]: data }))
+      if (data.ok) {
+        toast.success(dryRun
+          ? 'Pipeline dry run complete — nothing published'
+          : 'Article published to your blog + social posts created')
+      } else {
+        toast.error(data.error || 'Pipeline failed — see output on the card')
+      }
+    },
+    onError: (err: Error) => { setPipelineUrl(null); toast.error(err.message) },
   })
 
   function platformsFor(url: string): string[] {
@@ -444,6 +499,9 @@ export default function FeedPage() {
             isGenerating={generating?.url === item.url ? generating.what : null}
             coverUrl={itemCovers[item.url] ?? null}
             shortPlan={itemShorts[item.url] ?? null}
+            onPipeline={() => pipelineMutation.mutate(item)}
+            isPipelining={pipelineUrl === item.url}
+            pipelineResult={pipelineResults[item.url] ?? null}
           />
         ))}
       </div>

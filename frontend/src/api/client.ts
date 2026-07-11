@@ -227,6 +227,12 @@ export const api = {
       { method: 'POST', body: JSON.stringify({ item, platforms, dry_run: dryRun }) }
     ),
 
+  runFeedPipeline: (item: FeedItem, dryRun = true, profile = 'default') =>
+    request<{ ok: boolean; dry_run: boolean; topic?: string; url?: string; stdout?: string; stderr?: string; error?: string; message?: string }>(
+      '/feed/pipeline',
+      { method: 'POST', body: JSON.stringify({ item, dry_run: dryRun, profile }) }
+    ),
+
   generateFeedCover: (item: FeedItem) =>
     request<{ ok: boolean; cover_url?: string; path?: string; provider?: string; error?: string }>(
       '/feed/generate',
