@@ -7,6 +7,7 @@ import {
   CalendarClock,
   BarChart3,
   Globe,
+  Newspaper,
   Settings,
   Bot,
   Bell,
@@ -20,6 +21,7 @@ import { useState } from 'react'
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/feed', label: 'News Feed', icon: Newspaper },
   { to: '/intelligence', label: 'Intelligence', icon: Brain },
   { to: '/drafts', label: 'Drafts', icon: FileText },
   { to: '/social', label: 'Social Drafts', icon: Megaphone },

@@ -130,6 +130,25 @@ export interface IntelligenceSnapshot {
   top_brief?: Brief
 }
 
+export interface FeedItem {
+  title: string
+  url: string
+  source: string
+  published_at: string
+  summary: string
+  score: number
+  matched_interests: string[]
+  reason: string
+}
+
+export interface FeedSnapshot {
+  generated_at: string | null
+  count: number
+  items: FeedItem[]
+  snapshot_file?: string
+  snapshots?: Array<{ name: string; generated_at: string | null; count: number }>
+}
+
 export interface PlatformConnection {
   id: string
   name: string

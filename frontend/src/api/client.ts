@@ -6,6 +6,8 @@ import type {
   CampaignAnalytics,
   ContentDraft,
   CreateDraftResponse,
+  FeedItem,
+  FeedSnapshot,
   GenerateBriefResponse,
   IntelligenceCard,
   IntelligenceFilters,
@@ -207,4 +209,21 @@ export const api = {
 
   getCampaignAnalytics: () =>
     request<{ ok: boolean; campaigns: CampaignAnalytics[] }>('/analytics/campaigns'),
+
+  getFeed: (snapshot?: string) => {
+    const qs = snapshot ? `?snapshot=${encodeURIComponent(snapshot)}` : ''
+    return request<FeedSnapshot & { ok: boolean }>(`/feed${qs}`)
+  },
+
+  runFeed: (dryRun = true, limit = 20) =>
+    request<{ ok: boolean; count: number; items: FeedItem[]; saved: string | null; dry_run: boolean; error?: string }>(
+      '/feed/run',
+      { method: 'POST', body: JSON.stringify({ dry_run: dryRun, limit }) }
+    ),
+
+  publishFeedItem: (item: FeedItem, platforms: string[], dryRun = true) =>
+    request<{ ok: boolean; results: Record<string, { ok: boolean; dry_run?: boolean; draft_id?: string; published_url?: string; error?: string }>; dry_run: boolean; error?: string }>(
+      '/feed/publish',
+      { method: 'POST', body: JSON.stringify({ item, platforms, dry_run: dryRun }) }
+    ),
 }

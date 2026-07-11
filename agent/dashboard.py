@@ -22,6 +22,7 @@ from .config import AgentConfig, ROOT, list_profiles, load_profile
 from .dashboard_automation import register_routes as automation_routes
 from .dashboard_campaigns import register_routes as campaign_routes
 from .dashboard_connections import register_routes as connection_routes
+from .dashboard_feed import register_routes as feed_routes
 from .dashboard_intelligence import register_routes as intelligence_routes
 from .orchestrator import run_agent
 from .prompts import build_goal
@@ -35,6 +36,7 @@ FRONTEND_DIST = ROOT / "frontend" / "dist"
 REACT_ROUTES = {
     "/",
     "/intelligence",
+    "/feed",
     "/drafts",
     "/social",
     "/scheduler",
@@ -357,6 +359,10 @@ def _make_handler():
                 result = connection_routes(path, query)
                 status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
                 return self._send(status, result)
+            if self._is_feed_api(path):
+                result = feed_routes(path, query)
+                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
+                return self._send(status, result)
             if self._is_api_path(path):
                 return self._send(404, {"error": "not found"})
             return self._serve_spa_index()
@@ -380,6 +386,10 @@ def _make_handler():
                 return self._send(status, result)
             if self._is_connections_api(path):
                 result = connection_routes(path, query, body)
+                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
+                return self._send(status, result)
+            if self._is_feed_api(path):
+                result = feed_routes(path, query, body)
                 status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
                 return self._send(status, result)
             if self._is_intelligence_module_api(path):
@@ -429,6 +439,9 @@ def _make_handler():
 
         def _is_connections_api(self, path: str) -> bool:
             return path == "/api/connections" or path == "/api/intelligence/config"
+
+        def _is_feed_api(self, path: str) -> bool:
+            return path == "/api/feed" or path.startswith("/api/feed/")
 
         def _upload(self):
             q = parse_qs(urlparse(self.path).query)

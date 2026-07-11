@@ -23,6 +23,13 @@ AUTOMATIONS_FILE = CONTENT_DIR / "automations.json"
 LOG_FILE = CONTENT_DIR / "automation_log.jsonl"
 
 JOB_DEFAULTS: dict[str, dict[str, Any]] = {
+    "feed_run": {
+        "label": "News Feed Refresh",
+        "description": "Fetch fresh Google News, Hacker News, and Reddit stories into the feed.",
+        "interval_hours": 3,
+        "enabled": False,
+        "dry_run": True,
+    },
     "intelligence_run": {
         "label": "Intelligence Run",
         "description": "Fetch and score fresh stories from all configured sources.",
@@ -155,6 +162,8 @@ def run_job(job_id: str) -> dict[str, Any]:
 
 def _execute_job(job_id: str, dry_run: bool) -> dict[str, Any]:
     try:
+        if job_id == "feed_run":
+            return _job_feed_run(dry_run)
         if job_id == "intelligence_run":
             return _job_intelligence_run(dry_run)
         if job_id == "publish_due":
@@ -167,6 +176,25 @@ def _execute_job(job_id: str, dry_run: bool) -> dict[str, Any]:
     except Exception as exc:
         tb = traceback.format_exc()
         return {"ok": False, "error": f"{job_id} raised: {exc}", "traceback": tb}
+
+
+def _job_feed_run(dry_run: bool) -> dict[str, Any]:
+    """Fetch Google News + HN + Reddit and save to content/feed/."""
+    import sys
+    from pathlib import Path
+    scripts_dir = str(ROOT / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    from .feed import build_feed, save_feed
+    items = build_feed(limit=20, use_llm=not dry_run)
+    if not dry_run:
+        save_feed(items)
+    return {
+        "ok": True,
+        "message": f"Feed refresh: {len(items)} items {'(dry run — not saved)' if dry_run else 'saved'}",
+        "count": len(items),
+        "dry_run": dry_run,
+    }
 
 
 def _job_intelligence_run(dry_run: bool) -> dict[str, Any]:

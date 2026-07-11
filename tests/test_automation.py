@@ -28,7 +28,7 @@ def test_list_automations_returns_all_defaults(tmp_path, monkeypatch):
     auto = _patch_paths(tmp_path, monkeypatch)
     jobs = auto.list_automations()
     job_ids = {j["job_id"] for j in jobs}
-    assert job_ids == {"intelligence_run", "publish_due", "analytics_sync", "auto_draft"}
+    assert job_ids == {"feed_run", "intelligence_run", "publish_due", "analytics_sync", "auto_draft"}
 
 
 def test_all_jobs_default_disabled_and_dry_run(tmp_path, monkeypatch):

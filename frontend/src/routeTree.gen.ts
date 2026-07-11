@@ -14,6 +14,7 @@ import { Route as SocialRouteImport } from './routes/social'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SchedulerRouteImport } from './routes/scheduler'
 import { Route as IntelligenceRouteImport } from './routes/intelligence'
+import { Route as FeedRouteImport } from './routes/feed'
 import { Route as DraftsRouteImport } from './routes/drafts'
 import { Route as AssistantRouteImport } from './routes/assistant'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
@@ -44,6 +45,11 @@ const IntelligenceRoute = IntelligenceRouteImport.update({
   path: '/intelligence',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FeedRoute = FeedRouteImport.update({
+  id: '/feed',
+  path: '/feed',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DraftsRoute = DraftsRouteImport.update({
   id: '/drafts',
   path: '/drafts',
@@ -70,6 +76,7 @@ export interface FileRoutesByFullPath {
   '/analytics': typeof AnalyticsRoute
   '/assistant': typeof AssistantRoute
   '/drafts': typeof DraftsRoute
+  '/feed': typeof FeedRoute
   '/intelligence': typeof IntelligenceRoute
   '/scheduler': typeof SchedulerRoute
   '/settings': typeof SettingsRoute
@@ -81,6 +88,7 @@ export interface FileRoutesByTo {
   '/analytics': typeof AnalyticsRoute
   '/assistant': typeof AssistantRoute
   '/drafts': typeof DraftsRoute
+  '/feed': typeof FeedRoute
   '/intelligence': typeof IntelligenceRoute
   '/scheduler': typeof SchedulerRoute
   '/settings': typeof SettingsRoute
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/analytics': typeof AnalyticsRoute
   '/assistant': typeof AssistantRoute
   '/drafts': typeof DraftsRoute
+  '/feed': typeof FeedRoute
   '/intelligence': typeof IntelligenceRoute
   '/scheduler': typeof SchedulerRoute
   '/settings': typeof SettingsRoute
@@ -106,6 +115,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/assistant'
     | '/drafts'
+    | '/feed'
     | '/intelligence'
     | '/scheduler'
     | '/settings'
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/assistant'
     | '/drafts'
+    | '/feed'
     | '/intelligence'
     | '/scheduler'
     | '/settings'
@@ -128,6 +139,7 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/assistant'
     | '/drafts'
+    | '/feed'
     | '/intelligence'
     | '/scheduler'
     | '/settings'
@@ -140,6 +152,7 @@ export interface RootRouteChildren {
   AnalyticsRoute: typeof AnalyticsRoute
   AssistantRoute: typeof AssistantRoute
   DraftsRoute: typeof DraftsRoute
+  FeedRoute: typeof FeedRoute
   IntelligenceRoute: typeof IntelligenceRoute
   SchedulerRoute: typeof SchedulerRoute
   SettingsRoute: typeof SettingsRoute
@@ -184,6 +197,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IntelligenceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/feed': {
+      id: '/feed'
+      path: '/feed'
+      fullPath: '/feed'
+      preLoaderRoute: typeof FeedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/drafts': {
       id: '/drafts'
       path: '/drafts'
@@ -220,6 +240,7 @@ const rootRouteChildren: RootRouteChildren = {
   AnalyticsRoute: AnalyticsRoute,
   AssistantRoute: AssistantRoute,
   DraftsRoute: DraftsRoute,
+  FeedRoute: FeedRoute,
   IntelligenceRoute: IntelligenceRoute,
   SchedulerRoute: SchedulerRoute,
   SettingsRoute: SettingsRoute,
