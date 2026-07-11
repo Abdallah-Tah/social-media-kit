@@ -58,12 +58,17 @@ def _publish_linkedin(draft: dict[str, Any], dry_run: bool = False) -> dict[str,
         return _result(True, published_url="https://linkedin.com/dry-run", dry_run=True)
     try:
         import linkedin_poster
+        import linkedin_policy
+        # smkit social posts count as dev-news for the daily LinkedIn policy.
+        ok, reason = linkedin_policy.allowed("news")
+        if not ok:
+            return _result(False, error=reason)
         text = _strip_markdown(draft.get("text", ""))
-        result = linkedin_poster.post_text(text)
+        result = linkedin_poster.post_text(text, post_kind="news")
         if result and result.get("id"):
             urn = result.get("id")
             return _result(True, published_url=f"https://www.linkedin.com/feed/update/{urn}")
-        return _result(False, error="LinkedIn personal post returned no id")
+        return _result(False, error="LinkedIn post failed — check LINKEDIN_ACCESS_TOKEN (expired?) in Sources → Connections")
     except Exception as exc:
         return _result(False, error=f"LinkedIn error: {exc}")
 

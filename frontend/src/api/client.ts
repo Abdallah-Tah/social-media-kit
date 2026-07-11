@@ -226,4 +226,28 @@ export const api = {
       '/feed/publish',
       { method: 'POST', body: JSON.stringify({ item, platforms, dry_run: dryRun }) }
     ),
+
+  generateFeedCover: (item: FeedItem) =>
+    request<{ ok: boolean; cover_url?: string; path?: string; provider?: string; error?: string }>(
+      '/feed/generate',
+      { method: 'POST', body: JSON.stringify({ item, what: 'cover' }) }
+    ),
+
+  generateFeedShort: (item: FeedItem) =>
+    request<{
+      ok: boolean
+      plan_path?: string
+      hook?: string
+      voiceover?: string
+      captions?: string[]
+      scenes?: Array<{ kind?: string; title?: string; caption?: string }>
+      publish_metadata?: Record<string, unknown>
+      error?: string
+    }>('/feed/generate', { method: 'POST', body: JSON.stringify({ item, what: 'short' }) }),
+
+  saveConnectionSecrets: (values: Record<string, string>) =>
+    request<{ ok: boolean; saved?: string[]; rejected?: string[]; connections?: PlatformConnection[]; error?: string }>(
+      '/connections/save',
+      { method: 'POST', body: JSON.stringify({ values }) }
+    ),
 }

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   Globe, CheckCircle2, XCircle, RefreshCw, Save, AlertTriangle, Loader2,
+  KeyRound, ChevronDown, ChevronUp,
 } from 'lucide-react'
 
 import { api } from '@/api/client'
@@ -10,42 +11,114 @@ import type { IntelligenceSourceConfig, PlatformConnection } from '@/api/models'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
 
 function ConnectionCard({ conn }: { conn: PlatformConnection }) {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [values, setValues] = useState<Record<string, string>>({})
+
+  const saveMutation = useMutation({
+    mutationFn: () => {
+      const filled = Object.fromEntries(Object.entries(values).filter(([, v]) => v.trim()))
+      return api.saveConnectionSecrets(filled)
+    },
+    onSuccess: (data) => {
+      if (data.ok) {
+        toast.success(`Saved: ${(data.saved || []).join(', ')}`)
+        setValues({})
+        setOpen(false)
+        qc.invalidateQueries({ queryKey: ['connections'] })
+      } else {
+        toast.error(data.error || 'Save failed')
+      }
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
+  const hasEnvVars = conn.env_vars.length > 0
+  const anyFilled = Object.values(values).some((v) => v.trim())
+
   return (
-    <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          {conn.connected
-            ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
-            : <XCircle className="h-4 w-4 shrink-0 text-red-400" />}
-          <span className="font-medium">{conn.name}</span>
-          <Badge variant="outline" className={conn.connected ? 'border-emerald-500 text-emerald-400' : 'border-red-500 text-red-400'}>
-            {conn.connected ? 'connected' : 'not connected'}
-          </Badge>
+    <div className="rounded-lg border p-4 space-y-3">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            {conn.connected
+              ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+              : <XCircle className="h-4 w-4 shrink-0 text-red-400" />}
+            <span className="font-medium">{conn.name}</span>
+            <Badge variant="outline" className={conn.connected ? 'border-emerald-500 text-emerald-400' : 'border-red-500 text-red-400'}>
+              {conn.connected ? 'connected' : 'not connected'}
+            </Badge>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">{conn.description}</p>
+          {!conn.connected && conn.missing_vars.length > 0 && (
+            <p className="mt-1 text-xs text-red-400">
+              <AlertTriangle className="inline h-3 w-3 mr-1" />
+              Missing: {conn.missing_vars.join(', ')}
+            </p>
+          )}
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">{conn.description}</p>
-        {!conn.connected && conn.missing_vars.length > 0 && (
-          <p className="mt-1 text-xs text-red-400">
-            <AlertTriangle className="inline h-3 w-3 mr-1" />
-            Missing: {conn.missing_vars.join(', ')} in config/secrets.env
-          </p>
-        )}
-      </div>
-      <div className="text-right text-xs text-muted-foreground shrink-0">
-        {conn.last_publish_status && (
-          <>
-            <div className={conn.last_publish_status === 'published' ? 'text-emerald-400' : 'text-red-400'}>
-              Last: {conn.last_publish_status}
-            </div>
-            {conn.last_publish_at && (
-              <div>{new Date(conn.last_publish_at).toLocaleDateString()}</div>
+        <div className="flex flex-col items-end gap-2 shrink-0">
+          <div className="text-right text-xs text-muted-foreground">
+            {conn.last_publish_status && (
+              <>
+                <div className={conn.last_publish_status === 'published' ? 'text-emerald-400' : 'text-red-400'}>
+                  Last: {conn.last_publish_status}
+                </div>
+                {conn.last_publish_at && (
+                  <div>{new Date(conn.last_publish_at).toLocaleDateString()}</div>
+                )}
+              </>
             )}
-          </>
-        )}
+          </div>
+          {hasEnvVars && (
+            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setOpen(!open)}>
+              <KeyRound className="h-3 w-3 mr-1" />
+              Credentials
+              {open ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
+            </Button>
+          )}
+        </div>
       </div>
+
+      {open && hasEnvVars && (
+        <div className="border-t pt-3 space-y-2">
+          {conn.env_vars.map((envVar) => (
+            <label key={envVar} className="block space-y-1">
+              <span className="text-xs text-muted-foreground font-mono">
+                {envVar}
+                {conn.missing_vars.includes(envVar)
+                  ? <span className="text-red-400 ml-1">(missing)</span>
+                  : <span className="text-emerald-400 ml-1">(set — leave blank to keep)</span>}
+              </span>
+              <Input
+                type="password"
+                autoComplete="off"
+                placeholder={conn.missing_vars.includes(envVar) ? 'Paste value…' : '••••••••  (unchanged)'}
+                value={values[envVar] ?? ''}
+                onChange={(e) => setValues((prev) => ({ ...prev, [envVar]: e.target.value }))}
+                className="h-8 text-xs font-mono"
+              />
+            </label>
+          ))}
+          <div className="flex items-center gap-2 pt-1">
+            <Button
+              size="sm"
+              className="h-7 text-xs"
+              disabled={!anyFilled || saveMutation.isPending}
+              onClick={() => saveMutation.mutate()}
+            >
+              {saveMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
+              Save to secrets.env
+            </Button>
+            <span className="text-xs text-muted-foreground">Stored locally, never committed to git.</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

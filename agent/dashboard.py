@@ -350,7 +350,9 @@ def _make_handler():
             if path == "/api/files":
                 return self._send(200, list_files())
             if path == "/api/file":
-                rel = parse_qs(urlparse(self.path).query).get("path", [""])[0]
+                q = parse_qs(urlparse(self.path).query)
+                rel = q.get("path", [""])[0]
+                inline = q.get("inline", ["0"])[0] == "1"
                 target = resolve_content_path(rel)
                 if not target:
                     return self._send(404, {"error": "not found"})
@@ -358,8 +360,9 @@ def _make_handler():
                 ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
                 self.send_response(200)
                 self.send_header("Content-Type", ctype)
-                self.send_header("Content-Disposition",
-                                 f'attachment; filename="{target.name}"')
+                if not inline:
+                    self.send_header("Content-Disposition",
+                                     f'attachment; filename="{target.name}"')
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
@@ -439,7 +442,11 @@ def _make_handler():
             return path == "/api/campaigns" or path.startswith("/api/campaigns/")
 
         def _is_connections_api(self, path: str) -> bool:
-            return path == "/api/connections" or path == "/api/intelligence/config"
+            return (
+                path == "/api/connections"
+                or path.startswith("/api/connections/")
+                or path == "/api/intelligence/config"
+            )
 
         def _is_feed_api(self, path: str) -> bool:
             return path == "/api/feed" or path.startswith("/api/feed/")

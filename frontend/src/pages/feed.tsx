@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import {
   Newspaper, RefreshCw, ExternalLink, Send, CheckCircle2,
   AlertTriangle, Loader2, Zap, TrendingUp, Clock,
+  ImageIcon, Clapperboard, Copy,
 } from 'lucide-react'
 
 import { api } from '@/api/client'
@@ -43,6 +44,14 @@ function fmtAge(iso: string) {
   return `${Math.floor(diff / 86400)}d ago`
 }
 
+interface ShortPlan {
+  plan_path?: string
+  hook?: string
+  voiceover?: string
+  captions?: string[]
+  scenes?: Array<{ kind?: string; title?: string; caption?: string }>
+}
+
 function FeedCard({
   item,
   selectedPlatforms,
@@ -50,6 +59,11 @@ function FeedCard({
   onPublish,
   isPublishing,
   lastResult,
+  onGenerateCover,
+  onGenerateShort,
+  isGenerating,
+  coverUrl,
+  shortPlan,
 }: {
   item: FeedItem
   selectedPlatforms: string[]
@@ -57,6 +71,11 @@ function FeedCard({
   onPublish: (dryRun: boolean) => void
   isPublishing: boolean
   lastResult: Record<string, { ok: boolean; dry_run?: boolean; published_url?: string; error?: string }> | null
+  onGenerateCover: () => void
+  onGenerateShort: () => void
+  isGenerating: 'cover' | 'short' | null
+  coverUrl: string | null
+  shortPlan: ShortPlan | null
 }) {
   const src = sourceLabel(item.source)
   const score = Math.round(item.score * 100)
@@ -126,7 +145,7 @@ function FeedCard({
           </div>
 
           {/* Action buttons */}
-          <div className="flex gap-2 pt-1">
+          <div className="flex flex-wrap gap-2 pt-1">
             <Button
               size="sm"
               variant="outline"
@@ -146,7 +165,71 @@ function FeedCard({
               {isPublishing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Send className="h-3 w-3 mr-1" />}
               Post Now
             </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-xs"
+              disabled={isGenerating !== null}
+              onClick={onGenerateCover}
+            >
+              {isGenerating === 'cover' ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <ImageIcon className="h-3 w-3 mr-1" />}
+              Cover
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-xs"
+              disabled={isGenerating !== null}
+              onClick={onGenerateShort}
+            >
+              {isGenerating === 'short' ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Clapperboard className="h-3 w-3 mr-1" />}
+              Short Script
+            </Button>
           </div>
+
+          {/* Generated cover preview */}
+          {coverUrl && (
+            <img src={coverUrl} alt="Generated cover" className="w-full rounded-lg border object-cover" style={{ aspectRatio: '16/9' }} />
+          )}
+
+          {/* Generated Short script */}
+          {shortPlan && (
+            <div className="rounded-lg border bg-muted/20 p-3 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-medium flex items-center gap-1">
+                  <Clapperboard className="h-3 w-3" />YouTube Short Script
+                </span>
+                <button
+                  type="button"
+                  className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    const text = `HOOK: ${shortPlan.hook}\n\nVOICEOVER:\n${shortPlan.voiceover}\n\nCAPTIONS:\n${(shortPlan.captions || []).join('\n')}`
+                    navigator.clipboard.writeText(text)
+                    toast.success('Script copied')
+                  }}
+                >
+                  <Copy className="h-3 w-3" />Copy
+                </button>
+              </div>
+              {shortPlan.hook && <p><strong>Hook:</strong> {shortPlan.hook}</p>}
+              {shortPlan.voiceover && (
+                <p className="text-muted-foreground"><strong className="text-foreground">Voiceover:</strong> {shortPlan.voiceover}</p>
+              )}
+              {(shortPlan.scenes?.length ?? 0) > 0 && (
+                <div>
+                  <strong>Scenes:</strong>
+                  <ol className="ml-4 mt-1 list-decimal space-y-0.5 text-muted-foreground">
+                    {shortPlan.scenes!.map((s, i) => (
+                      <li key={i}>{s.title || s.kind}{s.caption ? ` — ${s.caption}` : ''}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+              {shortPlan.plan_path && (
+                <p className="text-muted-foreground">Saved: <code>{shortPlan.plan_path}</code></p>
+              )}
+            </div>
+          )}
 
           {/* Results */}
           {lastResult && (
@@ -183,6 +266,9 @@ export default function FeedPage() {
   const [itemPlatforms, setItemPlatforms] = useState<Record<string, string[]>>({})
   const [itemResults, setItemResults] = useState<Record<string, Record<string, any>>>({})
   const [publishingUrl, setPublishingUrl] = useState<string | null>(null)
+  const [itemCovers, setItemCovers] = useState<Record<string, string>>({})
+  const [itemShorts, setItemShorts] = useState<Record<string, ShortPlan>>({})
+  const [generating, setGenerating] = useState<{ url: string; what: 'cover' | 'short' } | null>(null)
 
   const feedQuery = useQuery({
     queryKey: ['feed'],
@@ -222,6 +308,36 @@ export default function FeedPage() {
       }
     },
     onError: (err: Error) => { setPublishingUrl(null); toast.error(err.message) },
+  })
+
+  const coverMutation = useMutation({
+    mutationFn: (item: FeedItem) => api.generateFeedCover(item),
+    onMutate: (item) => setGenerating({ url: item.url, what: 'cover' }),
+    onSuccess: (data, item) => {
+      setGenerating(null)
+      if (data.ok && data.cover_url) {
+        setItemCovers((prev) => ({ ...prev, [item.url]: data.cover_url! }))
+        toast.success(`Cover generated (${data.provider || 'local'})`)
+      } else {
+        toast.error(data.error || 'Cover generation failed')
+      }
+    },
+    onError: (err: Error) => { setGenerating(null); toast.error(err.message) },
+  })
+
+  const shortMutation = useMutation({
+    mutationFn: (item: FeedItem) => api.generateFeedShort(item),
+    onMutate: (item) => setGenerating({ url: item.url, what: 'short' }),
+    onSuccess: (data, item) => {
+      setGenerating(null)
+      if (data.ok) {
+        setItemShorts((prev) => ({ ...prev, [item.url]: data }))
+        toast.success('Short script ready')
+      } else {
+        toast.error(data.error || 'Short script failed')
+      }
+    },
+    onError: (err: Error) => { setGenerating(null); toast.error(err.message) },
   })
 
   function platformsFor(url: string): string[] {
@@ -323,6 +439,11 @@ export default function FeedPage() {
             onPublish={(isD) => publishMutation.mutate({ item, platforms: platformsFor(item.url), dry_run: isD ?? dryRun })}
             isPublishing={publishingUrl === item.url}
             lastResult={itemResults[item.url] ?? null}
+            onGenerateCover={() => coverMutation.mutate(item)}
+            onGenerateShort={() => shortMutation.mutate(item)}
+            isGenerating={generating?.url === item.url ? generating.what : null}
+            coverUrl={itemCovers[item.url] ?? null}
+            shortPlan={itemShorts[item.url] ?? null}
           />
         ))}
       </div>

@@ -90,6 +90,16 @@ def register_routes(
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    if path == "/api/feed/generate":
+        # Generate a cover image or a YouTube Short script from a feed item.
+        item = (body or {}).get("item", {})
+        what = (body or {}).get("what", "")
+        if not item or what not in ("cover", "short"):
+            return {"ok": False, "error": "item and what=cover|short are required"}
+        if what == "cover":
+            return _generate_feed_cover(item)
+        return _generate_feed_short(item)
+
     if path == "/api/feed/publish":
         # Create social drafts from a feed item and optionally publish immediately.
         item = (body or {}).get("item", {})
@@ -100,6 +110,69 @@ def register_routes(
         return _publish_feed_item(item, platforms, dry_run)
 
     return {"error": "not found"}
+
+
+def _generate_feed_cover(item: dict[str, Any]) -> dict[str, Any]:
+    """Generate a branded cover image for a feed story."""
+    _ensure_scripts_path()
+    try:
+        import datetime as dt
+        from image_generator import generate_cover
+
+        title = item.get("title", "Untitled")
+        assets_dir = ROOT / "content" / "assets"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        slug = "".join(c if c.isalnum() else "-" for c in title.lower())[:50].strip("-")
+        out_path = assets_dir / f"{dt.date.today().isoformat()}_feed-{slug or 'story'}.png"
+        result = generate_cover(
+            title,
+            out_path=str(out_path),
+            branding={"accent_color": "#2563eb"},
+        )
+        if not result:
+            return {"ok": False, "error": "cover generation failed"}
+        url = result.get("url") or ""
+        rel_path = str(Path(result["path"]).relative_to(ROOT)) if result.get("path") else ""
+        return {
+            "ok": True,
+            "cover_url": url or (f"/api/file?path={rel_path}&inline=1" if rel_path else ""),
+            "path": rel_path,
+            "provider": result.get("provider", ""),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": f"cover generation failed: {exc}"}
+
+
+def _generate_feed_short(item: dict[str, Any]) -> dict[str, Any]:
+    """Plan a YouTube Short script from a feed story (script only, no render)."""
+    _ensure_scripts_path()
+    try:
+        from .shorts import Article, plan_short, slugify
+
+        title = item.get("title", "Untitled")
+        summary = item.get("summary", "") or title
+        url = item.get("url", "")
+        body = f"# {title}\n\n{summary}\n\nSource: {item.get('source', '')}\n{url}\n"
+        article = Article(slug=slugify(title), title=title, body=body, url=url)
+        plans_dir = ROOT / "content" / "shorts_plans"
+        plans_dir.mkdir(parents=True, exist_ok=True)
+        plan_path = plans_dir / f"{article.slug}.json"
+        plan = plan_short(article, out_path=plan_path)
+        return {
+            "ok": True,
+            "plan_path": str(plan_path.relative_to(ROOT)),
+            "hook": plan.get("hook", ""),
+            "voiceover": plan.get("voiceover", ""),
+            "captions": plan.get("captions", []),
+            "scenes": [
+                {"kind": s.get("kind"), "title": s.get("title"), "caption": s.get("caption")}
+                for s in plan.get("scenes", [])
+            ],
+            "publish_metadata": plan.get("publish_metadata", {}),
+            "render_hint": f"/usr/bin/python3 -m agent.cli — or render via: agent.shorts.render_short('{plan_path.relative_to(ROOT)}')",
+        }
+    except Exception as exc:
+        return {"ok": False, "error": f"short planning failed: {exc}"}
 
 
 def _publish_feed_item(item: dict[str, Any], platforms: list[str], dry_run: bool) -> dict[str, Any]:

@@ -49,6 +49,57 @@ def _last_publish_for(platform_id: str) -> dict[str, Any]:
     }
 
 
+SECRETS_FILE = ROOT / "config" / "secrets.env"
+
+# Every env var the settings UI is allowed to write. Anything else is rejected.
+_ALLOWED_SECRET_KEYS: set[str] = {
+    v for spec in PLATFORM_SPECS for v in spec["env_vars"]
+} | {
+    "FB_PAGE_ID", "X_ACCESS_TOKEN", "X_ACCESS_SECRET", "X_BEARER_TOKEN",
+    "LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET", "LINKEDIN_PERSON_ID",
+    "YOUTUBE_CLIENT_SECRET", "REDDIT_USERNAME", "REDDIT_PASSWORD",
+    "BLOG_API_USER",
+}
+
+
+def save_platform_secrets(values: dict[str, str]) -> dict[str, Any]:
+    """Write credential values into config/secrets.env and the live process env.
+
+    Only whitelisted keys are accepted. Empty values are ignored (never used
+    to blank an existing secret). Existing KEY= lines are updated in place;
+    new keys are appended. Values are never returned or logged.
+    """
+    accepted = {
+        k: v.strip() for k, v in values.items()
+        if k in _ALLOWED_SECRET_KEYS and isinstance(v, str) and v.strip()
+    }
+    rejected = [k for k in values if k not in _ALLOWED_SECRET_KEYS]
+    if not accepted:
+        return {"ok": False, "error": "no valid credential keys provided", "rejected": rejected}
+
+    SECRETS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    lines = SECRETS_FILE.read_text(encoding="utf-8").splitlines() if SECRETS_FILE.exists() else []
+
+    remaining = dict(accepted)
+    out_lines: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        key = stripped.split("=", 1)[0].strip() if "=" in stripped and not stripped.startswith("#") else None
+        if key in remaining:
+            out_lines.append(f"{key}={remaining.pop(key)}")
+        else:
+            out_lines.append(line)
+    for key, value in remaining.items():
+        out_lines.append(f"{key}={value}")
+    SECRETS_FILE.write_text("\n".join(out_lines) + "\n", encoding="utf-8")
+
+    # Update the running process so publishing works without a restart.
+    for key, value in accepted.items():
+        os.environ[key] = value
+
+    return {"ok": True, "saved": sorted(accepted.keys()), "rejected": rejected}
+
+
 def check_connections() -> list[dict[str, Any]]:
     load_env()
     results = []
