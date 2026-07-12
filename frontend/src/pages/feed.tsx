@@ -68,6 +68,8 @@ function FeedCard({
   isPipelining,
   pipelineResult,
   onYouTube,
+  onYouTubeUpload,
+  onYouTubeRegenerate,
   youtubeBusy,
   youtubeResult,
 }: {
@@ -86,8 +88,10 @@ function FeedCard({
   isPipelining: boolean
   pipelineResult: { ok: boolean; dry_run?: boolean; stdout?: string; error?: string } | null
   onYouTube: (mode: 'short' | 'video') => void
+  onYouTubeUpload: (mode: 'short' | 'video') => void
+  onYouTubeRegenerate: (mode: 'short' | 'video') => void
   youtubeBusy: 'short' | 'video' | null
-  youtubeResult: { ok: boolean; dry_run?: boolean; mode?: string; url?: string; video?: string; message?: string; error?: string } | null
+  youtubeResult: { ok: boolean; dry_run?: boolean; mode?: string; url?: string; video?: string; video_url?: string; message?: string; error?: string } | null
 }) {
   const src = sourceLabel(item.source)
   const score = Math.round(item.score * 100)
@@ -240,7 +244,7 @@ function FeedCard({
             </p>
           )}
           {youtubeResult && (
-            <div className={`rounded-lg border p-2 text-xs ${youtubeResult.ok ? 'bg-emerald-500/5 border-emerald-500/30' : 'bg-red-500/5 border-red-500/30'}`}>
+            <div className={`rounded-lg border p-2 text-xs space-y-2 ${youtubeResult.ok ? 'bg-emerald-500/5 border-emerald-500/30' : 'bg-red-500/5 border-red-500/30'}`}>
               {youtubeResult.ok ? (
                 youtubeResult.url ? (
                   <p>
@@ -249,10 +253,40 @@ function FeedCard({
                     <a href={youtubeResult.url} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">{youtubeResult.url}</a>
                   </p>
                 ) : (
-                  <p>
-                    <CheckCircle2 className="inline h-3 w-3 text-emerald-400 mr-1" />
-                    {youtubeResult.message || 'Rendered'} — video: <code>{youtubeResult.video}</code>
-                  </p>
+                  <>
+                    <p>
+                      <CheckCircle2 className="inline h-3 w-3 text-emerald-400 mr-1" />
+                      {youtubeResult.message || 'Rendered'}
+                    </p>
+                    {youtubeResult.video_url && (
+                      <video
+                        controls
+                        preload="metadata"
+                        className="w-full max-w-[240px] rounded-lg border mx-auto"
+                        src={youtubeResult.video_url}
+                      />
+                    )}
+                    <div className="flex gap-1.5">
+                      <Button
+                        size="sm"
+                        className="flex-1 text-xs"
+                        disabled={youtubeBusy !== null}
+                        onClick={() => onYouTubeUpload((youtubeResult.mode as 'short' | 'video') || 'short')}
+                      >
+                        {youtubeBusy ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Send className="h-3 w-3 mr-1" />}
+                        Upload to YouTube (live)
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs"
+                        disabled={youtubeBusy !== null}
+                        onClick={() => onYouTubeRegenerate((youtubeResult.mode as 'short' | 'video') || 'short')}
+                      >
+                        Regenerate
+                      </Button>
+                    </div>
+                  </>
                 )
               ) : (
                 <p><AlertTriangle className="inline h-3 w-3 text-red-400 mr-1" />{youtubeResult.error}</p>
@@ -364,7 +398,7 @@ export default function FeedPage() {
   const [pipelineUrl, setPipelineUrl] = useState<string | null>(null)
   const [pipelineResults, setPipelineResults] = useState<Record<string, { ok: boolean; dry_run?: boolean; stdout?: string; error?: string }>>({})
   const [youtubeBusy, setYoutubeBusy] = useState<{ url: string; mode: 'short' | 'video' } | null>(null)
-  const [youtubeResults, setYoutubeResults] = useState<Record<string, { ok: boolean; dry_run?: boolean; mode?: string; url?: string; video?: string; message?: string; error?: string }>>({})
+  const [youtubeResults, setYoutubeResults] = useState<Record<string, { ok: boolean; dry_run?: boolean; mode?: string; url?: string; video?: string; video_url?: string; message?: string; error?: string }>>({})
 
   const feedQuery = useQuery({
     queryKey: ['feed'],
@@ -454,8 +488,8 @@ export default function FeedPage() {
   })
 
   const youtubeMutation = useMutation({
-    mutationFn: ({ item, mode }: { item: FeedItem; mode: 'short' | 'video' }) =>
-      api.postFeedYouTube(item, mode, dryRun),
+    mutationFn: ({ item, mode, live, force }: { item: FeedItem; mode: 'short' | 'video'; live?: boolean; force?: boolean }) =>
+      api.postFeedYouTube(item, mode, live ? false : dryRun, force ?? false),
     onMutate: ({ item, mode }) => setYoutubeBusy({ url: item.url, mode }),
     onSuccess: (data, { item }) => {
       setYoutubeBusy(null)
@@ -575,6 +609,8 @@ export default function FeedPage() {
             isPipelining={pipelineUrl === item.url}
             pipelineResult={pipelineResults[item.url] ?? null}
             onYouTube={(mode) => youtubeMutation.mutate({ item, mode })}
+            onYouTubeUpload={(mode) => youtubeMutation.mutate({ item, mode, live: true })}
+            onYouTubeRegenerate={(mode) => youtubeMutation.mutate({ item, mode, force: true })}
             youtubeBusy={youtubeBusy?.url === item.url ? youtubeBusy.mode : null}
             youtubeResult={youtubeResults[item.url] ?? null}
           />

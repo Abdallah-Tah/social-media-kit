@@ -233,10 +233,10 @@ export const api = {
       { method: 'POST', body: JSON.stringify({ item, dry_run: dryRun, profile }) }
     ),
 
-  postFeedYouTube: (item: FeedItem, mode: 'short' | 'video', dryRun = true) =>
-    request<{ ok: boolean; dry_run?: boolean; mode?: string; url?: string; video?: string; title?: string; message?: string; error?: string }>(
+  postFeedYouTube: (item: FeedItem, mode: 'short' | 'video', dryRun = true, force = false) =>
+    request<{ ok: boolean; dry_run?: boolean; mode?: string; url?: string; video?: string; video_url?: string; title?: string; message?: string; error?: string }>(
       '/feed/youtube',
-      { method: 'POST', body: JSON.stringify({ item, mode, dry_run: dryRun }) }
+      { method: 'POST', body: JSON.stringify({ item, mode, dry_run: dryRun, force }) }
     ),
 
   generateFeedCover: (item: FeedItem) =>

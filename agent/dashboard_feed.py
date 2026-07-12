@@ -128,9 +128,10 @@ def register_routes(
         item = (body or {}).get("item", {})
         mode = (body or {}).get("mode", "short")
         dry_run = (body or {}).get("dry_run", True)
+        force = bool((body or {}).get("force", False))
         if not item.get("title") or mode not in ("short", "video"):
             return {"ok": False, "error": "item with title and mode=short|video are required"}
-        return _post_feed_youtube(item, mode, dry_run)
+        return _post_feed_youtube(item, mode, dry_run, force=force)
 
     if path == "/api/feed/publish":
         # Create social drafts from a feed item and optionally publish immediately.
@@ -207,7 +208,7 @@ def _generate_feed_short(item: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": f"short planning failed: {exc}"}
 
 
-def _post_feed_youtube(item: dict[str, Any], mode: str, dry_run: bool) -> dict[str, Any]:
+def _post_feed_youtube(item: dict[str, Any], mode: str, dry_run: bool, force: bool = False) -> dict[str, Any]:
     """Render a story's Short plan to MP4 and (when live) upload to YouTube.
 
     Reuses an existing plan from content/shorts_plans/ when present so the
@@ -226,14 +227,21 @@ def _post_feed_youtube(item: dict[str, Any], mode: str, dry_run: bool) -> dict[s
         plans_dir.mkdir(parents=True, exist_ok=True)
         plan_path = plans_dir / f"{slug}.json"
 
-        if not plan_path.exists():
+        if force or not plan_path.exists():
+            # force=True regenerates the script from the story, then re-renders.
             summary = item.get("summary", "") or title
             body = f"# {title}\n\n{summary}\n\nSource: {item.get('source', '')}\n{item.get('url', '')}\n"
             plan_short(Article(slug=slug, title=title, body=body, url=item.get("url", "")), out_path=plan_path)
 
-        # Render (Playwright scenes + TTS + ffmpeg — takes a few minutes on the Pi).
-        meta = render_short(plan_path)
-        video = meta.get("video", "")
+        # Reuse an existing render when it's newer than the plan (so the
+        # preview→upload flow doesn't re-render); otherwise render now
+        # (Playwright scenes + TTS + ffmpeg — takes a few minutes on the Pi).
+        existing = ROOT / "content" / "assets" / "shorts" / slug / f"{slug}.mp4"
+        if not force and existing.exists() and existing.stat().st_mtime >= plan_path.stat().st_mtime:
+            video = str(existing)
+        else:
+            meta = render_short(plan_path)
+            video = meta.get("video", "")
         if not video or not Path(video).exists():
             return {"ok": False, "error": "render produced no video"}
 
@@ -249,13 +257,15 @@ def _post_feed_youtube(item: dict[str, Any], mode: str, dry_run: bool) -> dict[s
             tags = [t for t in tags if t.lower() != "shorts"]
 
         if dry_run:
+            rel = str(Path(video).relative_to(ROOT))
             return {
                 "ok": True,
                 "dry_run": True,
                 "mode": mode,
-                "video": str(Path(video).relative_to(ROOT)),
+                "video": rel,
+                "video_url": f"/api/file?path={rel}&inline=1",
                 "title": yt_title,
-                "message": "Rendered only — flip to live mode to upload.",
+                "message": "Rendered — preview below, then click Upload.",
             }
 
         cmd = [
