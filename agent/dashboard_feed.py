@@ -176,6 +176,84 @@ def _generate_feed_cover(item: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": f"cover generation failed: {exc}"}
 
 
+def _resolve_google_news_url(url: str) -> str:
+    """Resolve a news.google.com/rss/articles/<id> link to the publisher URL
+    via Google's batchexecute endpoint. Returns the input URL on failure."""
+    if "news.google.com" not in url or "/articles/" not in url:
+        return url
+    try:
+        import json as _json
+        import re
+        import urllib.parse
+        import urllib.request
+
+        gid = url.split("/articles/")[1].split("?")[0]
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        page = urllib.request.urlopen(req, timeout=20).read().decode("utf-8", "replace")
+        sg = re.search(r'data-n-a-sg="([^"]+)"', page)
+        ts = re.search(r'data-n-a-ts="([^"]+)"', page)
+        if not (sg and ts):
+            return url
+        payload = [
+            "Fbv4je",
+            f'["garturlreq",[["X","X",["X","X"],null,null,1,1,"US:en",null,1,null,null,null,null,null,0,1],'
+            f'"X","X",1,[1,1,1],1,1,null,0,0,null,0],"{gid}",{ts.group(1)},"{sg.group(1)}"]',
+        ]
+        body = "f.req=" + urllib.parse.quote(_json.dumps([[payload]]))
+        req2 = urllib.request.Request(
+            "https://news.google.com/_/DotsSplashUi/data/batchexecute",
+            data=body.encode(),
+            headers={"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8", "User-Agent": "Mozilla/5.0"},
+        )
+        resp = urllib.request.urlopen(req2, timeout=20).read().decode("utf-8", "replace")
+        m = re.search(r'https?://(?!news\.google)[^"\\]+', resp)
+        return m.group(0) if m else url
+    except Exception:
+        return url
+
+
+def _fetch_story_text(url: str, max_chars: int = 6000) -> str:
+    """Best-effort fetch of a story's readable text so the Short planner has
+    real content, not just a headline. Returns "" on any failure."""
+    if not url:
+        return ""
+    try:
+        import re
+        import urllib.request
+
+        url = _resolve_google_news_url(url)
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (smkit feed)"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            html_text = resp.read(500_000).decode("utf-8", errors="replace")
+        # Strip scripts/styles/tags; collapse whitespace.
+        html_text = re.sub(r"(?is)<(script|style|nav|header|footer|aside)[^>]*>.*?</\1>", " ", html_text)
+        # Prefer <article> or <p> content when present.
+        paras = re.findall(r"(?is)<p[^>]*>(.*?)</p>", html_text)
+        text = " ".join(paras) if paras else html_text
+        text = re.sub(r"(?s)<[^>]+>", " ", text)
+        text = _html_unescape(text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text[:max_chars] if len(text) > 200 else ""
+    except Exception:
+        return ""
+
+
+def _html_unescape(text: str) -> str:
+    import html as _html
+    return _html.unescape(text)
+
+
+def _story_body(item: dict[str, Any]) -> str:
+    """Build the article body for the Short planner: headline + summary +
+    fetched page text (so the script is about the actual story)."""
+    title = item.get("title", "Untitled")
+    summary = item.get("summary", "") or ""
+    url = item.get("url", "")
+    page_text = _fetch_story_text(url)
+    parts = [f"# {title}", summary, page_text, f"Source: {item.get('source', '')}", url]
+    return "\n\n".join(p for p in parts if p)
+
+
 def _generate_feed_short(item: dict[str, Any]) -> dict[str, Any]:
     """Plan a YouTube Short script from a feed story (script only, no render)."""
     _ensure_scripts_path()
@@ -183,9 +261,8 @@ def _generate_feed_short(item: dict[str, Any]) -> dict[str, Any]:
         from .shorts import Article, plan_short, slugify
 
         title = item.get("title", "Untitled")
-        summary = item.get("summary", "") or title
         url = item.get("url", "")
-        body = f"# {title}\n\n{summary}\n\nSource: {item.get('source', '')}\n{url}\n"
+        body = _story_body(item)
         article = Article(slug=slugify(title), title=title, body=body, url=url)
         plans_dir = ROOT / "content" / "shorts_plans"
         plans_dir.mkdir(parents=True, exist_ok=True)
@@ -229,8 +306,7 @@ def _post_feed_youtube(item: dict[str, Any], mode: str, dry_run: bool, force: bo
 
         if force or not plan_path.exists():
             # force=True regenerates the script from the story, then re-renders.
-            summary = item.get("summary", "") or title
-            body = f"# {title}\n\n{summary}\n\nSource: {item.get('source', '')}\n{item.get('url', '')}\n"
+            body = _story_body(item)
             plan_short(Article(slug=slug, title=title, body=body, url=item.get("url", "")), out_path=plan_path)
 
         # Reuse an existing render when it's newer than the plan (so the

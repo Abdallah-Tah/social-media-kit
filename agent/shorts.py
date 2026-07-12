@@ -329,12 +329,16 @@ Return STRICT JSON only. The Short must teach ONE concrete, useful developer ide
 RETENTION RULES (YouTube rewards watch-through rate above everything else):
 - Scene 1 MUST open with a bold, curiosity-driven hook in the FIRST 3 SECONDS.
   Bad:  "Here is one practical idea from {article.title}"
-  Good: "Most developers skip this step — and it costs them hours of debugging."
-  Good: "This one-line change made my API 3x faster. Here's exactly how."
+  (Do NOT copy example hooks — write one SPECIFIC to this article's actual content.)
 - The hook must create a knowledge gap — the viewer must feel they NEED to finish watching.
 - Speak conversationally to ONE developer, not a classroom. Use "you", "your", contractions.
 - Pacing: write the voiceover at ~150 words per minute. Use "..." for natural pauses.
-- Do NOT summarise the article. Teach ONE idea the viewer can use TODAY.
+- STAY ON TOPIC: every scene must be about THIS article. Never substitute a generic
+  coding tip that isn't in the article.
+  * If the article is a TUTORIAL: teach its ONE most useful idea the viewer can use today.
+  * If the article is NEWS (a release, launch, acquisition, benchmark): cover the story —
+    what happened, the concrete numbers/facts from the article, and why it matters to
+    developers. Do not invent facts not present in the article.
 - CTA only at the LAST scene. No promotion before then.
 
 REQUIRED JSON KEYS: short_type, hook, main_idea, scenes, voiceover, captions, cta, publish_metadata.
