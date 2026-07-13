@@ -321,6 +321,24 @@ def _post_feed_youtube(item: dict[str, Any], mode: str, dry_run: bool, force: bo
         if not video or not Path(video).exists():
             return {"ok": False, "error": "render produced no video"}
 
+        # Polish with freecut: word-synced burned subtitles + fades + grade.
+        # Best-effort — fall back to the raw render if polishing fails.
+        try:
+            pol = subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "shorts_polish.py"), video]
+                + (["--force"] if force else []),
+                cwd=str(ROOT), capture_output=True, text=True, timeout=900,
+            )
+            if pol.returncode == 0:
+                for line in pol.stdout.splitlines():
+                    line = line.strip()
+                    if line.startswith("{"):
+                        polished = _json.loads(line).get("video", "")
+                        if polished and Path(polished).exists():
+                            video = polished
+        except Exception:
+            pass
+
         plan = _json.loads(plan_path.read_text(encoding="utf-8"))
         pmeta = plan.get("publish_metadata", {})
         yt_title = str(pmeta.get("title") or title)[:95]
