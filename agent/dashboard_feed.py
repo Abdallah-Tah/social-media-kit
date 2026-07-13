@@ -3,12 +3,20 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
+import uuid
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 FEED_DIR = ROOT / "content" / "feed"
 SCRIPTS_DIR = ROOT / "scripts"
+
+# In-memory async job store for long-running YouTube render/upload jobs.
+# Renders take minutes on the Pi; Cloudflare's proxy times out at 120s, so
+# POST /api/feed/youtube starts a job and the UI polls the status endpoint.
+_YT_JOBS: dict[str, dict[str, Any]] = {}
+_YT_LOCK = threading.Lock()
 
 
 def _ensure_scripts_path() -> None:
@@ -131,7 +139,30 @@ def register_routes(
         force = bool((body or {}).get("force", False))
         if not item.get("title") or mode not in ("short", "video"):
             return {"ok": False, "error": "item with title and mode=short|video are required"}
-        return _post_feed_youtube(item, mode, dry_run, force=force)
+        # Async: render/upload takes minutes — return a job id immediately
+        # (Cloudflare cuts the connection at 120s) and let the UI poll.
+        job_id = uuid.uuid4().hex[:12]
+        with _YT_LOCK:
+            _YT_JOBS[job_id] = {"status": "running"}
+
+        def _run_yt_job() -> None:
+            try:
+                result = _post_feed_youtube(item, mode, dry_run, force=force)
+            except Exception as exc:  # never leave a job stuck in "running"
+                result = {"ok": False, "error": f"youtube job crashed: {exc}"}
+            with _YT_LOCK:
+                _YT_JOBS[job_id] = {"status": "done", "result": result}
+
+        threading.Thread(target=_run_yt_job, name=f"yt-{job_id}", daemon=True).start()
+        return {"ok": True, "job_id": job_id, "status": "running"}
+
+    if path == "/api/feed/youtube/status":
+        job_id = (query.get("job") or [""])[0] or (body or {}).get("job_id", "")
+        with _YT_LOCK:
+            job = _YT_JOBS.get(job_id)
+        if not job:
+            return {"ok": False, "error": f"unknown job: {job_id}"}
+        return {"ok": True, "job_id": job_id, **job}
 
     if path == "/api/feed/publish":
         # Create social drafts from a feed item and optionally publish immediately.

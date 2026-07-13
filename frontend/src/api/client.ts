@@ -233,11 +233,26 @@ export const api = {
       { method: 'POST', body: JSON.stringify({ item, dry_run: dryRun, profile }) }
     ),
 
-  postFeedYouTube: (item: FeedItem, mode: 'short' | 'video', dryRun = true, force = false) =>
-    request<{ ok: boolean; dry_run?: boolean; mode?: string; url?: string; video?: string; video_url?: string; title?: string; message?: string; error?: string }>(
+  postFeedYouTube: async (item: FeedItem, mode: 'short' | 'video', dryRun = true, force = false) => {
+    type YtResult = { ok: boolean; dry_run?: boolean; mode?: string; url?: string; video?: string; video_url?: string; title?: string; message?: string; error?: string }
+    // The render/upload runs as an async job on the server (it can take
+    // minutes; proxies cut long requests at ~120s). Start it, then poll.
+    const start = await request<{ ok: boolean; job_id?: string; status?: string; error?: string } & YtResult>(
       '/feed/youtube',
       { method: 'POST', body: JSON.stringify({ item, mode, dry_run: dryRun, force }) }
-    ),
+    )
+    if (!start.ok || !start.job_id) return start as YtResult
+    const deadline = Date.now() + 30 * 60 * 1000 // 30 min cap
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 5000))
+      const st = await request<{ ok: boolean; status?: string; result?: YtResult; error?: string }>(
+        `/feed/youtube/status?job=${start.job_id}`
+      )
+      if (!st.ok) return { ok: false, error: st.error || 'job status failed' }
+      if (st.status === 'done') return st.result ?? { ok: false, error: 'job returned no result' }
+      if (Date.now() > deadline) return { ok: false, error: 'timed out waiting for render job (30 min)' }
+    }
+  },
 
   generateFeedCover: (item: FeedItem) =>
     request<{ ok: boolean; cover_url?: string; path?: string; provider?: string; error?: string }>(
