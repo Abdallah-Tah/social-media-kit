@@ -406,14 +406,12 @@ def _post_feed_youtube(item: dict[str, Any], mode: str, dry_run: bool, force: bo
         ]
         res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=600)
         # Honesty rule: only report success with the returned YouTube URL.
-        url = ""
-        for line in res.stdout.splitlines():
-            line = line.strip()
-            if line.startswith("{"):
-                try:
-                    url = _json.loads(line).get("url", "")
-                except _json.JSONDecodeError:
-                    continue
+        # The uploader prints pretty-printed JSON — match the URL directly.
+        import re as _re
+        m = _re.search(r"https://www\.youtube\.com/shorts/[\w-]+", res.stdout)
+        url = m.group(0) if m else ""
+        if mode == "video" and url:
+            url = url.replace("/shorts/", "/watch?v=")
         if res.returncode == 0 and url:
             try:
                 from .notify import notify_publish
