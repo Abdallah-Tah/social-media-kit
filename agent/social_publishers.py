@@ -179,4 +179,14 @@ def publish(platform: str, draft: dict[str, Any], dry_run: bool = False) -> dict
     handler = _PLATFORM_HANDLERS.get(platform)
     if handler is None:
         return _result(False, error=f"unsupported platform: {platform}")
-    return handler(draft, dry_run=dry_run)
+    result = handler(draft, dry_run=dry_run)
+    # Telegram heads-up on every LIVE post (never on dry runs; best-effort).
+    if result.get("ok") and not result.get("dry_run"):
+        try:
+            from .notify import notify_publish
+            title = (draft.get("title") or draft.get("text") or "")[:80]
+            url = result.get("published_url") or ""
+            notify_publish(f"✅ Posted to {platform}: {title}\n{url}".strip())
+        except Exception:
+            pass
+    return result

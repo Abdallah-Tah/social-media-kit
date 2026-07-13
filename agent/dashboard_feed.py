@@ -384,6 +384,11 @@ def _post_feed_youtube(item: dict[str, Any], mode: str, dry_run: bool, force: bo
                 except _json.JSONDecodeError:
                     continue
         if res.returncode == 0 and url:
+            try:
+                from .notify import notify_publish
+                notify_publish(f"✅ Posted to YouTube ({mode}): {yt_title}\n{url}")
+            except Exception:
+                pass
             return {"ok": True, "dry_run": False, "mode": mode, "url": url,
                     "video": str(Path(video).relative_to(ROOT)), "title": yt_title}
         err = (res.stderr or res.stdout)[-400:]

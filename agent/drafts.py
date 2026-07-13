@@ -278,6 +278,12 @@ def publish_blog(draft_id: str) -> dict[str, Any]:
     draft.status = "published"
     save_draft(draft)
 
+    try:
+        from .notify import notify_publish
+        notify_publish(f"✅ Published blog post: {draft.title}\n{blog_url}")
+    except Exception:
+        pass
+
     return {"ok": True, "blog_url": blog_url, "cover_image_url": draft.cover_image_url, "post": post}
 
 
