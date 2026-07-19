@@ -1,0 +1,46 @@
+{
+  "feed_run": {
+    "label": "News Feed Refresh",
+    "description": "Fetch fresh Google News, Hacker News, and Reddit stories into the feed.",
+    "interval_hours": 3,
+    "enabled": true,
+    "dry_run": false,
+    "last_run": "2026-07-19T10:36:30.157208+00:00",
+    "last_result": "ok",
+    "last_error": ""
+  },
+  "intelligence_run": {
+    "label": "Intelligence Run",
+    "description": "Fetch and score fresh stories from all configured sources.",
+    "interval_hours": 6,
+    "enabled": false,
+    "dry_run": false,
+    "last_run": "2026-07-12T23:38:52.108177+00:00",
+    "last_result": "ok",
+    "last_error": ""
+  },
+  "publish_due": {
+    "label": "Publish Scheduled Posts",
+    "description": "Publish social drafts whose scheduled_at time has passed.",
+    "interval_hours": 1,
+    "enabled": false,
+    "dry_run": true
+  },
+  "analytics_sync": {
+    "label": "Analytics Sync",
+    "description": "Pull latest performance data from connected platforms.",
+    "interval_hours": 24,
+    "enabled": false,
+    "dry_run": false,
+    "last_run": "2026-07-12T23:39:07.703677+00:00",
+    "last_result": "ok",
+    "last_error": ""
+  },
+  "auto_draft": {
+    "label": "Auto-Generate Drafts",
+    "description": "Create content drafts from top intelligence opportunities.",
+    "interval_hours": 12,
+    "enabled": false,
+    "dry_run": true
+  }
+}

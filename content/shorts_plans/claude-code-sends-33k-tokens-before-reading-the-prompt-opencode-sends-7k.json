@@ -1,0 +1,83 @@
+{
+  "short_type": "article_summary_with_practical_takeaway",
+  "hook": "Did you know Claude Code sends 33k tokens before even reading your prompt?",
+  "main_idea": "Understanding token overhead can save you costs and improve efficiency when using AI models in production.",
+  "scenes": [
+    {
+      "kind": "title_card",
+      "title": "Token Overhead Matters",
+      "caption": "Why token overhead is crucial",
+      "duration_seconds": 5.0,
+      "takeaway": "Token overhead affects cost and performance."
+    },
+    {
+      "kind": "title_card",
+      "title": "Claude vs OpenCode",
+      "caption": "Claude is 4.8x heavier!",
+      "duration_seconds": 5.0,
+      "takeaway": "Claude Code sends 33k tokens; OpenCode only 7k."
+    },
+    {
+      "kind": "title_card",
+      "title": "Cache Efficiency",
+      "caption": "OpenCode's caching wins",
+      "duration_seconds": 5.0,
+      "takeaway": "OpenCode's cache is more efficient, saving costs."
+    },
+    {
+      "kind": "title_card",
+      "title": "Production Costs",
+      "caption": "Costs can skyrocket",
+      "duration_seconds": 5.0,
+      "takeaway": "Understand token usage to manage costs effectively."
+    },
+    {
+      "kind": "title_card",
+      "title": "Logging Proxy",
+      "caption": "Capture your requests",
+      "duration_seconds": 5.0,
+      "takeaway": "Use a logging proxy to track token usage."
+    },
+    {
+      "kind": "title_card",
+      "title": "Final Thoughts",
+      "caption": "Optimize your AI usage",
+      "duration_seconds": 5.0,
+      "takeaway": "Be aware of token overhead to save money."
+    },
+    {
+      "kind": "cta_card",
+      "title": "Full guide",
+      "caption": "Read the full tutorial.",
+      "duration_seconds": 3
+    }
+  ],
+  "voiceover": "Did you know Claude Code sends 33k tokens before even reading your prompt? That’s a huge overhead... Understanding token overhead can save you costs and improve efficiency when using AI models in production. Claude Code uses around 33,000 tokens, while OpenCode only needs about 7,000. That’s 4.8 times heavier! OpenCode's caching is way more efficient, which means lower costs for you. If you’re working in production, these costs can skyrocket if you don’t track your usage. A great way to manage this is by using a logging proxy to capture your requests and see exactly how many tokens you’re using. So, be aware of token overhead... It can really help you save money while working with AI.",
+  "captions": [
+    "Why token overhead is crucial",
+    "Claude is 4.8x heavier!",
+    "OpenCode's caching wins",
+    "Costs can skyrocket",
+    "Capture your requests",
+    "Optimize your AI usage"
+  ],
+  "cta": "For more insights, check out the full article!",
+  "publish_metadata": {
+    "title": "Understanding Token Overhead in AI Models #Shorts",
+    "description": "Learn how token overhead impacts costs and performance in AI models.",
+    "tags": [
+      "AI",
+      "Claude Code",
+      "OpenCode",
+      "Token Overhead",
+      "Development"
+    ],
+    "privacy": "public",
+    "category_id": "28"
+  },
+  "source": {
+    "slug": "claude-code-sends-33k-tokens-before-reading-the-prompt-opencode-sends-7k",
+    "title": "Claude Code sends 33k tokens before reading the prompt; OpenCode sends 7k",
+    "url": "https://systima.ai/blog/claude-code-vs-opencode-token-overhead"
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "short_type": "article_summary_with_practical_takeaway",
+  "hook": "What if you could cut your coding costs in half? Grok 4.5 might just do that!",
+  "main_idea": "Grok 4.5 offers a cost-effective solution for developers with its optimized performance for coding and AI tasks.",
+  "scenes": [
+    {
+      "kind": "title_card",
+      "title": "Grok 4.5 Launch",
+      "caption": "Grok 4.5 is here!",
+      "duration_seconds": 3.0
+    },
+    {
+      "kind": "architecture_diagram",
+      "title": "Cost Efficiency",
+      "caption": "Lower costs, faster results",
+      "duration_seconds": 5.0
+    },
+    {
+      "kind": "title_card",
+      "title": "Optimized for Developers",
+      "caption": "Designed for coding tasks",
+      "duration_seconds": 5.0
+    },
+    {
+      "kind": "before_after",
+      "title": "Pricing Comparison",
+      "caption": "Grok 4.5 vs. competitors",
+      "duration_seconds": 6.0,
+      "before_code": [
+        "OpenAI: $6 per million tokens",
+        "Anthropic: $8 per million tokens"
+      ],
+      "after_code": [
+        "Grok 4.5: $2 per million input tokens",
+        "$6 per million output tokens"
+      ]
+    },
+    {
+      "kind": "title_card",
+      "title": "Performance Metrics",
+      "caption": "80 TPS, double efficiency",
+      "duration_seconds": 5.0
+    },
+    {
+      "kind": "cta_card",
+      "title": "Try Grok 4.5 Today!",
+      "caption": "Start building with Grok 4.5",
+      "duration_seconds": 4.0
+    }
+  ],
+  "voiceover": "What if you could cut your coding costs in half? Grok 4.5 might just do that! This latest release focuses on coding and AI agents, making it a game-changer for developers. It’s designed to handle complex programming tasks efficiently... and at a lower cost. For instance, Grok 4.5 charges just $2 per million input tokens, compared to $6 for OpenAI and $8 for Anthropic. Plus, it delivers results at 80 transactions per second, with double the efficiency of its competitors. This means you get faster, smarter outputs without breaking the bank. So, if you're looking to optimize your coding processes, give Grok 4.5 a try today!",
+  "captions": [
+    "Grok 4.5 is here!",
+    "Lower costs, faster results",
+    "Designed for coding tasks",
+    "Grok 4.5 vs. competitors",
+    "80 TPS, double efficiency",
+    "Start building with Grok 4.5"
+  ],
+  "cta": "Start building with Grok 4.5 today!",
+  "publish_metadata": {
+    "title": "Grok 4.5: Cut Your Coding Costs! #Shorts",
+    "description": "Learn how Grok 4.5 can optimize your coding tasks and save you money.",
+    "tags": [
+      "Grok 4.5",
+      "coding",
+      "AI agents",
+      "developer tools"
+    ],
+    "privacy": "public",
+    "category_id": "28"
+  },
+  "source": {
+    "slug": "grok-4-5-launches-with-focus-on-coding-and-ai-agents-intensifying-race-with-open",
+    "title": "Grok 4.5 Launches With Focus on Coding and AI Agents, Intensifying Race With OpenAI and Anthropic - International Business Times",
+    "url": "https://news.google.com/rss/articles/CBMiqgFBVV95cUxNci1fN2txYjVnbk0wN1RUcTFoc2czLTZPRVo4T203RU9NMkJlT2FWUDh6UHZyZW1RbHowWDJfT2h4ZkFaSVNEZ0pvWVhoa1BxM2hYbWRhNEd0SWVhanh0cndjRnAxbEFJa2hpZFVDUm9DMnF0SDMtekc1SFc3NXZMOEpJSl9lWUhqRnBCanpZZUlLX1hrdm11RnFJaHR2dUtDR1RDZ1ZxbXQydw?oc=5"
+  }
+}

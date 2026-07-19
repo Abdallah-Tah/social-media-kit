@@ -1,0 +1,89 @@
+{
+  "short_type": "mistake_fix",
+  "hook": "Most developers overlook this crucial detail — and it leads to chaos in your code.",
+  "main_idea": "Always manage your AI agents with a centralized controller to avoid conflicts.",
+  "scenes": [
+    {
+      "kind": "title_card",
+      "title": "Manage Your AI Agents",
+      "caption": "Centralize your AI control!",
+      "duration_seconds": 3.0
+    },
+    {
+      "kind": "title_card",
+      "title": "The Problem",
+      "caption": "Conflicts arise without control.",
+      "duration_seconds": 5.0
+    },
+    {
+      "kind": "architecture_diagram",
+      "title": "Before Centralized Control",
+      "caption": "Multiple agents, no coordination.",
+      "duration_seconds": 5.0,
+      "code": [
+        "Agent A",
+        "Agent B",
+        "Agent C",
+        "No Central Control"
+      ]
+    },
+    {
+      "kind": "architecture_diagram",
+      "title": "After Centralized Control",
+      "caption": "One controller to manage all.",
+      "duration_seconds": 5.0,
+      "code": [
+        "Central Controller",
+        "  |",
+        "  |-- Agent A",
+        "  |-- Agent B",
+        "  |-- Agent C"
+      ]
+    },
+    {
+      "kind": "title_card",
+      "title": "Key Takeaway",
+      "caption": "Avoid chaos with one controller.",
+      "duration_seconds": 5.0
+    },
+    {
+      "kind": "title_card",
+      "title": "Call to Action",
+      "caption": "Try this today!",
+      "duration_seconds": 5.0
+    },
+    {
+      "kind": "cta_card",
+      "title": "Full guide",
+      "caption": "Read the full tutorial.",
+      "duration_seconds": 3
+    }
+  ],
+  "voiceover": "Most developers overlook this crucial detail... and it leads to chaos in your code. Without a centralized controller, your AI agents can conflict with each other, causing unexpected behavior. Imagine having multiple agents working independently... it’s a recipe for disaster. Instead, centralize your control! With a single controller managing all your agents, you ensure smooth coordination and avoid conflicts. Just look at this before and after: without control, agents operate in isolation... but with a central controller, they work together seamlessly. So, if you want to save time and headaches... try this approach today!",
+  "captions": [
+    "Centralize your AI control!",
+    "Conflicts arise without control.",
+    "Multiple agents, no coordination.",
+    "One controller to manage all.",
+    "Avoid chaos with one controller.",
+    "Try this today!"
+  ],
+  "cta": "Subscribe for more developer tips!",
+  "publish_metadata": {
+    "title": "Centralizing AI Agent Control #Shorts",
+    "description": "Learn how to avoid chaos in your AI projects by managing your agents with a centralized controller.",
+    "tags": [
+      "AI",
+      "development",
+      "programming",
+      "developer tips"
+    ],
+    "privacy": "public",
+    "category_id": "28"
+  },
+  "source": {
+    "slug": "who-manages-the-agents",
+    "title": "Who manages the agents?",
+    "url": "https://www.off-policy.com/dont-go-quietly-into-the-ai-night/"
+  }
+}

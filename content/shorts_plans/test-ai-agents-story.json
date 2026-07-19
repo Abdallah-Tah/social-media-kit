@@ -1,0 +1,72 @@
+{
+  "short_type": "mistake_fix",
+  "hook": "Most developers overlook this one test — and it leads to bugs in production.",
+  "main_idea": "Always test your AI agents with edge cases to prevent unexpected behavior.",
+  "scenes": [
+    {
+      "kind": "title_card",
+      "title": "Test AI Agents Effectively",
+      "caption": "Don't skip edge cases!",
+      "duration_seconds": 3.0
+    },
+    {
+      "kind": "title_card",
+      "title": "Why Edge Cases Matter",
+      "caption": "Prevent unexpected bugs.",
+      "duration_seconds": 5.0
+    },
+    {
+      "kind": "code_card",
+      "title": "Example Edge Case Test",
+      "caption": "Here's a simple test.",
+      "duration_seconds": 7.0,
+      "code": [
+        "def test_ai_agent(agent):",
+        "    assert agent.respond('') == 'Default response'",
+        "    assert agent.respond('unknown input') == 'Error'",
+        "    assert agent.respond('valid input') == 'Success'",
+        "    assert agent.respond(None) == 'Error'",
+        "    print('All edge cases passed!')"
+      ]
+    },
+    {
+      "kind": "title_card",
+      "title": "Run Tests Regularly",
+      "caption": "Make it part of your workflow.",
+      "duration_seconds": 5.0
+    },
+    {
+      "kind": "cta_card",
+      "title": "Start Testing Today!",
+      "caption": "Improve your AI agent's reliability.",
+      "duration_seconds": 5.0
+    }
+  ],
+  "voiceover": "Most developers overlook this one test... and it leads to bugs in production. Edge cases are crucial when testing AI agents. They help you catch unexpected behavior before it goes live. Here's a simple test you can implement today... First, check how your agent responds to an empty string. It should return a default response. Next, test it with unknown inputs... make sure it handles errors gracefully. Don't forget to check valid inputs too! Finally, test how it reacts to None. Run these tests regularly... and you'll improve your AI agent's reliability. Start testing today to prevent those frustrating bugs!",
+  "captions": [
+    "Don't skip edge cases!",
+    "Prevent unexpected bugs.",
+    "Here's a simple test.",
+    "Make it part of your workflow.",
+    "Improve your AI agent's reliability."
+  ],
+  "cta": "Start testing today!",
+  "publish_metadata": {
+    "title": "Test AI Agents Effectively #Shorts",
+    "description": "Learn how to improve your AI agents by testing edge cases.",
+    "tags": [
+      "AI",
+      "testing",
+      "development",
+      "programming",
+      "software"
+    ],
+    "privacy": "public",
+    "category_id": "28"
+  },
+  "source": {
+    "slug": "test-ai-agents-story",
+    "title": "Test AI agents story",
+    "url": "https://example.com/x"
+  }
+}

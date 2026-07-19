@@ -56,6 +56,9 @@ NEWS_QUERIES = [
     "site:forwardfuture.ai latest AI",
     "Matt Wolfe AI news tools",
     "Future Tools AI news Matt Wolfe",
+    # --- curated newsletter / aggregator sources ---
+    "TLDR newsletter web version developer news",
+    "site:a.tldrnewsletter.com web version developer news",
 ]
 
 LOW_VALUE_DOMAINS = (

@@ -13,6 +13,7 @@ import linkedin_policy
 
 ACCESS_TOKEN = os.environ.get("LINKEDIN_ACCESS_TOKEN", "")
 PERSON_ID = os.environ.get("LINKEDIN_PERSON_ID", "")
+PERSON_URN = os.environ.get("LINKEDIN_PERSON_URN", "")
 AUTHOR_URN = os.environ.get("LINKEDIN_AUTHOR_URN", "")
 SECRETS_PATH = os.environ.get(
     "SECRETS_PATH",
@@ -39,10 +40,36 @@ def load_token():
 
 
 def get_profile(token):
-    """Get the authenticated user's LinkedIn URN."""
-    if PERSON_ID:
-        return PERSON_ID
+    """Get the authenticated user's LinkedIn author URN.
 
+    Prefer explicit env vars over the deprecated v2/me endpoint, which now
+    requires the r_liteprofile scope that modern LinkedIn OAuth tokens no
+    longer grant.
+    """
+    person_urn = os.environ.get("LINKEDIN_PERSON_URN", "")
+    author_urn = os.environ.get("LINKEDIN_AUTHOR_URN", "")
+    person_id = os.environ.get("LINKEDIN_PERSON_ID", "")
+    if person_urn:
+        return person_urn
+    if author_urn:
+        return author_urn
+    if person_id:
+        # Numeric legacy IDs use urn:li:member:; new-style IDs use urn:li:person:
+        if str(person_id).lstrip("-").isdigit():
+            return f"urn:li:member:{person_id}"
+        return f"urn:li:person:{person_id}"
+
+    # Modern tokens expose sub in userinfo as the person URN suffix.
+    resp = requests.get(
+        "https://api.linkedin.com/v2/userinfo",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    if resp.ok:
+        sub = resp.json().get("sub", "")
+        if sub:
+            return f"urn:li:person:{sub}"
+
+    # Legacy fallback; will fail for tokens without r_liteprofile.
     resp = requests.get(
         "https://api.linkedin.com/v2/me",
         headers={"Authorization": f"Bearer {token}"},
@@ -107,8 +134,8 @@ def post_text(text, visibility="PUBLIC", image_path=None, post_kind=None):
     if not profile_id:
         return None
 
-    if AUTHOR_URN:
-        author = AUTHOR_URN
+    if str(profile_id).startswith("urn:li:"):
+        author = profile_id
     elif str(profile_id).lstrip("-").isdigit():
         author = f"urn:li:member:{profile_id}"
     else:

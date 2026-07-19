@@ -1,0 +1,81 @@
+{
+  "short_type": "article_summary_with_practical_takeaway",
+  "hook": "Did you know your ChatGPT account could be at risk? Here's how to protect it!",
+  "main_idea": "OpenAI now requires hardware-backed passkeys for Trusted Access Cyber members, enhancing account security against phishing and attacks.",
+  "scenes": [
+    {
+      "kind": "title_card",
+      "title": "OpenAI's New Security Mandate",
+      "caption": "Protect your ChatGPT account!",
+      "duration_seconds": 3.0
+    },
+    {
+      "kind": "title_card",
+      "title": "Why Hardware-Backed Passkeys?",
+      "caption": "Phishing attacks are on the rise.",
+      "duration_seconds": 4.0
+    },
+    {
+      "kind": "title_card",
+      "title": "What Are Passkeys?",
+      "caption": "They're more secure than passwords.",
+      "duration_seconds": 4.0
+    },
+    {
+      "kind": "before_after",
+      "title": "Transitioning to Passkeys",
+      "caption": "It's simple to set up!",
+      "duration_seconds": 5.0,
+      "before_code": [
+        "1. Go to chatgpt.com",
+        "2. Access Advanced Account Security",
+        "3. Choose your YubiKey"
+      ],
+      "after_code": [
+        "1. Enable hardware-backed passkey",
+        "2. Enjoy passwordless login",
+        "3. Enhanced security!"
+      ]
+    },
+    {
+      "kind": "title_card",
+      "title": "Why It Matters",
+      "caption": "Raise the bar for security.",
+      "duration_seconds": 4.0
+    },
+    {
+      "kind": "cta_card",
+      "title": "Secure Your Account Now!",
+      "caption": "Get your YubiKeys today!",
+      "duration_seconds": 3.0
+    }
+  ],
+  "voiceover": "Did you know your ChatGPT account could be at risk? Here's how to protect it! OpenAI just mandated hardware-backed passkeys for all Trusted Access Cyber members... Why? Because phishing attacks are on the rise... So, what exactly are passkeys? They're a more secure alternative to passwords, making it harder for attackers to gain access... Transitioning to passkeys is simple! Just head to chatgpt.com, access Advanced Account Security, and choose your YubiKey... Once you enable that hardware-backed passkey, you can enjoy a passwordless login experience... This is crucial for raising the bar on security... So, secure your account now! Get your YubiKeys today!",
+  "captions": [
+    "Protect your ChatGPT account!",
+    "Phishing attacks are on the rise.",
+    "They're more secure than passwords.",
+    "It's simple to set up!",
+    "Raise the bar for security.",
+    "Get your YubiKeys today!"
+  ],
+  "cta": "Secure Your Account Now!",
+  "publish_metadata": {
+    "title": "How to Secure Your ChatGPT Account #Shorts",
+    "description": "Learn about OpenAI's new hardware-backed passkey requirement and how to protect your ChatGPT account.",
+    "tags": [
+      "OpenAI",
+      "ChatGPT",
+      "Cybersecurity",
+      "Passkeys",
+      "YubiKey"
+    ],
+    "privacy": "public",
+    "category_id": "28"
+  },
+  "source": {
+    "slug": "openai-mandates-hardware-backed-passkeys-for-trusted-access-cyber-members",
+    "title": "OpenAI mandates hardware-backed passkeys for Trusted Access Cyber members",
+    "url": "https://www.yubico.com/blog/openai-mandates-hardware-backed-passkeys-for-trusted-access-cyber-members-to-log-into-chatgpt-accounts/"
+  }
+}

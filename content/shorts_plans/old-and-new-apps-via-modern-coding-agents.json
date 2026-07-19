@@ -1,0 +1,85 @@
+{
+  "short_type": "article_summary_with_practical_takeaway",
+  "hook": "Ever thought about reviving old code with AI? Let’s make it happen!",
+  "main_idea": "You can use AI to effortlessly port old applets to modern languages, enhancing their functionality in just hours.",
+  "scenes": [
+    {
+      "kind": "title_card",
+      "title": "Revive Old Code with AI",
+      "caption": "Use AI to modernize your applets!",
+      "duration_seconds": 3.0
+    },
+    {
+      "kind": "title_card",
+      "title": "The Power of AI Coding Agents",
+      "caption": "Transform old Java applets to JavaScript.",
+      "duration_seconds": 5.0
+    },
+    {
+      "kind": "before_after",
+      "title": "Before and After",
+      "caption": "Old code vs. AI-generated code.",
+      "duration_seconds": 7.0,
+      "before_code": [
+        "public class OldApplet extends Applet {",
+        "  public void init() {",
+        "    // Old Java code",
+        "  }",
+        "}"
+      ],
+      "after_code": [
+        "class NewApplet extends HTMLElement {",
+        "  connectedCallback() {",
+        "    // New JavaScript code",
+        "  }",
+        "}"
+      ]
+    },
+    {
+      "kind": "architecture_diagram",
+      "title": "Migration Process",
+      "caption": "AI makes it easy!",
+      "duration_seconds": 6.0
+    },
+    {
+      "kind": "title_card",
+      "title": "Minimal Bugs, Maximum Gain",
+      "caption": "AI found bugs in the old code too!",
+      "duration_seconds": 5.0
+    },
+    {
+      "kind": "cta_card",
+      "title": "Try It Yourself!",
+      "caption": "Start using AI for your coding projects!",
+      "duration_seconds": 4.0
+    }
+  ],
+  "voiceover": "Ever thought about reviving old code with AI? Let’s make it happen! You can use AI to effortlessly port your old applets to modern languages... like transforming Java to JavaScript. Check this out: here's a snippet of old Java code... and here’s how it looks after AI assistance! The migration process is super smooth... and guess what? The AI even found bugs in the original code. So, why not start using AI for your coding projects? Try it yourself!",
+  "captions": [
+    "Use AI to modernize your applets!",
+    "Transform old Java applets to JavaScript.",
+    "Old code vs. AI-generated code.",
+    "AI makes it easy!",
+    "AI found bugs in the old code too!",
+    "Start using AI for your coding projects!"
+  ],
+  "cta": "Start using AI for your coding projects!",
+  "publish_metadata": {
+    "title": "Revive Old Code with AI #Shorts",
+    "description": "Learn how to use AI to modernize your old applets in just hours!",
+    "tags": [
+      "AI",
+      "Coding",
+      "JavaScript",
+      "Applets",
+      "Development"
+    ],
+    "privacy": "public",
+    "category_id": "28"
+  },
+  "source": {
+    "slug": "old-and-new-apps-via-modern-coding-agents",
+    "title": "Old and new apps, via modern coding agents",
+    "url": "https://terrytao.wordpress.com/2026/07/11/old-and-new-apps-via-modern-coding-agents/"
+  }
+}

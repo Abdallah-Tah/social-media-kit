@@ -360,5 +360,44 @@
     "steps": 0,
     "summary": "Unpublished bad GPT-6 article post 104; published corrected article post 105; uploaded YouTube Short EmvCcHzi8cU; Facebook post 1101440786392389_122107944513337140; LinkedIn blocked by credentials.",
     "date": "2026-06-15T02:46:33.382821+00:00"
+  },
+  {
+    "topic": "Kimi K3",
+    "profile": "BuildWithAbdallah",
+    "provider": "ollama",
+    "channels": [
+      "blog",
+      "facebook",
+      "linkedin"
+    ],
+    "steps": 10,
+    "summary": "<think>The pricing page didn't include actual price table in text? It says \"kimi-k3, 1M tokens, $0.30 ...\" in snippet but not in fetched text. Maybe table is not captured. We can mention that pricing is per 1M tokens but not quote exact numbers if not visible. Or we can fetch with markdown? The fetch_url returns HTML text. Maybe the table is hidden. We can use the snippet? But we need verified facts. The snippet says $0.30 maybe incomplete. We can avoid exact pricing or say check pricing page. But it's okay to mention approximate? Better not invent.\n\nNeed also maybe fetch API reference for tool calling? Not necessary.\n\nNow write article. Need ensure no banned phrases. Need specific hook. Need tutorial length. Let's plan:\n\nTitle: \"Build a Whole-Repo Code Reviewer with Kimi K3: A Hands-On Tutorial\"\n\nHook: Kimi K3's 1M-token context window means you can feed an entire small codebase into one prompt and ask for architectural feedback. In this tutorial, we build a CLI that does exactly that.\n\nSections:\n- What is Kimi K3 and why use it for coding (brief, sourced)\n- What we will build\n- Prerequisites\n- Step 1: Get a Moonshot API key and set env var\n- Step 2: Project setup (Python 3.10+, venv, install openai, tiktoken? Actually Kimi API uses OpenAI SDK; token counting can use tiktoken approximate or use API usage. We'll include tiktoken for estimation but note it's approximate. Maybe use `transformers` tokenizer? Not needed. We'll use a simple character-based estimator or tiktoken cl100k. Better: use `tiktoken` with cl100k_base as rough estimate and warn it's not exact. Or skip token counting and rely on context window large enough; include file size guard.\n- Step 3: Build file collector that walks repo, respects .gitignore, includes only code files, builds XML-ish or markdown context.\n- Step 4: Build the Kimi client with streaming and reasoning_effort.\n- Step 5: Run the reviewer and interpret output.\n- Step 6: Add vision input? Could include optional screenshot path to review UI. But keep focused.\n- Common errors and fixes: 401 API key, 429 rate limit, context too long, model name, streaming parse.\n- Project structure.\n- Final complete script.\n- Sources.\n\nNeed at least 5 real code blocks with language labels. We'll include:\n1. shell commands for setup (bash)\n2. Python imports and client init (python)\n3. File collector function (python)\n4. Main review function with streaming (python)\n5. Full script (python) maybe also a config JSON or .env example.\n6. Example output / run command (bash)\n7. Common error handling snippet (python)\n\nNeed 1500+ words. We can write detailed explanations.\n\nNeed ensure no banned phrases. Avoid \"unlock\", \"dive into\", etc. Use plain text. Avoid \"robust\", \"leverage\", \"seamlessly\", \"supercharge\". Use \"use\", \"build\", \"run\".\n\nNeed include sources list with URLs:\n- Moonshot AI Kimi K3 page: https://www.moonshot.ai/ (official)\n- Kimi API Platform quickstart: https://platform.kimi.ai/docs/guide/kimi-k3-quickstart\n- Cloudflare docs for Kimi K3: https://developers.cloudflare.com/ai/models/moonshotai/kimi-k3/\n- Kimi API pricing: https://platform.kimi.ai/docs/pricing/chat-k3\n\nMaybe also technical blog? The docs mention technical blog but no URL. We can omit.\n\nNeed generate cover image. Use generate_cover with title and prompt. Need produce original artwork with programmatic text, main technology name, concrete visual concept. We'll call after article saved.\n\nNeed social posts for blog, facebook, linkedin. Blog publish via publish_blog with markdown and cover url. Facebook and LinkedIn plain text posts. Need adapt per platform. No markdown. Include link and question. Use at most 3 hashtags. For LinkedIn and Facebook, 2-4 short paragraphs, plain text, specific hook, link, genuine question. Need include cover image path for Facebook and LinkedIn? The tools accept image local path. We can attach cover.\n\nNeed ensure publish_blog uses cover_image_url (public URL from generate_cover). Need generate_cover returns path and url. We'll use.\n\nNeed maybe choose category_id and tags? Not required. We can omit or use defaults. The blog may require category_id? Not specified. We'll omit.\n\nNeed save_article first. Then generate cover. Then publish. Then social posts.\n\nLet's write article now. Need be careful with factual claims: Kimi K3 launched July 16 2026? The official site says 2026-07-14? Actually research page list 2026-07-14 Kimi K3, 2026-07-16 PerceptionBench. The docs say launched July 16 2026. We can say \"Moonshot AI launched Kimi K3 in July 2026\" without exact day. Good.\n\nNeed mention open-source weights release by July 27 2026 per docs. Since tutorial uses API, not weights. We can note.\n\nNeed mention model specs: 2.8 trillion parameters, 1M context, KDA, Attention Residuals, native vision, tool calling, JSON mode, streaming. Use docs.\n\nNeed not mention fictional US models. Avoid comparison claims not verified.\n\nNeed include \"vendor-reported\" for parameter count? The docs are vendor. We can say \"Moonshot reports 2.8 trillion parameters\". Good.\n\nNow write article. Ensure word count. Let's draft in tool.",
+    "date": "2026-07-18T01:26:10.553281+00:00"
+  },
+  {
+    "topic": "Kimi K3",
+    "profile": "BuildWithAbdallah",
+    "provider": "ollama",
+    "channels": [
+      "blog",
+      "facebook",
+      "linkedin"
+    ],
+    "steps": 6,
+    "summary": "I have enough verified source material. The brand site has no existing Kimi K3 post, so the topic is fresh. I’ll now write the tutorial.\n\n**Mode: hands-on tutorial**\n\nLet me author the article.",
+    "date": "2026-07-18T01:27:55.940320+00:00"
+  },
+  {
+    "topic": "Kimi K3",
+    "profile": "BuildWithAbdallah",
+    "provider": "ollama",
+    "channels": [
+      "blog",
+      "facebook",
+      "linkedin"
+    ],
+    "steps": 8,
+    "summary": "No technical report found. We'll not invent benchmarks.\n\nNow write article. Ensure word count. Let's draft in our head and then save.\n\nPotential issue: The user asked \"Kimi K3\" and tutorial-style. We can title \"Getting Started with Kimi K3: Build a Code Review CLI Using Moonshot's New Flagship Model\". Good.\n\nLet's write Markdown. Need include Sources section with URLs.\n\nNeed avoid Markdown in social posts. We'll create separate texts.\n\nLet's write article now.</think>",
+    "date": "2026-07-18T01:29:07.497678+00:00"
   }
 ]
