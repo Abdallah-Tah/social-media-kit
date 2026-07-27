@@ -24,8 +24,17 @@ from agent.social_publishers import SUPPORTED_PLATFORMS, publish
 
 
 SAMPLE_PUBLISHED_DRAFT = {
-    "title": "AI Guide",
-    "body": "This is the body of the published blog post.",
+    # Must satisfy the content-quality guard in agent/social_drafts.py: a
+    # specific title and a substantive body, not "Title"/"Body" stand-ins.
+    "title": "Rate limiting Laravel queues without losing jobs",
+    "body": (
+        "Laravel queue workers will happily run the same job twice when a worker "
+        "is restarted mid-execution, because the reserved_at timestamp is cleared "
+        "before the handler finishes. That double execution stays invisible until "
+        "it charges a customer twice.\n\n"
+        "Wrap the handler in an atomic Redis lock keyed on the job payload hash "
+        "and release it only after the database transaction commits."
+    ),
     "blog_url": "https://buildwithabdallah.com/tutorials/ai-guide",
 }
 
@@ -49,7 +58,11 @@ def test_draft_status_blocks_publish(tmp_path):
     social_drafts.SOCIAL_DRAFTS_DIR = tmp_path
     try:
         drafts = create_social_drafts_from_blog(
-            "src", "https://example.com/blog", "Title", "Body", ["linkedin"],
+            "src",
+            "https://example.com/blog",
+            SAMPLE_PUBLISHED_DRAFT["title"],
+            SAMPLE_PUBLISHED_DRAFT["body"],
+            ["linkedin"],
         )
         sd = drafts[0]
         sd.status = "draft"

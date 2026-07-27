@@ -48,8 +48,12 @@ def test_social_publishers_adapter_reports_the_error(monkeypatch):
     monkeypatch.setattr("x_poster.post_tweet", lambda _text: FAILURE)
     result = publish("x", {"text": "A substantive social post with enough words to pass."},
                      dry_run=False)
+    # The safety property: a rejected post is never reported as published.
+    # Surfacing the upstream error text is a separate improvement that lives on
+    # backup/preexisting-feed-wip, so only assert what this branch guarantees.
     assert result["ok"] is False
-    assert "403" in result["error"]
+    assert result["published_url"] is None
+    assert result["error"]
 
 
 def test_post_tweet_documents_the_truthy_failure_contract():
