@@ -49,6 +49,21 @@ node remotion/render.mjs --id Short --props <props.json> --out out.mp4 [--audio 
 
 **Always invoke Python with `/usr/bin/python3`** for these scripts — the modules expect that interpreter (the shell default differs). Node for Remotion/Playwright is `/home/linuxbrew/.linuxbrew/bin/node`.
 
+## Publishing cadence
+
+The blog + LinkedIn are a live demonstration of what the bot produces, so news
+throughput is deliberate — the volume IS the demo. Format rotation is what keeps
+five posts a day from reading as five copies of the same post.
+
+- News: **5×/day** at 08:00, 11:00, 14:00, 17:00, 20:00 (`bwa-news-publish.sh`)
+- Tutorials: **Mon/Wed/Fri 09:00** (`bwa-cron-publish.sh`)
+- GitHub roundup: weekly, not yet on cron
+- LinkedIn: `DAILY_LIMITS` in `scripts/linkedin_policy.py` — news 5, tutorial 1, roundup 1
+
+**The registry must stay larger than the daily post count.** With 8 news formats and
+5 posts/day, each day draws a different subset; if the two numbers ever match, every
+day would run the identical format sequence.
+
 ## Blog content pipeline — article formats (`scripts/content_formats.py`)
 
 The cron lanes (`auto_publish.py` for evergreen tutorials, `news_publish.py` for
