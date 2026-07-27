@@ -232,9 +232,17 @@ def read_usage(limit: int | None = None) -> list[dict[str, Any]]:
     return rows[-limit:] if limit else rows
 
 
-# LLM call sites NOT yet routed through this module. Until these are migrated
-# (Phase 0.5), any total here is a floor, not the platform's spend.
-UNINSTRUMENTED_PATHS = ("agent/feed.py", "agent/shorts.py")
+# LLM call sites NOT routed through this module. Any total here is a floor, not
+# the platform's spend, until this tuple is empty.
+#
+# Phase 0.5 migrated agent/feed.py and agent/shorts.py. Still outstanding:
+#   agent/llm.py           — the multi-provider tool-calling agent loop, which
+#                            posts via its own _post(); instrumenting it means
+#                            characterizing a full tool round-trip first.
+#   scripts/image_generator.py — Gemini/FAL/OpenAI image generation, priced
+#                            per-image rather than per-token, so it needs its
+#                            own pricing model rather than this token table.
+UNINSTRUMENTED_PATHS = ("agent/llm.py", "scripts/image_generator.py")
 
 
 def usage_summary(rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:

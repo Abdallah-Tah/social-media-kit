@@ -317,21 +317,31 @@ def _llm_reason(item: FeedItem, topic: str | None, config: Any) -> str:
 
 
 def _llm_chat(prompt: str, config: Any) -> str:
-    """Minimal chat call through the configured provider."""
-    headers = {"Content-Type": "application/json"}
-    if config.api_key:
-        headers["Authorization"] = f"Bearer {config.api_key}"
-    url = (config.base_url or "https://api.openai.com/v1").rstrip("/") + "/chat/completions"
-    payload = {
-        "model": config.model,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 256,
-        "temperature": 0.4,
-    }
-    resp = requests.post(url, headers=headers, json=payload, timeout=60)
-    resp.raise_for_status()
-    data = resp.json()
-    return (data["choices"][0]["message"].get("content", "") or "").strip()
+    """Minimal chat call through the configured provider, via the shared client.
+
+    Instrumented through agent.llm_ops so the call lands in the usage ledger
+    (Phase 0.5). Payload is byte-identical to the previous hand-rolled request:
+    same model, 256 max_tokens, temperature 0.4, 60s timeout, no json mode.
+
+    NOTE: the previous implementation referenced `requests` without importing
+    it, so every call raised NameError and the caller's bare `except Exception:
+    pass` swallowed it — feed items silently had no LLM summary or reason. This
+    routing fixes that as a side effect.
+    """
+    from . import llm_ops
+
+    result = llm_ops.chat(
+        [{"role": "user", "content": prompt}],
+        model=config.model,
+        temperature=0.4,
+        max_tokens=256,
+        timeout=60,
+        base_url=(config.base_url or "https://api.openai.com/v1"),
+        api_key=(config.api_key or ""),
+        job_id="feed_llm",
+    )
+    result.raise_for_status()
+    return result.text
 
 
 # ── Output / persistence ────────────────────────────────────────────────────

@@ -296,27 +296,36 @@ def render_scene_html(plan: dict[str, Any], scene: dict[str, Any], index: int) -
 
 
 def _llm_plan(article: Article) -> dict[str, Any] | None:
+    """Plan a short via the shared instrumented client (Phase 0.5).
+
+    Payload is byte-identical to the previous hand-rolled request. In
+    particular response_format=json_object is preserved — without it the
+    planner receives prose, json.loads raises, and this silently degrades to
+    the deterministic fallback plan.
+    """
     key = os.environ.get("OPENAI_API_KEY", "")
     if not key:
         return None
+    from . import llm_ops
+
     prompt = _planner_prompt(article)
     try:
-        r = requests.post(
-            os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/") + "/chat/completions",
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json={
-                "model": os.environ.get("SHORTS_LLM_MODEL", "gpt-4o-mini"),
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.35,
-                "max_tokens": 1800,
-                "response_format": {"type": "json_object"},
-            },
+        result = llm_ops.chat(
+            [{"role": "user", "content": prompt}],
+            model=os.environ.get("SHORTS_LLM_MODEL", "gpt-4o-mini"),
+            temperature=0.35,
+            max_tokens=1800,
+            json_mode=True,
             timeout=90,
+            base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+            api_key=key,
+            job_id="shorts_planner",
+            content_id=article.slug,
         )
-        if not r.ok:
-            print(f"short planner LLM failed ({r.status_code}): {r.text[:200]}")
+        if not result.ok:
+            print(f"short planner LLM failed ({result.status_code}): {(result.error or '')[:200]}")
             return None
-        return json.loads(r.json()["choices"][0]["message"]["content"])
+        return json.loads(result.text)
     except Exception as exc:
         print(f"short planner LLM failed ({exc}); using deterministic fallback")
         return None

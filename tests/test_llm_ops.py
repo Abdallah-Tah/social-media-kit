@@ -157,8 +157,11 @@ def test_summary_never_claims_to_be_a_complete_platform_total(monkeypatch):
     assert "cost_coverage" not in s, "one blended coverage field conflates three questions"
     assert s["estimated_instrumented_cost_usd"] > 0
     assert s["instrumentation_coverage"] == "partial"
-    assert "agent/feed.py" in s["uninstrumented_paths"]
-    assert "agent/shorts.py" in s["uninstrumented_paths"]
+    # Phase 0.5 migrated feed.py and shorts.py; the agent loop and the image
+    # generator remain outside the ledger.
+    assert "agent/feed.py" not in s["uninstrumented_paths"]
+    assert "agent/shorts.py" not in s["uninstrumented_paths"]
+    assert "agent/llm.py" in s["uninstrumented_paths"]
     assert s["by_job"]["news_publish"]["calls"] == 1
 
 
