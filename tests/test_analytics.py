@@ -151,3 +151,78 @@ def test_save_analytics(tmp_path):
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ── Regression: /api/analytics 500'd whenever a draft awaited review ────────
+
+def _write_social(dirpath, platform, status, idx=0):
+    import json
+    dirpath.mkdir(parents=True, exist_ok=True)
+    (dirpath / f"{platform}-{status}-{idx}.json").write_text(json.dumps({
+        "draft_id": f"{platform}{status}{idx}",
+        "platform": platform,
+        "status": status,
+        "title": "A sufficiently specific title",
+        "text": "Body text.",
+        "created_at": "2026-07-27T00:00:00+00:00",
+        "updated_at": "2026-07-27T00:00:00+00:00",
+    }), encoding="utf-8")
+
+
+@pytest.fixture
+def social_dir(tmp_path, monkeypatch):
+    from agent import analytics
+    monkeypatch.setattr(analytics, "INTEL_DIR", tmp_path / "intel")
+    monkeypatch.setattr(analytics, "DRAFTS_DIR", tmp_path / "drafts")
+    monkeypatch.setattr(analytics, "SOCIAL_DIR", tmp_path / "social")
+    return tmp_path / "social"
+
+
+def test_needs_review_status_does_not_crash_analytics(social_dir):
+    """The live defect: `needs_review` is a VALID_STATUS but was never seeded."""
+    _write_social(social_dir, "linkedin", "needs_review")
+
+    snapshot = compute_analytics(days=30)
+
+    counts = snapshot.social["by_platform"]["linkedin"]
+    assert counts["needs_review"] == 1
+    assert counts["created"] == 1
+
+
+def test_every_valid_status_is_present_in_the_response(social_dir):
+    """Response shape must be stable regardless of which statuses occur."""
+    from agent.social_drafts import VALID_STATUSES
+
+    _write_social(social_dir, "linkedin", "published")
+    counts = compute_analytics(days=30).social["by_platform"]["linkedin"]
+
+    for status in VALID_STATUSES:
+        assert status in counts, f"{status} missing from analytics response"
+    # Backward compatibility: the original keys must all survive.
+    for legacy in ("created", "approved", "scheduled", "published", "failed", "draft"):
+        assert legacy in counts
+
+
+def test_unknown_status_is_counted_not_fatal(social_dir):
+    """A legacy or hand-edited status must not take the endpoint down."""
+    _write_social(social_dir, "linkedin", "some_future_status")
+
+    counts = compute_analytics(days=30).social["by_platform"]["linkedin"]
+
+    assert counts["some_future_status"] == 1
+    assert counts["created"] == 1
+
+
+def test_all_real_statuses_together_compute_cleanly(social_dir):
+    """Mirrors the production mix that was crashing the live dashboard."""
+    for i, status in enumerate(
+        ["published", "approved", "failed", "draft", "needs_review", "scheduled", "idea"]
+    ):
+        _write_social(social_dir, "linkedin", status, i)
+
+    social = compute_analytics(days=30).social
+
+    assert social["total_social_drafts"] == 7
+    assert social["by_platform"]["linkedin"]["created"] == 7
+    assert social["by_platform"]["linkedin"]["needs_review"] == 1
+    assert 0 <= social["success_rate"] <= 100

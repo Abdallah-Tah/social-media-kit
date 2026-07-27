@@ -162,15 +162,34 @@ def _editorial_funnel(drafts: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _empty_status_counts() -> dict[str, int]:
+    """Seed every valid status so the response shape is stable and complete.
+
+    `created` is a total, not a status. The previous hardcoded seed omitted
+    `needs_review` and `idea`, which made a real draft crash the endpoint with
+    a KeyError — /api/analytics returned 500 whenever any draft was awaiting
+    review. Sourced from social_drafts.VALID_STATUSES so the two cannot drift.
+    """
+    from .social_drafts import VALID_STATUSES
+
+    counts = {"created": 0}
+    counts.update({status: 0 for status in sorted(VALID_STATUSES)})
+    return counts
+
+
 def _social_metrics(socials: list[dict[str, Any]], platform_filter: str | None) -> dict[str, Any]:
     if platform_filter:
         socials = [s for s in socials if s.get("platform") == platform_filter]
     by_platform: dict[str, dict[str, int]] = {}
     for s in socials:
         p = s.get("platform", "unknown")
-        by_platform.setdefault(p, {"created": 0, "approved": 0, "scheduled": 0, "published": 0, "failed": 0, "draft": 0})
+        by_platform.setdefault(p, _empty_status_counts())
         by_platform[p]["created"] += 1
-        by_platform[p][s.get("status", "draft")] += 1
+        # A status outside VALID_STATUSES (legacy row, hand-edited file, or a
+        # status added later) must not take the endpoint down — count it under
+        # its own key instead of raising KeyError.
+        status = s.get("status", "draft")
+        by_platform[p][status] = by_platform[p].get(status, 0) + 1
     total_published = sum(p.get("published", 0) for p in by_platform.values())
     total_attempts = total_published + sum(p.get("failed", 0) for p in by_platform.values())
     success_rate = round(total_published / total_attempts * 100, 1) if total_attempts else 0
