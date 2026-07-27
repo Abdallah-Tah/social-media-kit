@@ -21,6 +21,7 @@ import requests
 
 sys.path.insert(0, os.path.expanduser("~/social-media-kit"))
 from agent.config import load_env
+from agent import llm_ops as LLM
 load_env()
 sys.path.insert(0, os.path.join(os.path.expanduser("~/social-media-kit"), "scripts"))
 import datetime
@@ -123,15 +124,12 @@ def web_grounded_issues(title, body):
         f"WEB RESULTS:\n" + "\n".join(facts[:16]) + f"\n\nARTICLE EXCERPT:\n{(body or '')[:3000]}"
     )
     try:
-        r = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}", "Content-Type": "application/json"},
-            json={"model": "gpt-4o", "messages": [{"role": "user", "content": prompt}],
-                  "temperature": 0.0, "response_format": {"type": "json_object"}, "max_tokens": 400},
-            timeout=90,
-        )
+        r = LLM.chat([{"role": "user", "content": prompt}], model="gpt-4o",
+                     temperature=0.0, max_tokens=400, json_mode=True, timeout=90,
+                     job_id="version_sanity_check",
+                     api_key=os.environ["OPENAI_API_KEY"])
         if r.ok:
-            return [str(i) for i in json.loads(r.json()["choices"][0]["message"]["content"]).get("issues", [])][:5]
+            return [str(i) for i in json.loads(r.text).get("issues", [])][:5]
     except Exception as e:
         print(f"⚠️ web-grounded check skipped ({e})")
     return []

@@ -37,40 +37,19 @@ from agent.config import load_env
 load_env()
 sys.path.insert(0, os.path.join(os.path.expanduser("~/social-media-kit"), "scripts"))
 import image_generator as IG
+import content_formats as CF
+from agent import llm_ops as LLM
 
 BASE = os.environ.get("BLOG_API_URL", "https://buildwithabdallah.com/api/v1").rstrip("/")
 ORIGIN = BASE.split("/api/")[0] if "/api/" in BASE else BASE
 MIN_WORDS = int(os.environ.get("ENFORCE_MIN_WORDS", "1100"))
 MIN_CODE = int(os.environ.get("ENFORCE_MIN_CODE", "4"))
 
-REQUIRED_TUTORIAL_SECTIONS = [
-    "## What You'll Build",
-    "## Why This Matters",
-    "## Architecture Overview",
-    "## Step-by-Step Implementation",
-    "## Common Mistakes",
-    "## How I Would Use This",
-    "## Lessons Learned",
-    "## Next Steps",
-]
-
-FORBIDDEN_CONTENT_PHRASES = [
-    "revolutionary",
-    "game-changing",
-    "cutting-edge",
-    "transformative",
-    "industry-leading",
-    "next-generation",
-    "groundbreaking",
-    "unprecedented",
-    "world-class",
-    "future-proof",
-    "time will tell",
-    "stay tuned",
-    "the future looks bright",
-    "this changes everything",
-    "exciting times ahead",
-]
+# Section skeletons and the hype blocklist now live in the format registry
+# (scripts/content_formats.py) so each format is gated against its own shape
+# instead of one global template. Kept as aliases for external callers.
+FORBIDDEN_CONTENT_PHRASES = CF.FORBIDDEN_PHRASES
+DEFAULT_FORMAT = "build_along"
 
 
 def _h(json_ct=False):
@@ -88,76 +67,51 @@ def fetch(pid=None):
 
 
 def _chat(messages, max_tokens=8000, temperature=0.5):
-    key = os.environ.get("OPENAI_API_KEY", "")
-    r = requests.post(
-        "https://api.openai.com/v1/chat/completions",
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json={"model": "gpt-4o", "messages": messages,
-              "temperature": temperature, "max_tokens": max_tokens},
-        timeout=240,
-    )
-    r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"].strip()
+    """Instrumented via agent.llm_ops; raises on failure as it always has."""
+    result = LLM.chat(messages, model="gpt-4o", temperature=temperature,
+                      max_tokens=max_tokens, timeout=240, job_id="enforce_quality")
+    result.raise_for_status()
+    return result.text
 
 
-_VOICE = (
-    "You are a senior developer writing a complete, hands-on tutorial for the Build With "
-    "Abdallah blog. Sound like an experienced software engineer sharing practical knowledge "
-    "with other developers, not AI content, marketing copy, a corporate blog, or a documentation "
-    "summary. Clear, simple English is better than native-sounding English. Prioritize clarity, "
-    "accuracy, practical value, tradeoffs, limitations, and real-world experience. Real, complete, "
-    "copy-pasteable code in fenced code blocks with language labels (actual commands and full files, "
-    "never prose descriptions of code). Never use hype words like revolutionary, game-changing, "
-    "cutting-edge, transformative, industry-leading, next-generation, groundbreaking, unprecedented, "
-    "world-class, or future-proof. Never end with generic lines like Time will tell, Stay tuned, "
-    "The future looks bright, This changes everything, or Exciting times ahead. Minimal emojis. "
-    "No invented benchmarks."
-)
+_VOICE = CF.VOICE
 
 
-def tutorial_quality_issues(body):
-    issues = []
-    low = (body or "").lower()
-    for section in REQUIRED_TUTORIAL_SECTIONS:
-        if section.lower() not in low:
-            issues.append(f"missing section: {section}")
-    for phrase in FORBIDDEN_CONTENT_PHRASES:
-        if phrase in low:
-            issues.append(f"forbidden phrase: {phrase}")
-    return issues
+def tutorial_quality_issues(body, format_id=DEFAULT_FORMAT):
+    """Gate the body against the format it was actually written to."""
+    return CF.quality_issues("tutorial", body, format_id)
 
 
-def write_article(title):
-    """Generate the tutorial in two halves so it reliably reaches full length.
+def write_article(title, format_id=DEFAULT_FORMAT):
+    """Generate the article in two halves so it reliably reaches full length.
 
     gpt-4o caps a single response near ~700 words; asking for each half
-    separately yields a complete ~1,500-1,800 word tutorial.
+    separately yields a complete ~1,500-1,800 word piece. The section skeleton,
+    the split point, and the per-half instructions all come from the chosen
+    format — that is what stops every article coming out the same shape.
     """
+    spec = CF.get("tutorial", format_id)
+    split = spec["split"]
+
     part_a = _chat([
         {"role": "system", "content": _VOICE},
         {"role": "user", "content": (
-            f"Write the FIRST HALF of a tutorial titled \"{title}\". Start with '# {title}'. "
-            "Use these required sections first: ## What You'll Build (show the final outcome), "
-            "## Why This Matters (problem, when to use it, who benefits), ## Architecture Overview "
-            "(simple architecture explanation; use a text diagram when useful), and "
-            "## Step-by-Step Implementation. In the implementation section, include the first "
-            "three numbered steps, each building one real working project with COMPLETE code blocks "
-            "and a short explanation under each. Around 900 words. "
-            "Do NOT write a conclusion yet. Output ONLY markdown."
+            f"Write the FIRST HALF of a '{spec['label']}' article titled \"{title}\". "
+            f"Start with '# {title}'.\n\n"
+            f"Use exactly these H2 sections, in this order:\n{CF.outline(spec, 0, split)}\n\n"
+            f"{spec['brief_a']}\n\n"
+            "Around 900 words. Do NOT write a conclusion yet. Output ONLY markdown."
         )},
     ])
     part_b = _chat([
         {"role": "system", "content": _VOICE},
         {"role": "user", "content": (
-            "Continue this tutorial seamlessly (do not repeat the intro or earlier steps). "
+            "Continue this article seamlessly (do not repeat the intro or earlier sections). "
             "Here is the first half:\n\n" + part_a + "\n\n---\n\n"
-            "Now write the SECOND HALF: finish ## Step-by-Step Implementation with the remaining "
-            "two or three numbered steps and complete code, then include ## Common Mistakes "
-            "(real mistakes such as queue workers not running, cache invalidation, or environment "
-            "configuration when relevant), ## How I Would Use This (when I would use it, when I would "
-            "avoid it, production, cost, and maintenance considerations), ## Lessons Learned "
-            "(tradeoffs, unexpected issues, real-world considerations), ## Next Steps (practical "
-            "follow-up learning paths), and ## Sources with real URLs. Around 850 words. "
+            "Now write the SECOND HALF using exactly these H2 sections, in this order:\n"
+            f"{CF.outline(spec, split)}\n\n"
+            f"{spec['brief_b']}\n\n"
+            "The Sources section must list real URLs. Around 850 words. "
             "Output ONLY markdown, with no article title line."
         )},
     ])
@@ -179,20 +133,30 @@ def main():
     cover = p.get("cover_image") or ""
     words, code = len(body.split()), body.count("```") // 2
     on_site = bool(cover) and cover.startswith(ORIGIN)
-    print(f"enforce id {pid}: {words}w {code}cb cover={'on-site' if on_site else (cover[:40] or 'NONE')}")
+
+    # Which format was this written to? The publisher records it by slug; fall
+    # back to reading the headings (posts predating the registry), then to the
+    # default build-along shape.
+    fmt = (
+        CF.format_for_slug("tutorial", p.get("slug") or "")
+        or CF.detect_format("tutorial", body)
+        or DEFAULT_FORMAT
+    )
+    print(f"enforce id {pid}: {words}w {code}cb format={fmt} "
+          f"cover={'on-site' if on_site else (cover[:40] or 'NONE')}")
 
     patch = {}
 
     # 1) Body depth
-    issues = tutorial_quality_issues(body)
+    issues = tutorial_quality_issues(body, fmt)
     if words < MIN_WORDS or code < MIN_CODE or issues:
         if issues:
             print("  quality issues: " + "; ".join(issues[:8]))
         print(f"  body below standard (<{MIN_WORDS}w, <{MIN_CODE} code blocks, or missing content standard) → regenerating (gpt-4o)")
         try:
-            nb = write_article(title)
+            nb = write_article(title, fmt)
             nw, nc = len(nb.split()), nb.count("```") // 2
-            nissues = tutorial_quality_issues(nb)
+            nissues = tutorial_quality_issues(nb, fmt)
             # Accept the regen if it is a clear improvement: at least ~850 words,
             # enough code blocks, and not shorter than the original.
             if nw >= 850 and nc >= MIN_CODE and nw >= words and not nissues:

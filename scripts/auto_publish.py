@@ -28,6 +28,8 @@ sys.path.insert(0, os.path.join(KIT, "scripts"))
 import image_generator as IG
 import blog_publisher as BP
 import content_research as CR
+import content_formats as CF
+from agent import llm_ops as LLM
 from enforce_published_quality import write_article  # the reliable two-halves writer
 
 BASE = os.environ.get("BLOG_API_URL", "https://buildwithabdallah.com/api/v1").rstrip("/")
@@ -68,19 +70,20 @@ def pick_cluster(titles):
 
 
 def _chat(messages, max_tokens=400, temperature=0.6):
-    key = os.environ.get("OPENAI_API_KEY", "")
-    r = requests.post(
-        "https://api.openai.com/v1/chat/completions",
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json={"model": "gpt-4o", "messages": messages,
-              "temperature": temperature, "max_tokens": max_tokens},
-        timeout=120,
-    )
-    r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"].strip()
+    """Instrumented via agent.llm_ops; raises on failure as it always has."""
+    result = LLM.chat(messages, model="gpt-4o", temperature=temperature,
+                      max_tokens=max_tokens, timeout=120, job_id="auto_publish")
+    result.raise_for_status()
+    return result.text
 
 
-def find_topic(cluster, titles):
+def find_topic(cluster, titles, spec):
+    """Pick a topic that fits the chosen FORMAT, not just the cluster.
+
+    The format's angle is what stops this returning yet another "build a CRUD
+    app with X" — a debugging post-mortem needs a failure mode, a benchmark
+    needs an unanswered performance question, and so on.
+    """
     # Pull current signal from the web so the topic isn't anchored to old model knowledge.
     search_lines = []
     for q in (f"{cluster} new release features {datetime.date.today().year}",
@@ -96,13 +99,16 @@ def find_topic(cluster, titles):
     avoid = "\n".join("- " + t for t in titles if t)
 
     prompt = (
-        f"You are choosing ONE hands-on developer tutorial topic in the '{cluster}' area for the "
+        f"You are choosing ONE developer article topic in the '{cluster}' area for the "
         "Build With Abdallah blog. Use the current web signals to stay relevant.\n\n"
+        f"ARTICLE FORMAT: {spec['label']}\n"
+        f"Find a topic that fits this format specifically — {spec['angle']}.\n\n"
+        f"{CF.title_rules(spec)}\n\n"
         f"CURRENT WEB SIGNALS:\n{search_block}\n\n"
         f"ALREADY PUBLISHED (do NOT duplicate the subject of any of these, even reworded):\n{avoid}\n\n"
-        "Pick ONE specific, practical tutorial subject (one library/feature/use case) that is NOT a "
-        "duplicate and is genuinely useful to build. Return STRICT JSON: "
-        '{\"title\":\"<clear specific tutorial title, no clickbait>\",\"slug\":\"<kebab-case-slug>\"}.'
+        "Pick ONE specific subject (one library, feature, failure mode, or decision) that is NOT a "
+        "duplicate and that a working developer would actually search for. Return STRICT JSON: "
+        '{"title":"<specific title following the style rules above>","slug":"<kebab-case-slug>"}.'
     )
     try:
         obj = json.loads(re.search(r"\{.*\}", _chat([{"role": "user", "content": prompt}],
@@ -112,7 +118,7 @@ def find_topic(cluster, titles):
         return title, (slug or re.sub(r"[^a-z0-9-]", "", title.lower().replace(" ", "-"))[:70].strip("-"))
     except Exception as e:
         print(f"topic pick failed ({e}); falling back.")
-        return f"Getting Started with {cluster}: A Practical Guide", None
+        return f"{cluster} in practice: {spec['label'].lower()}", None
 
 
 def slug_in_sitemap(slug):
@@ -125,20 +131,40 @@ def slug_in_sitemap(slug):
 def main():
     titles = recent_titles()
     cluster = pick_cluster(titles)
-    print(f"cluster: {cluster}")
-    title, slug = find_topic(cluster, titles)
+    fmt = CF.pick_format("tutorial")
+    spec = CF.get("tutorial", fmt)
+    print(f"cluster: {cluster}\nformat: {fmt} ({spec['label']})")
+
+    # A slug already in the sitemap means the TOPIC is a duplicate. Suffixing it
+    # with a date (the old behaviour) just published the same article twice under
+    # a different URL — retry the pick instead.
+    title = slug = None
+    seen = list(titles)
+    for attempt in range(3):
+        title, slug = find_topic(cluster, seen, spec)
+        if not slug:
+            slug = re.sub(r"[^a-z0-9-]", "", title.lower().replace(" ", "-"))[:70].strip("-")
+        if not slug_in_sitemap(slug):
+            break
+        print(f"  duplicate slug '{slug}' already on the site — repicking ({attempt + 1}/3)")
+        seen.append(title)
+        title = slug = None
     if not slug:
-        slug = re.sub(r"[^a-z0-9-]", "", title.lower().replace(" ", "-"))[:70].strip("-")
-    if slug_in_sitemap(slug):
-        slug = f"{slug}-{datetime.date.today():%m%d}"
+        print("topic pick kept returning duplicates — aborting (no publish)")
+        return 1
     print(f"topic: {title}\n  slug: {slug}")
 
-    body = write_article(title)
+    body = write_article(title, fmt)
     wc = len(body.split())
     print(f"article: {wc} words, {body.count('```')//2} code blocks")
     if wc < 700:
         print("article too short — aborting (no publish)")
         return 1
+    issues = CF.quality_issues("tutorial", body, fmt)
+    if issues:
+        # Non-fatal here: the cron runs enforce_published_quality.py next, which
+        # regenerates against this same format. Surface it so the log explains why.
+        print("format gate issues (enforcement pass will retry): " + "; ".join(issues[:6]))
 
     # Save a local draft so the cron's "Saved draft to" marker is satisfied.
     os.makedirs(DRAFTS, exist_ok=True)
@@ -157,6 +183,10 @@ def main():
         print("publish failed")
         return 1
     print(f"Published: Post ID {post.get('id')}, Slug: {post.get('slug')}")
+
+    # Record the format so the rotation moves on and the enforcement pass gates
+    # this post against the right skeleton.
+    CF.record("tutorial", fmt, post.get("slug", slug), title)
 
     # Facebook photo post (website is live; link back).
     try:

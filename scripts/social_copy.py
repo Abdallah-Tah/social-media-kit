@@ -8,7 +8,13 @@ Used by the LinkedIn, Facebook, and Reel posters so every channel matches.
 """
 import os
 import re
+import sys
+
 import requests
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import content_formats as CF
+from agent import llm_ops as LLM
 
 BANNED = [
     "unlock the power", "unlock", "dive into", "elevate your skills", "elevate",
@@ -40,89 +46,94 @@ def _topics_from_body(body):
     return [h for h in heads if h and not skip.match(h)][:6]
 
 
-def make_social_copy(title, body, url, model="gpt-4o-mini"):
-    """Return a short, simple, human social post (plain text) + 3-5 hashtags."""
-    topics = _topics_from_body(body)
-    prompt = (
-        "Write a short social media post for Abdallah, a full-stack developer. English is his second "
-        "language, so write in SIMPLE, natural, human English. It should sound like a developer sharing "
-        "something useful — not corporate, not an ad, not AI-generated, no big claims.\n\n"
-        "Social posts must NOT be article summaries or table-of-contents listings. Never list section "
-        "headings like Project Structure, Section 1, Install X, Configure Y. People do not click for headings.\n\n"
-        "Follow this structure:\n"
-        "1) Hook: a practical problem, insight, lesson, or observation.\n"
-        "2) What the article covers: briefly explain the value, not the table of contents.\n"
-        "3) Why it matters: explain practical value for real projects.\n"
-        "4) Link:\n" + url + "\n"
+_BASE_VOICE = (
+    "Write a short social media post for Abdallah, a full-stack developer. English is his second "
+    "language, so write in SIMPLE, natural, human English. It should sound like a developer sharing "
+    "something useful — not corporate, not an ad, not AI-generated, no big claims.\n\n"
+    "Social posts must NOT be article summaries or table-of-contents listings. Never list section "
+    "headings like Project Structure, Section 1, Install X, Configure Y. People do not click for headings.\n\n"
+)
+
+
+def _generate(prompt, model, temperature=0.7):
+    """One completion, with the banned-phrase guard. None means fall back."""
+    if not os.environ.get("OPENAI_API_KEY", ""):
+        return None
+    result = LLM.chat([{"role": "user", "content": prompt}], model=model,
+                      temperature=temperature, max_tokens=500, timeout=60,
+                      job_id="social_copy")
+    if not result.ok:
+        print(f"\u26a0\ufe0f social copy gen failed ({result.error_class}); using template.")
+        return None
+    text = _strip_md(result.text)
+    if any(b in text.lower() for b in BANNED):
+        return None
+    return text
+
+
+def _tail(url):
+    return (
+        "4) The link on its own line:\n" + url + "\n"
         "5) 3 to 5 relevant hashtags on one line, including #BuildWithAbdallah.\n\n"
         f"NEVER use these phrases: {', '.join(BANNED)}. No emojis except at most one. Keep it short. "
         "Be specific and concrete. No markdown formatting (no ** or backticks).\n\n"
-        f"ARTICLE TITLE: {title}\n"
-        f"WHAT THE TUTORIAL COVERS (use these for the bullets, simplified): {topics}\n\n"
+    )
+
+
+def make_social_copy(title, body, url, model="gpt-4o-mini", shape_id=None):
+    """Return a short, simple, human social post (plain text) + 3-5 hashtags.
+
+    The post's SHAPE rotates (see content_formats.SOCIAL_SHAPES) so the feed
+    doesn't read as the same three-paragraph template every single day.
+    """
+    topics = _topics_from_body(body)
+    shape = CF.social_shape(shape_id or CF.pick_social_shape())
+    prompt = (
+        _BASE_VOICE
+        + f"POST SHAPE — {shape['label']}. Follow this structure:\n{shape['structure']}"
+        + _tail(url)
+        + f"ARTICLE TITLE: {title}\n"
+        f"WHAT THE ARTICLE COVERS (source material for the post, simplified — do not list these): {topics}\n\n"
         "Output ONLY the post text."
     )
-    key = os.environ.get("OPENAI_API_KEY", "")
-    if key:
-        try:
-            r = requests.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                json={"model": model, "messages": [{"role": "user", "content": prompt}],
-                      "temperature": 0.5, "max_tokens": 500},
-                timeout=60,
-            )
-            if r.ok:
-                text = _strip_md(r.json()["choices"][0]["message"]["content"])
-                # final guard: drop any banned phrase that slipped through
-                low = text.lower()
-                if not any(b in low for b in BANNED):
-                    return text
-        except Exception as e:
-            print(f"⚠️ social copy gen failed ({e}); using template.")
-    # Simple deterministic fallback in the same style.
-    value = (topics[0].lower() if topics else "build the feature without guessing through the setup")
-    return (f"Many developers can follow a tutorial, but the hard part is knowing when the pattern is worth using.\n\n"
-            f"This article shows how to {value} in a practical project.\n\n"
-            "The useful part is understanding the tradeoffs before this reaches production.\n\n"
-            f"Read it here:\n{url}\n\n#coding #webdev #BuildWithAbdallah")
+    # Record either way — the post goes out in this shape whether the model
+    # wrote it or the fallback did, so the rotation must advance regardless.
+    CF.record("social", shape["id"], url, title)
+    text = _generate(prompt, model)
+    if text:
+        return text
+
+    # Deterministic fallback, still in this shape's voice.
+    value = (f"This one is about {topics[0].lower()} in a practical project." if topics
+             else "This one is about getting the setup right without guessing.")
+    return (shape["fallback"].format(value=value)
+            + f"\n\nRead it here:\n{url}\n\n#coding #webdev #BuildWithAbdallah")
 
 
-def make_news_social_copy(title, body, url, model="gpt-4o-mini"):
-    """Return a short news-analysis social post with the site link."""
+def make_news_social_copy(title, body, url, model="gpt-4o-mini", shape_id=None):
+    """Return a short news-analysis social post with the site link.
+
+    Shares the shape rotation with the tutorial lane, so a news post and the
+    tutorial posted the same week don't land in the feed reading identically.
+    """
+    shape = CF.social_shape(shape_id or CF.pick_social_shape())
     prompt = (
         "Write a short social media post for Abdallah, a full-stack developer. English is his second "
         "language, so write in SIMPLE, natural, human English. This is developer news analysis, not a "
         "tutorial. No hype, no ad tone, no AI-polish.\n\n"
-        "Social posts must NOT be article summaries or table-of-contents listings.\n\n"
-        "Follow this structure:\n"
-        "1) Hook: a practical problem, insight, lesson, or observation.\n"
-        "2) What the article covers: briefly explain the value, not the table of contents.\n"
-        "3) Why it matters: explain practical value for real projects.\n"
-        "4) Link:\n" + url + "\n"
-        "5) 3 to 5 relevant hashtags on one line, including #BuildWithAbdallah.\n\n"
-        f"NEVER use these phrases: {', '.join(BANNED)}. No markdown formatting. No clickbait.\n\n"
-        f"ARTICLE TITLE: {title}\n"
+        "Social posts must NOT be article summaries or table-of-contents listings.\n"
+        "Only state facts that appear in the article excerpt below. Never invent a version number, "
+        "benchmark, or date, and attribute vendor figures as vendor-reported.\n\n"
+        f"POST SHAPE — {shape['label']}. Follow this structure:\n{shape['structure']}"
+        + _tail(url)
+        + f"ARTICLE TITLE: {title}\n"
         f"ARTICLE BODY EXCERPT: {(body or '')[:1200]}\n\n"
         "Output ONLY the post text."
     )
-    key = os.environ.get("OPENAI_API_KEY", "")
-    if key:
-        try:
-            r = requests.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                json={"model": model, "messages": [{"role": "user", "content": prompt}],
-                      "temperature": 0.45, "max_tokens": 420},
-                timeout=60,
-            )
-            if r.ok:
-                text = _strip_md(r.json()["choices"][0]["message"]["content"])
-                low = text.lower()
-                if not any(b in low for b in BANNED):
-                    return text
-        except Exception as e:
-            print(f"⚠️ news social copy gen failed ({e}); using template.")
-    return (f"New developer tools are useful only when they solve a real problem in a real project.\n\n"
-            f"This article breaks down {title} and what it could mean for builders.\n\n"
-            "The main question is what I would test first before trusting it in production.\n\n"
-            f"Read it here:\n{url}\n\n#SoftwareDevelopment #TechNews #BuildWithAbdallah")
+    CF.record("social", shape["id"], url, title)
+    text = _generate(prompt, model, temperature=0.55)
+    if text:
+        return text
+    value = f"This one breaks down {title} and what it means for people actually shipping code."
+    return (shape["fallback"].format(value=value)
+            + f"\n\nRead it here:\n{url}\n\n#SoftwareDevelopment #TechNews #BuildWithAbdallah")

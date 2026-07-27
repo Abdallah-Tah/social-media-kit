@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.expanduser("~/social-media-kit"))
 from agent.config import load_env
 load_env()
 sys.path.insert(0, os.path.join(os.path.expanduser("~/social-media-kit"), "scripts"))
+from agent import llm_ops as LLM
 import linkedin_org_poster as L
 
 BASE = os.environ.get("BLOG_API_URL", "https://buildwithabdallah.com/api/v1").rstrip("/")
@@ -64,14 +65,11 @@ def write_post(title, excerpt, body, url):
     key = os.environ.get("OPENAI_API_KEY", "")
     if key:
         try:
-            r = requests.post("https://api.openai.com/v1/chat/completions",
-                              headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                              json={"model": "gpt-4o-mini",
-                                    "messages": [{"role": "user", "content": prompt}],
-                                    "temperature": 0.6,
-                                    "response_format": {"type": "json_object"}}, timeout=45)
+            r = LLM.chat([{"role": "user", "content": prompt}], model="gpt-4o-mini",
+                         temperature=0.6, json_mode=True, timeout=45,
+                         job_id="linkedin_from_article")
             if r.ok:
-                o = json.loads(r.json()["choices"][0]["message"]["content"])
+                o = json.loads(r.text)
                 tags = [("#" + h.lstrip("#").strip()) for h in o.get("hashtags", []) if h.strip()][:7]
                 if not any(t.lower() == "#buildwithabdallah" for t in tags):
                     tags.append("#BuildWithAbdallah")
