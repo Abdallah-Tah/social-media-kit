@@ -185,16 +185,27 @@ def _job_feed_run(dry_run: bool) -> dict[str, Any]:
     scripts_dir = str(ROOT / "scripts")
     if scripts_dir not in sys.path:
         sys.path.insert(0, scripts_dir)
-    from .feed import build_feed, save_feed
+    from .feed import build_feed, last_enrichment_stats, save_feed
     # include_seen: the browse feed should always show current top stories.
+    # It also means the same stories recur run after run, which is why the
+    # enrichment cache (not the seen store) is what stops re-summarizing them.
     items = build_feed(limit=20, use_llm=not dry_run, include_seen=True)
     if not dry_run and items:  # never overwrite a good snapshot with 0 items
         save_feed(items)
+    enrichment = last_enrichment_stats().to_dict()
+    suffix = (
+        f" | llm: {enrichment['llm_calls']} calls, {enrichment['enriched']} enriched, "
+        f"{enrichment['cache_hits']} cached, {enrichment['failed']} failed"
+    ) if enrichment["enabled"] else " | llm: disabled"
     return {
         "ok": True,
-        "message": f"Feed refresh: {len(items)} items {'(dry run — not saved)' if dry_run else 'saved'}",
+        "message": (
+            f"Feed refresh: {len(items)} items "
+            f"{'(dry run — not saved)' if dry_run else 'saved'}{suffix}"
+        ),
         "count": len(items),
         "dry_run": dry_run,
+        "enrichment": enrichment,
     }
 
 

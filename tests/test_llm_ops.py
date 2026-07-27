@@ -156,7 +156,12 @@ def test_summary_never_claims_to_be_a_complete_platform_total(monkeypatch):
     assert "cost_usd" not in s, "a bare 'cost_usd' total reads as platform-wide"
     assert "cost_coverage" not in s, "one blended coverage field conflates three questions"
     assert s["estimated_instrumented_cost_usd"] > 0
-    assert s["instrumentation_coverage"] == "partial"
+    assert s["global_instrumentation_coverage"] == "partial"
+    # The two measurable axes must name their scope. An unqualified
+    # "usage_observation_coverage": "complete" reads as a platform-wide claim
+    # while uninstrumented paths remain.
+    assert "usage_observation_coverage" not in s
+    assert "pricing_coverage" not in s
     # Phase 0.5 migrated feed.py and shorts.py; the agent loop and the image
     # generator remain outside the ledger.
     assert "agent/feed.py" not in s["uninstrumented_paths"]
@@ -170,9 +175,9 @@ def test_the_three_coverage_axes_are_independent(monkeypatch):
     monkeypatch.setattr(LLM.requests, "post", lambda *a, **k: FakeResponse())
     LLM.chat([{"role": "user", "content": "x"}], model="gpt-4o", job_id="t")
     s = LLM.usage_summary()
-    assert s["usage_observation_coverage"] == "complete"  # provider reported usage
-    assert s["pricing_coverage"] == "complete"            # gpt-4o is priced
-    assert s["instrumentation_coverage"] == "partial"     # feed/shorts not routed
+    assert s["instrumented_path_usage_observation_coverage"] == "complete"
+    assert s["instrumented_path_pricing_coverage"] == "complete"  # gpt-4o is priced
+    assert s["global_instrumentation_coverage"] == "partial"      # agent loop not routed
     assert s["unpriced_models"] == []
 
 
@@ -182,9 +187,9 @@ def test_an_unpriced_fallback_model_shows_up_as_partial_pricing(monkeypatch):
     LLM.chat([{"role": "user", "content": "x"}], model="gemini-2.5-pro", job_id="t")
 
     s = LLM.usage_summary()
-    assert s["pricing_coverage"] == "partial"
+    assert s["instrumented_path_pricing_coverage"] == "partial"
     assert "gemini-2.5-pro" in s["unpriced_models"]
-    assert s["usage_observation_coverage"] == "partial"  # unpriced => cost unknown
+    assert s["instrumented_path_usage_observation_coverage"] == "partial"
     assert s["estimated_instrumented_cost_usd"] == 0
 
 

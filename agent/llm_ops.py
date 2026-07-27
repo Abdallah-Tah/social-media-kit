@@ -249,10 +249,18 @@ def usage_summary(rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Totals for the dashboard.
 
     `cost_usd` is the sum over INSTRUMENTED calls only. It is deliberately NOT
-    called a total platform cost: `cost_coverage` reports that some paths are
+    called a total platform cost: the coverage fields report that some paths are
     still unaccounted, and `cost_unknown_calls` reports calls whose provider
     returned no usage block. Both are surfaced rather than hidden so the number
     is never mistaken for complete.
+
+    Coverage field naming is scoped on purpose. Usage-observation and pricing
+    can only ever be measured over calls this module actually saw, so reporting
+    either as a bare "complete" while UNINSTRUMENTED_PATHS is non-empty reads as
+    a claim about the whole platform that the data does not support. The two
+    per-path fields therefore carry an `instrumented_path_` prefix, and the only
+    field that speaks for the platform is `global_instrumentation_coverage`,
+    which stays "partial" until every call site is routed through here.
     """
     rows = read_usage() if rows is None else rows
     known = [r for r in rows if r.get("cost_known")]
@@ -276,12 +284,18 @@ def usage_summary(rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         "cost_unknown_calls": len(rows) - len(known),
         # Three independent coverage questions. A single "cost_coverage" field
         # conflated them and let a partial figure read as authoritative.
-        #   instrumentation  — are all call sites routed through this module?
-        #   usage_observation — did the provider actually report token counts?
-        #   pricing          — do we hold a price for every model seen?
-        "instrumentation_coverage": "partial" if UNINSTRUMENTED_PATHS else "complete",
-        "usage_observation_coverage": "complete" if len(known) == len(rows) else "partial",
-        "pricing_coverage": _pricing_coverage(rows),
+        #   global_instrumentation            — are all call sites routed here?
+        #   instrumented_path_usage_observation — did the provider report tokens
+        #                                       on the calls we did see?
+        #   instrumented_path_pricing         — do we hold a price for every
+        #                                       model we did see?
+        # Only the first speaks for the platform; the other two are explicitly
+        # scoped to instrumented calls so neither can be read as a global claim.
+        "global_instrumentation_coverage": "partial" if UNINSTRUMENTED_PATHS else "complete",
+        "instrumented_path_usage_observation_coverage": (
+            "complete" if len(known) == len(rows) else "partial"
+        ),
+        "instrumented_path_pricing_coverage": _pricing_coverage(rows),
         "uninstrumented_paths": list(UNINSTRUMENTED_PATHS),
         "unpriced_models": sorted({r.get("model") for r in rows
                                    if r.get("model") and r["model"] not in PRICING}),

@@ -64,6 +64,46 @@ five posts a day from reading as five copies of the same post.
 5 posts/day, each day draws a different subset; if the two numbers ever match, every
 day would run the identical format sequence.
 
+## Feed LLM enrichment (`agent/feed.py`) — bounded on purpose
+
+`feed_run` is **not** a cron job. It runs on the in-process scheduler thread in
+`agent/automation.py::_scheduler_loop`, started by `smkit dashboard`, configured in
+`content/automations.json` (currently `enabled: true`, `dry_run: false`,
+`interval_hours: 3` → **8 runs/day**). It only runs while a dashboard process is
+alive, and **a running dashboard holds the imported module in memory** — a fix to
+`feed.py` does not take effect until that process restarts.
+
+Each enriched item costs **two** LLM calls (`_llm_summary` + `_llm_reason`), and
+`build_feed(include_seen=True)` deliberately re-surfaces the same top stories every
+run. That combination is how a background job silently becomes the biggest line on
+the bill, so enrichment is bounded:
+
+| Setting | Default | Effect |
+|---|---|---|
+| `FEED_LLM_ENRICHMENT_ENABLED` | `true` | Kill switch. `false` → **zero** provider calls. |
+| `FEED_LLM_MAX_ITEMS_PER_RUN` | `5` | Items that may hit the provider per run → **≤10 calls/run, ≤80/day**. |
+| `FEED_LLM_DAILY_BUDGET_USD` | `0.50` | Stops the run once today's recorded `feed_llm` spend reaches it. |
+
+Resolution order is **env var > `config/feed.yaml` `llm:` block > default**; env wins
+so a runaway job can be stopped without a commit.
+
+- **The cache, not the seen store, is what prevents re-summarizing.** `content/feed/enrichment_cache.json`
+  is keyed by a sha256 of the exact prompt inputs (canonical URL + title + source +
+  matched interests). A hit reuses the stored summary and makes no call; cache hits do
+  **not** consume the per-run cap because they cost nothing. Attempts do — including
+  failed ones, since a failure still burns quota.
+- **The budget only binds when the model is priced.** The live config runs ollama
+  `kimi-k2.7-code:cloud`, which has no entry in `llm_ops.PRICING`, so cost is recorded
+  as unknown. Counting unknown as `$0` would let unlimited calls pass a budget check,
+  so `EnrichmentStats.budget_enforceable` reports `false` instead of pretending. The
+  run stays bounded by the item cap. Add the model to `PRICING` to make the budget real.
+- **An empty completion is a failure, not an empty summary.** A 200 with blank content
+  raises `EnrichmentEmpty`; nothing empty is ever cached or written to `item.summary`.
+- **One bad item never ends a run.** Failures are caught per item, the deterministic
+  ranker `reason` survives, and every skip is logged to `content/feed/enrichment_log.jsonl`
+  with a reason (`unchanged` / `item_limit` / `budget` / `disabled` / `error`).
+  Per-run totals: `feed.last_enrichment_stats()`, also echoed in the automation log line.
+
 ## Blog content pipeline — article formats (`scripts/content_formats.py`)
 
 The cron lanes (`auto_publish.py` for evergreen tutorials, `news_publish.py` for
