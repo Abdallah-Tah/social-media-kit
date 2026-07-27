@@ -24,6 +24,15 @@ from linkedin_poster import post_text as linkedin_post
 from blog_publisher import publish_article as blog_publish
 
 
+def x_posted_ok(result):
+    """True only when X actually returned a tweet id.
+
+    `post_tweet` returns a TRUTHY {"error": ..., "status_code": ...} dict when the
+    API rejects a post, so `if result:` reported rejected posts as published.
+    """
+    return isinstance(result, dict) and bool(result.get("id"))
+
+
 def read_article(filepath):
     """Read article from markdown file."""
     with open(filepath, encoding="utf-8") as f:
@@ -103,8 +112,7 @@ def main():
             results["x"] = "dry_run"
         else:
             print(f"🐦 Posting to X...")
-            result = x_post(x_text)
-            results["x"] = "posted" if result else "failed"
+            results["x"] = "posted" if x_posted_ok(x_post(x_text)) else "failed"
 
     # ── LinkedIn ────────────────────────────────────────────────────────────
     if args.linkedin:

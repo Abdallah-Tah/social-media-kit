@@ -726,7 +726,11 @@ class ToolBox:
         with redirect_stdout(buf):
             result = fn() if already == "__call__" else already
         printed = buf.getvalue().strip()
-        if result:
+        # A posting fn may return a dict describing a FAILURE (x_poster returns
+        # {"error": ..., "status_code": ...}), which is truthy. Truthiness alone
+        # would report a rejected post as live.
+        failed_dict = isinstance(result, dict) and bool(result.get("error"))
+        if result and not failed_dict:
             return f"{label}: success. {printed}".strip()
         return (
             f"{label}: failed or not configured. {printed} "

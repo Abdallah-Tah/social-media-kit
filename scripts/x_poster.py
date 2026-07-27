@@ -174,7 +174,13 @@ def _upload_media(credentials, media_path):
 
 
 def post_tweet(text, credentials=None, media_path=None):
-    """Post a tweet via X API v2 using OAuth 2.0."""
+    """Post a tweet via X API v2 using OAuth 2.0.
+
+    Returns {"id", "url", "raw"} on success, {"error", "status_code"} on an API
+    rejection, or None when credentials are missing. The failure dict is TRUTHY —
+    callers must check for an "id", never `if result:`, or a rejected post gets
+    reported as live.
+    """
     if not credentials:
         credentials = get_credentials()
     if not credentials:
@@ -200,8 +206,9 @@ def post_tweet(text, credentials=None, media_path=None):
         print(f"✅ Tweet posted: {url}")
         return {"id": tweet_id, "url": url, "raw": data}
     else:
-        print(f"❌ X API error ({resp.status_code}): {resp.text}")
-        return None
+        detail = resp.text[:800]
+        print(f"❌ X API error ({resp.status_code}): {detail}")
+        return {"error": detail, "status_code": resp.status_code}
 
 
 def delete_tweet(tweet_id, credentials=None):
