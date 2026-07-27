@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 from .newsletter_mining import NewsletterItem, generate_newsletter_report
-from .performance_sources.pitch_agent import summarize_pitch_agent_metrics
 from .models import (
     AudiencePain,
     ContentGapResult,
@@ -28,7 +27,6 @@ def generate_report(
     performance_insights: list[PerformanceInsight],
     existing_content: list[ExistingContentItem],
     report_path: Path,
-    pitch_posts: list | None = None,
     newsletter_items: list[NewsletterItem] | None = None,
 ) -> Path:
     """Write the content intelligence report to disk."""
@@ -123,39 +121,6 @@ def generate_report(
             for url in opp.source_urls[:5]:
                 lines.append(f"- {url}")
             lines.append("")
-
-    lines.append("---")
-    lines.append("")
-    lines.append("## Pitch Agent / World Cup Performance")
-    lines.append("")
-    if pitch_posts:
-        summary = summarize_pitch_agent_metrics(pitch_posts)
-        lines.append(f"**Should Continue?** {summary.recommendation}")
-        lines.append("")
-        lines.append(f"**Reason:** {summary.reason}")
-        lines.append("")
-        total_views = sum(p.views for p in pitch_posts)
-        lines.append(
-            f"- **Posts analyzed:** {len(pitch_posts)} | **Views:** {total_views} | "
-            f"**Website CTR:** {summary.website_ctr:.2%}"
-        )
-        if summary.best_posts:
-            lines.append("- **Best-aligned posts:**")
-            for post in summary.best_posts:
-                fit = post.metadata.get("fit_score", 0)
-                lines.append(
-                    f"  - {post.title} ({post.content_type}) — fit {fit}/100"
-                )
-        if summary.worst_posts:
-            lines.append("- **Worst-aligned posts:**")
-            for post in summary.worst_posts:
-                fit = post.metadata.get("fit_score", 0)
-                lines.append(
-                    f"  - {post.title} ({post.content_type}) — fit {fit}/100"
-                )
-    else:
-        lines.append("_Pitch Agent metrics not loaded. Add data to `~/.openclaw/workspace/performance/`._")
-    lines.append("")
 
     lines.append("---")
     lines.append("")

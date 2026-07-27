@@ -13,7 +13,7 @@ post you need a per-USER access token via OAuth. This script does both:
 
   2. Post a video:
          python scripts/tiktok_upload.py post --video path/to.mp4 \
-             --title "Group A decided ⚽ #worldcup" --privacy SELF_ONLY
+             --title "Shipping an agent in 60 seconds #devtools" --privacy SELF_ONLY
 
 IMPORTANT — TikTok audit: until your app is approved for Content Posting, the
 API forces privacy_level=SELF_ONLY (the video is private, visible only to you).

@@ -1,7 +1,7 @@
 """Opportunity calendar for the Content Intelligence Engine.
 
 Phase 1 scope:
-- Consume ranked opportunities, newsletter items, audience pains, and Pitch Agent signal.
+- Consume ranked opportunities, newsletter items, and audience pain signals.
 - Build a 7-day editorial plan with primary content + secondary social posts per day.
 - Never generate actual articles or scripts.
 """
@@ -19,12 +19,6 @@ from .engine import IntelligenceEngine
 from .knowledge import load_knowledge_base
 from .models import AudiencePain, ContentOpportunity
 from .newsletter_mining import NewsletterItem, collect_newsletter_items, score_newsletter_items
-from .performance_sources.pitch_agent import (
-    PitchAgentPost,
-    PitchAgentPerformanceSummary,
-    collect_pitch_agent_metrics,
-    summarize_pitch_agent_metrics,
-)
 
 WEEKDAYS = [
     "Monday",
@@ -41,7 +35,7 @@ DEFAULT_DAY_TEMPLATES: dict[str, str] = {
     "Tuesday": "short_explainer",
     "Wednesday": "newsletter_reaction",
     "Thursday": "audience_question_tutorial",
-    "Friday": "pitch_agent_technical_log",
+    "Friday": "open_source_roundup",
     "Saturday": "quick_practical_tip",
     "Sunday": "weekly_recap",
 }
@@ -79,8 +73,6 @@ class WeeklyCalendar:
     """Full 7-day editorial plan."""
 
     days: list[DayPlan]
-    pitch_recommendation: str = "NO DATA"
-    pitch_reason: str = ""
     generated_at: str = ""
 
 
@@ -126,7 +118,6 @@ def _score_calendar_fitness(
     prefer_tutorial: bool = False,
     prefer_newsletter: bool = False,
     prefer_audience: bool = False,
-    prefer_pitch: bool = False,
 ) -> int:
     """Score an item for calendar placement based on slot preference."""
     score = 0
@@ -152,8 +143,6 @@ def _score_calendar_fitness(
             score += 10
         if prefer_audience:
             score += 20
-    if prefer_pitch:
-        score += 5  # small bump; actual pitch boost handled separately
     return int(score)
 
 
@@ -234,7 +223,6 @@ def build_weekly_calendar(
     opportunities: list[ContentOpportunity],
     newsletter_items: list[NewsletterItem],
     audience_pains: list[AudiencePain],
-    pitch_summary: PitchAgentPerformanceSummary | None = None,
     existing_content: list[Any] | None = None,
     days: int = 7,
 ) -> WeeklyCalendar:
@@ -242,8 +230,6 @@ def build_weekly_calendar(
     existing_content = existing_content or []
     used_titles: list[str] = []
     calendar_days: list[DayPlan] = []
-    pitch_rec = pitch_summary.recommendation if pitch_summary else "NO DATA"
-    pitch_reason = pitch_summary.reason if pitch_summary else ""
 
     # Pre-score and filter.
     scored_opps = [(o, _score_calendar_fitness(o)) for o in opportunities if _guard_ok(o)]
@@ -258,8 +244,6 @@ def build_weekly_calendar(
     scored_pains.sort(key=lambda x: x[1], reverse=True)
     available_pains = [p for p, _ in scored_pains]
 
-    # Track whether Pitch Agent should get Friday slot.
-    pitch_slot_available = pitch_summary is not None and pitch_rec in {"YES", "CONDITIONAL"}
 
     for idx, day in enumerate(WEEKDAYS[:days]):
         theme = DEFAULT_DAY_TEMPLATES[day]
@@ -318,23 +302,6 @@ def build_weekly_calendar(
                     used_titles.append(primary.title)
 
         elif day == "Friday":
-            if pitch_slot_available:
-                # Use a technical opportunity tied to the World Cup/Pitch Agent pipeline.
-                pitch_opp = _pick_first_available(
-                    available_opps,
-                    used_titles,
-                    existing_content,
-                    topic_keywords={"python", "automation", "pipeline", "ffmpeg", "remotion", "telegram", "raspberry pi", "api"},
-                    consume=True,
-                )
-                if pitch_opp:
-                    plan.primary = _slot_from_opportunity(
-                        pitch_opp,
-                        "Pitch Agent / World Cup technical build-log",
-                        "Pitch Agent performance signal + opportunity match",
-                    )
-                    used_titles.append(pitch_opp.title)
-                    pitch_slot_available = False
             if plan.primary is None and available_opps:
                 primary = _pick_first_available(available_opps, used_titles, existing_content, consume=True)
                 if primary:
@@ -385,8 +352,6 @@ def build_weekly_calendar(
 
     calendar = WeeklyCalendar(
         days=calendar_days,
-        pitch_recommendation=pitch_rec,
-        pitch_reason=pitch_reason,
         generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
     )
     return calendar
@@ -500,10 +465,6 @@ def generate_calendar_report(
         "> Editorial planning only. No content generated.",
         "",
     ]
-    lines.append(f"**Pitch Agent recommendation:** {calendar.pitch_recommendation}")
-    if calendar.pitch_reason:
-        lines.append(f"**Pitch Agent reason:** {calendar.pitch_reason}")
-    lines.append("")
 
     for day in calendar.days:
         lines.append(f"## {day.day}")
@@ -548,7 +509,6 @@ def generate_calendar_report(
     lines.append("")
     lines.append("- No duplicate topics across primary slots.")
     lines.append("- No betting/gambling/leverage/trading content.")
-    lines.append("- Pitch Agent / World Cup slot only when technical build-log signal is strong.")
     lines.append("- High-gap-score tutorials prioritized early in the week.")
     lines.append("")
 
@@ -559,7 +519,6 @@ def generate_calendar_report(
 def run_calendar_pipeline(
     days: int = 7,
     report_path: str | None = None,
-    include_pitch_agent: bool = True,
     include_newsletter: bool = True,
     include_audience: bool = True,
     top_n: int = 20,
@@ -599,18 +558,11 @@ def run_calendar_pipeline(
         all_signals, audience_pains, performance_insights, existing_content, config, kb
     )
 
-    pitch_summary = None
-    if include_pitch_agent:
-        print("⚽ Loading Pitch Agent performance signal")
-        posts = collect_pitch_agent_metrics()
-        pitch_summary = summarize_pitch_agent_metrics(posts)
-
     print("📅 Building weekly calendar")
     calendar = build_weekly_calendar(
         opportunities[:top_n],
         newsletter_items if include_newsletter else [],
         audience_pains if include_audience else [],
-        pitch_summary,
         existing_content,
         days=days,
     )

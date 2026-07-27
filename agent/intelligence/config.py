@@ -78,7 +78,6 @@ class IntelligenceConfig:
     enable_audience_pain: bool = True
     enable_performance: bool = True
     enable_content_gap: bool = True
-    enable_pitch_agent: bool = False
     enable_newsletter_mining: bool = False
     audience_live: bool = False
     audience_text: bool = True

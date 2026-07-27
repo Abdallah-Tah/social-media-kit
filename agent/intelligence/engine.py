@@ -249,7 +249,6 @@ class IntelligenceEngine:
         enable_content_gap: bool | None = None,
         sitemap_url: str | None = None,
         existing_content_file: str | None = None,
-        enable_pitch_agent: bool | None = None,
         enable_newsletter_mining: bool | None = None,
     ) -> None:
         self.config = config or IntelligenceConfig()
@@ -265,8 +264,6 @@ class IntelligenceEngine:
             self.config.sitemap_url = sitemap_url
         if existing_content_file is not None:
             self.config.existing_content_file = existing_content_file
-        if enable_pitch_agent is not None:
-            self.config.enable_pitch_agent = enable_pitch_agent
         if enable_newsletter_mining is not None:
             self.config.enable_newsletter_mining = enable_newsletter_mining
         self.kb = load_knowledge_base()
@@ -319,12 +316,6 @@ class IntelligenceEngine:
         top = opportunities[: self.config.top_n]
         print(f"   {len(top)} opportunities ranked")
 
-        # Pitch Agent / World Cup metrics for the report.
-        pitch_posts: list | None = None
-        if self.config.enable_pitch_agent:
-            from .performance_sources.pitch_agent import collect_pitch_agent_metrics
-            pitch_posts = collect_pitch_agent_metrics()
-
         report_path = generate_report(
             top,
             trend_signals,
@@ -332,7 +323,6 @@ class IntelligenceEngine:
             performance_insights,
             existing_content,
             self.config.report_path,
-            pitch_posts=pitch_posts,
             newsletter_items=newsletter_items if self.config.enable_newsletter_mining else None,
         )
         print(f"\n📝 Report written: {report_path}")
@@ -350,7 +340,6 @@ def run_intelligence(
     enable_content_gap: bool = True,
     sitemap_url: str | None = None,
     existing_content_file: str | None = None,
-    enable_pitch_agent: bool = False,
     enable_newsletter_mining: bool = False,
 ) -> Path:
     """Convenience entry point used by the CLI."""
@@ -369,7 +358,6 @@ def run_intelligence(
         enable_content_gap=enable_content_gap,
         sitemap_url=sitemap_url,
         existing_content_file=existing_content_file,
-        enable_pitch_agent=enable_pitch_agent,
         enable_newsletter_mining=enable_newsletter_mining,
     )
     return engine.run()

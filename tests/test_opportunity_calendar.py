@@ -17,7 +17,6 @@ from agent.intelligence.opportunity_calendar import (
     build_weekly_calendar,
     generate_calendar_report,
 )
-from agent.intelligence.performance_sources.pitch_agent import PitchAgentPost, summarize_pitch_agent_metrics
 
 
 class DuplicateTests(unittest.TestCase):
@@ -180,50 +179,6 @@ class CalendarBuildTests(unittest.TestCase):
         self.assertIsNotNone(wednesday.primary)
         self.assertIn("Laravel 12", wednesday.primary.title)
 
-    def test_pitch_agent_slot_used_when_recommendation_yes(self):
-        base_opps = [
-            ContentOpportunity(
-                title=f"Tutorial {i}",
-                opportunity_score=95,
-                gap_score=100,
-                tutorial_potential=95,
-                knowledge_score=90,
-                why_it_matters="Strong BWA fit",
-                evidence=["source: test"],
-                source_urls=["https://example.com"],
-                gap_result=ContentGapResult(action="create", gap_score=100, duplicate_risk="none"),
-            )
-            for i in range(4)
-        ]
-        pitch_opp = ContentOpportunity(
-            title="World Cup prediction pipeline in Python",
-            opportunity_score=70,
-            gap_score=100,
-            tutorial_potential=60,
-            knowledge_score=80,
-            why_it_matters="Technical sports pipeline",
-            evidence=["source: github"],
-            source_urls=["https://example.com"],
-            gap_result=ContentGapResult(action="create", gap_score=100, duplicate_risk="none"),
-        )
-        posts = [
-            PitchAgentPost(
-                title="How I built the prediction pipeline",
-                platform="youtube",
-                content_type="software_build_log",
-                views=1000,
-                click_throughs_to_website=50,
-                tutorial_clicks=15,
-            )
-        ]
-        summary = summarize_pitch_agent_metrics(posts)
-        calendar = build_weekly_calendar(base_opps + [pitch_opp], [], [], pitch_summary=summary)
-        friday = next(d for d in calendar.days if d.day == "Friday")
-        self.assertIsNotNone(friday.primary)
-        self.assertIn("World Cup", friday.primary.title)
-
-
-class CalendarReportTests(unittest.TestCase):
     def test_report_output(self):
         slot = CalendarSlot(
             title="Laravel tutorial",

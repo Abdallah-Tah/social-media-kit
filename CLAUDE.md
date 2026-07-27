@@ -4,67 +4,90 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-Two products share one codebase:
+**`smkit` — the social-media content agent** (`agent/`): provider-agnostic
+(Claude / OpenAI / Ollama) routine that researches a topic → writes an article →
+adapts native posts per platform → publishes. Entry: `agent.cli:main`. The README
+documents this product.
 
-1. **`smkit` — the social-media agent** (`agent/`): provider-agnostic (Claude / OpenAI / Ollama) routine that researches a topic → writes an article → adapts native posts per platform → publishes. Entry: `agent.cli:main`. The README documents this product.
-2. **The Pitch Agent / World Cup video pipeline** (`pitch_agent/` + `scripts/` + `remotion/`): an independent football-analytics model that predicts matches, grades itself, and renders branded vertical videos (YouTube Shorts + cross-posts). This is the **BuildWithAbdallah** channel content and is where most active work happens.
+The public face is the **BuildWithAbdallah** blog + LinkedIn, and the editorial
+goal is that both read as *an engineer's*, not a publisher's. Three content lanes
+feed it, all sharing one format registry (see below): evergreen tutorials, developer
+news, and a weekly GitHub open-source roundup.
 
-A third piece, **Taco** (`agent_journal/`), is a self-improvement loop: it proposes rule changes that get applied to `config/taco_rules.md` (loaded into the agent system prompt via `agent/prompts.py`).
+A second piece, **Taco** (`agent_journal/`), is a self-improvement loop: it proposes
+rule changes that get applied to `config/taco_rules.md` (loaded into the agent
+system prompt via `agent/prompts.py`).
+
+> The Pitch Agent / World Cup video pipeline was removed after the tournament
+> ended. `remotion/` and `scripts/record_frames.mjs` remain — they still serve the
+> dev-content Shorts driven by `agent/shorts.py`.
 
 ## Console scripts (from `pyproject.toml`)
 
 - `smkit` → `agent.cli:main` (content agent: `smkit run --topic ... --dry-run|--yes`, `smkit repurpose`, `smkit dashboard`)
-- `pitch-agent` → `pitch_agent.cli:main` (the football model — see subcommands below)
 - `taco-journal` → `agent_journal.cli:main`
-
-`pitch-agent` subcommands: `init-db migrate-db sync-data compute-index leaderboard fixtures render-chart generate-content predict recompute accuracy load-priors validate-priors record-result sync-results transparency`.
 
 ## Common commands
 
 ```bash
 # Tests (pytest; testpaths=tests, addopts=-q already set)
-/usr/bin/python3 -m pytest                       # whole suite
-/usr/bin/python3 -m pytest tests/test_pitch_agent.py -q
-/usr/bin/python3 -m pytest tests/test_pitch_agent.py -k draw   # single test by name
+/usr/bin/python3 -m pytest                          # whole suite
+/usr/bin/python3 -m pytest tests/test_content_formats.py -q
 
-# Model record (the LIVE ledger — single source of truth, never recompute by hand)
-/usr/bin/python3 -m pitch_agent.cli accuracy
+# The three publishing lanes — all support a rehearsal before anything goes live
+/usr/bin/python3 scripts/auto_publish.py                       # tutorial (cron: Mon/Wed/Fri 09:00)
+/usr/bin/python3 scripts/news_publish.py --dry-run             # news (cron: daily 12:00)
+/usr/bin/python3 scripts/github_roundup.py --dry-run           # GitHub roundup
+/usr/bin/python3 scripts/github_roundup.py --topic ai --publish # LIVE: blog + FB + LinkedIn
 
-# Render+publish a prediction Short (todays_upcoming, auto-skips already-posted)
-/usr/bin/python3 scripts/football_prediction_shorts.py --dry-run            # rehearse
-/usr/bin/python3 scripts/football_prediction_shorts.py --privacy public --max 1
-
-# Render+publish a post-match recap
-/usr/bin/python3 scripts/recap_publish.py --match <id>            # build only (no upload)
-/usr/bin/python3 scripts/recap_publish.py --latest --publish      # publish newest finished
+# Quality enforcement pass (runs right after a tutorial publish)
+/usr/bin/python3 scripts/enforce_published_quality.py --latest
 
 # Render a Remotion composition directly (props.json drives it; --audio optional)
-node remotion/render.mjs --id Prediction --props <props.json> --out out.mp4 [--audio vo.mp3]
+node remotion/render.mjs --id Short --props <props.json> --out out.mp4 [--audio vo.mp3]
 ```
 
 **Always invoke Python with `/usr/bin/python3`** for these scripts — the modules expect that interpreter (the shell default differs). Node for Remotion/Playwright is `/home/linuxbrew/.linuxbrew/bin/node`.
 
-## Video pipeline architecture (the part that needs multiple files to understand)
+## Blog content pipeline — article formats (`scripts/content_formats.py`)
 
-Data → props → render → upload, in this flow:
+The cron lanes (`auto_publish.py` for evergreen tutorials, `news_publish.py` for
+developer news) both draw their article shape from one registry. **Never hardcode a section skeleton in a publisher again** — that
+is what made every post on the site read identically.
 
-1. **Model** (`pitch_agent/`): `predict()` reads the `pitch_agent.db` SQLite (`matches`, `predictions`, `prediction_results`), blends Elo priors + Poisson scorelines, and writes an immutable journaled prediction. `accuracy` reads `prediction_results` for the ledger.
-2. **Pillar builders** (`scripts/`): each content type is its own script that turns model output into Remotion props and drives rendering + publishing:
-   - `football_prediction_shorts.py` — pre-match prediction Short. `build_props()` shapes the props; `compute_ledger()` derives the on-screen record from `pitch-agent accuracy` (never fabricated); `voiceover()` calls `reel_generator.tts`.
-   - `recap_publish.py` — post-match recap; builds dialogue scenes for `worldcup_atmosphere_short` and includes a prediction-vs-result accountability scene.
-   - `daily_wc_short.py`, `news_publish.py`, `explainer_short.py`, `worldcup_survival_lab.py`, `worldcup_deep_dive.py` — other pillars.
-3. **Renderers** (two separate engines — know which one a pillar uses):
-   - **Remotion** (`remotion/`, React/TSX): full-screen compositions in `remotion/src/` (e.g. `Prediction.tsx`, `DailySlate.tsx`), all wrapped by the shared `remotion/src/brand/BrandFrame.tsx`. Brand tokens are centralized in `remotion/src/brand/tokens.ts` / `theme.ts` — **change brand values in one place**. `remotion/render.mjs` bundles + renders.
-   - **`scripts/record_frames.mjs`** (Playwright): screenshots an HTML template (`templates/shorts/*.html`) frame-by-frame for the recap/dialogue/atmosphere pillars; ffmpeg stitches + composites.
-4. **Publish**: `youtube_shorts_publisher.py` (OAuth) uploads; `football_crosspost.py` cross-posts FB/LinkedIn; `telegram_poster.py` posts samples for review.
+- `TUTORIAL_FORMATS` (8) / `NEWS_FORMATS` (5) / `SOCIAL_SHAPES` (6): each owns its
+  angle, title style, H2 skeleton, and writer brief.
+- `pick_format(kind)` rotates least-recently-used against `content/format_history.json`;
+  the publisher calls `CF.record(...)` after a successful publish. Consecutive posts
+  therefore never share a shape.
+- `quality_issues(kind, body, format_id)` gates a draft against **its own** format.
+  `enforce_published_quality.py --latest` resolves the format by slug from the history
+  file, falling back to `detect_format()` on the headings for older posts.
+- Adding a format = one dict entry. Every format must end news pieces on
+  `## What I'll Be Watching` and carry `## Sources`.
+- `FORBIDDEN_PHRASES` + `FORBIDDEN_REPLACEMENTS` are the single hype blocklist, kept in
+  sync with the banned list in `agent/prompts.py`. The news lane repairs matches via
+  `clean_forbidden()` rather than binning the draft.
+- A slug already in the sitemap means the **topic** is a duplicate: repick it. Never
+  suffix the slug with a date to force it through — that shipped the same article twice.
+
+## GitHub roundup pillar (`scripts/github_roundup.py`)
+
+Weekly ranked list of repos by **star gain in the last seven days**, published as a
+blog article + cover + Facebook/LinkedIn post (`post_kind="roundup"`).
+
+- Every figure is scraped from GitHub's own `trending?since=weekly` page, which
+  publishes the weekly delta directly. A row with no scrapeable number is **dropped,
+  never estimated** (taco rule #0001).
+- `--topic ai|devtools|all`. If fewer than `MIN_ITEMS` on-topic repos are trending,
+  it falls back to `all` and **relabels the headline** — never pad an "AI" list with
+  unrelated repos, which would make the title describe contents that aren't there.
+- `content/github_roundups.json` tracks the last 30 runs so you can see repeats.
+- Not on cron yet. `--dry-run` prints the article + the exact social post.
 
 ## Hard project rules (from `config/taco_rules.md` — enforced, do not violate)
 
-- **One theme only:** every Pitch Agent / World Cup video uses the white `light_brand` via the shared `BrandFrame`. Never a dark or alternate theme.
 - **Voice:** all voiceover uses the ElevenLabs **"Jarnathan"** voice (`reel_generator.tts` default). edge-tts is emergency fallback only — a video shipped with edge-tts FAILED the bar; re-render it.
-- **No betting/gambling framing — ever.** This is an AI/automation/analytics channel. No betting, odds, bookies, "locks", or guaranteed-win language. (Meta/3rd-party growth advice that suggests "beat the bookies" must be reworded.)
-- **Prediction ledger is immutable.** Never backfill, invent, or "recompute from memory" a prediction. Report the record only from `pitch-agent accuracy`. Predictions are journaled pre-kickoff and frozen after kickoff.
-- **No real match footage** (copyright-flagged) — original animation only. Keep the "Not affiliated with FIFA" footer.
 - **YouTube publish honesty:** never report a post as live without the returned `youtube.com/shorts/<id>` URL. `invalid_grant` = YouTube refresh token expired (uploads down across all pillars) — stop and re-mint via `youtube_shorts_publisher.py auth-url`; `uploadLimitExceeded` = daily cap, back off.
 - **Publishing is live and irreversible.** `--publish` / `--privacy public` post to real YouTube + FB + LinkedIn. Use `--dry-run` to rehearse; only go live on explicit instruction.
 

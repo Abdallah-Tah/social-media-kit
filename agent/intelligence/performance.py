@@ -8,10 +8,6 @@ from typing import Any
 from .. import history
 from .config import IntelligenceConfig
 from .models import PerformanceInsight
-from .performance_sources.pitch_agent import (
-    collect_pitch_agent_metrics,
-    summarize_pitch_agent_metrics,
-)
 
 
 def _load_smkit_history() -> list[dict[str, Any]]:
@@ -40,47 +36,6 @@ def _load_performance_json(config: IntelligenceConfig) -> list[PerformanceInsigh
     except Exception:
         return []
 
-
-def _pitch_agent_performance_insights(config: IntelligenceConfig) -> list[PerformanceInsight]:
-    """Derive performance insights from Pitch Agent / World Cup metrics."""
-    if not getattr(config, "enable_pitch_agent", False):
-        return []
-    posts = collect_pitch_agent_metrics()
-    if not posts:
-        return []
-    summary = summarize_pitch_agent_metrics(posts)
-    insights: list[PerformanceInsight] = []
-
-    # Only boost if the recommendation is YES or CONDITIONAL.
-    if summary.recommendation in {"YES", "CONDITIONAL"}:
-        technical_keywords = {
-            "sports analytics",
-            "ai prediction",
-            "prediction model",
-            "playwright",
-            "ffmpeg",
-            "telegram",
-            "automation",
-            "raspberry pi",
-            "api pipeline",
-            "data pipeline",
-            "video pipeline",
-        }
-        total_views = sum(p.views for p in posts) or 1
-        avg_views = total_views / len(posts)
-        for keyword in technical_keywords:
-            insights.append(
-                PerformanceInsight(
-                    category=keyword,
-                    format="short",
-                    hits=int(avg_views),
-                    pattern=(
-                        f"Pitch Agent technical content performing: recommendation={summary.recommendation}, "
-                        f"website_ctr={summary.website_ctr:.2%}"
-                    ),
-                )
-            )
-    return insights
 
 
 def collect_performance_insights(config: IntelligenceConfig) -> list[PerformanceInsight]:
@@ -111,8 +66,6 @@ def collect_performance_insights(config: IntelligenceConfig) -> list[Performance
                 )
             )
 
-    # Pitch Agent / World Cup metrics.
-    insights.extend(_pitch_agent_performance_insights(config))
     return insights
 
 
