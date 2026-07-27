@@ -154,11 +154,48 @@ def test_summary_never_claims_to_be_a_complete_platform_total(monkeypatch):
 
     s = LLM.usage_summary()
     assert "cost_usd" not in s, "a bare 'cost_usd' total reads as platform-wide"
+    assert "cost_coverage" not in s, "one blended coverage field conflates three questions"
     assert s["estimated_instrumented_cost_usd"] > 0
-    assert s["cost_coverage"] == "partial"
+    assert s["instrumentation_coverage"] == "partial"
     assert "agent/feed.py" in s["uninstrumented_paths"]
     assert "agent/shorts.py" in s["uninstrumented_paths"]
     assert s["by_job"]["news_publish"]["calls"] == 1
+
+
+def test_the_three_coverage_axes_are_independent(monkeypatch):
+    """Instrumentation, usage observation, and pricing can each be partial alone."""
+    monkeypatch.setattr(LLM.requests, "post", lambda *a, **k: FakeResponse())
+    LLM.chat([{"role": "user", "content": "x"}], model="gpt-4o", job_id="t")
+    s = LLM.usage_summary()
+    assert s["usage_observation_coverage"] == "complete"  # provider reported usage
+    assert s["pricing_coverage"] == "complete"            # gpt-4o is priced
+    assert s["instrumentation_coverage"] == "partial"     # feed/shorts not routed
+    assert s["unpriced_models"] == []
+
+
+def test_an_unpriced_fallback_model_shows_up_as_partial_pricing(monkeypatch):
+    """Gemini/Alibaba/Ollama fallbacks have no price entry — say so explicitly."""
+    monkeypatch.setattr(LLM.requests, "post", lambda *a, **k: FakeResponse())
+    LLM.chat([{"role": "user", "content": "x"}], model="gemini-2.5-pro", job_id="t")
+
+    s = LLM.usage_summary()
+    assert s["pricing_coverage"] == "partial"
+    assert "gemini-2.5-pro" in s["unpriced_models"]
+    assert s["usage_observation_coverage"] == "partial"  # unpriced => cost unknown
+    assert s["estimated_instrumented_cost_usd"] == 0
+
+
+def test_priced_api_call_records_its_pricing_basis(monkeypatch):
+    monkeypatch.setattr(LLM.requests, "post", lambda *a, **k: FakeResponse())
+    LLM.chat([{"role": "user", "content": "x"}], model="gpt-4o", job_id="t")
+    row = json.loads(LLM.USAGE_LEDGER.read_text().strip())
+    assert row["pricing_basis"] == LLM.PRICING_BASIS_API
+
+
+def test_local_inference_is_never_described_as_free():
+    """Ollama cost 0 must carry local_compute_excluded, not an unqualified zero."""
+    assert LLM.PRICING_BASIS_LOCAL == "local_compute_excluded"
+    assert "ollama" in LLM.KNOWN_UNPRICED_PROVIDERS
 
 
 def test_job_cost_is_scoped_to_one_lane(monkeypatch):
@@ -169,7 +206,8 @@ def test_job_cost_is_scoped_to_one_lane(monkeypatch):
     c = LLM.job_cost("news_publish")
     assert c["calls"] == 1
     assert c["estimated_measured_news_publish_cost_usd"] > 0
-    assert c["cost_coverage"] == "complete"  # all calls in this lane had usage
+    assert c["usage_observation_coverage"] == "complete"
+    assert c["pricing_coverage"] == "complete"
 
 
 def test_json_mode_and_max_tokens_are_optional(monkeypatch):

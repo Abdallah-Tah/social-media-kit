@@ -40,6 +40,17 @@ PRICING: dict[str, dict[str, float]] = {
     "gpt-4o-mini": {"input": 0.15, "output": 0.60},
 }
 
+# What a cost figure accounts for. Local inference is NOT free to operate —
+# electricity, hardware amortisation, and wall-clock time are real costs that
+# this ledger does not measure. Recording 0 without saying so would be a lie of
+# omission, so a local model carries `local_compute_excluded`.
+PRICING_BASIS_API = "provider_api_pricing"
+PRICING_BASIS_LOCAL = "local_compute_excluded"
+
+# Providers reachable as fallbacks that have NO price entry yet. Any call to one
+# of these lands in `unpriced_models` and drags pricing_coverage to "partial".
+KNOWN_UNPRICED_PROVIDERS = ("gemini", "alibaba/qwen", "ollama")
+
 # HTTP statuses worth retrying. 429 is rate limiting; 5xx is the provider.
 TRANSIENT_STATUSES = {408, 409, 429, 500, 502, 503, 504}
 
@@ -61,6 +72,7 @@ class ChatResult:
     duration_ms: int = 0
     cost_usd: float | None = None
     cost_known: bool = False
+    pricing_basis: str | None = None
     model: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -113,6 +125,7 @@ def _record(result: ChatResult, job_id: str, content_id: str | None,
         "duration_ms": result.duration_ms,
         "cost_usd": result.cost_usd,
         "cost_known": result.cost_known,
+        "pricing_basis": result.pricing_basis,
         "pricing_version": PRICING_VERSION if result.cost_known else None,
         "ok": result.ok,
         "status_code": result.status_code,
@@ -200,6 +213,7 @@ def chat(
 
     result = ChatResult(
         ok=True, text=text, status_code=status,
+        pricing_basis=PRICING_BASIS_API if known else None,
         input_tokens=input_tokens, output_tokens=output_tokens, cached_tokens=cached,
         duration_ms=duration_ms, cost_usd=cost, cost_known=known, model=model, raw=body,
     )
@@ -252,11 +266,27 @@ def usage_summary(rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         "estimated_instrumented_cost_usd": round(sum(r.get("cost_usd") or 0 for r in known), 4),
         "cost_known_calls": len(known),
         "cost_unknown_calls": len(rows) - len(known),
-        "cost_coverage": "partial" if UNINSTRUMENTED_PATHS else "complete",
+        # Three independent coverage questions. A single "cost_coverage" field
+        # conflated them and let a partial figure read as authoritative.
+        #   instrumentation  — are all call sites routed through this module?
+        #   usage_observation — did the provider actually report token counts?
+        #   pricing          — do we hold a price for every model seen?
+        "instrumentation_coverage": "partial" if UNINSTRUMENTED_PATHS else "complete",
+        "usage_observation_coverage": "complete" if len(known) == len(rows) else "partial",
+        "pricing_coverage": _pricing_coverage(rows),
         "uninstrumented_paths": list(UNINSTRUMENTED_PATHS),
+        "unpriced_models": sorted({r.get("model") for r in rows
+                                   if r.get("model") and r["model"] not in PRICING}),
         "pricing_version": PRICING_VERSION,
         "by_job": by_job,
     }
+
+
+def _pricing_coverage(rows: list[dict[str, Any]]) -> str:
+    models = {r.get("model") for r in rows if r.get("model")}
+    if not models:
+        return "unknown"
+    return "complete" if all(m in PRICING for m in models) else "partial"
 
 
 def job_cost(job_id: str, rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -275,6 +305,7 @@ def job_cost(job_id: str, rows: list[dict[str, Any]] | None = None) -> dict[str,
             sum(r.get("cost_usd") or 0 for r in known), 4),
         "cost_known_calls": len(known),
         "cost_unknown_calls": len(rows) - len(known),
-        "cost_coverage": "partial" if len(known) < len(rows) else "complete",
+        "usage_observation_coverage": "complete" if len(known) == len(rows) else "partial",
+        "pricing_coverage": _pricing_coverage(rows),
         "pricing_version": PRICING_VERSION,
     }
