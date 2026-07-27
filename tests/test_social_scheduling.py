@@ -29,7 +29,17 @@ def _iso(when):
 
 def _make_draft(status, tmp_path):
     drafts = create_social_drafts_from_blog(
-        "src", "https://example.com/blog", "Title", "Body", ["linkedin"],
+        "src",
+        "https://example.com/blog",
+        "Rate limiting Laravel queues without losing jobs",
+        (
+        "Laravel queue workers will happily run the same job twice when a worker is "
+        "restarted mid-execution, because the reserved_at timestamp is cleared "
+        "before the handler finishes. That double execution stays invisible until "
+        "it charges a customer twice.\n\nWrap the handler in an atomic Redis lock "
+        "keyed on the job payload hash and release it after the transaction commits."
+        ),
+        ["linkedin"],
     )
     sd = drafts[0]
     sd.status = status

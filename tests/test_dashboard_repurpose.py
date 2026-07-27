@@ -310,7 +310,17 @@ def test_dashboard_social_drafts_api_and_publish_due_are_exposed(server, monkeyp
     original_dir = social_drafts.SOCIAL_DRAFTS_DIR
     monkeypatch.setattr(social_drafts, "SOCIAL_DRAFTS_DIR", tmp_path)
     created = social_drafts.create_social_drafts_from_blog(
-        "source", "https://example.com/blog", "Social Title", "Body", ["linkedin"]
+        "source",
+        "https://example.com/blog",
+        "Rate limiting Laravel queues without losing jobs",
+        (
+        "Laravel queue workers will happily run the same job twice when a worker is "
+        "restarted mid-execution, because the reserved_at timestamp is cleared "
+        "before the handler finishes. That double execution stays invisible until "
+        "it charges a customer twice.\n\nWrap the handler in an atomic Redis lock "
+        "keyed on the job payload hash and release it after the transaction commits."
+        ),
+        ["linkedin"],
     )[0]
     created.status = "approved"
     social_drafts.save_social_draft(created)
@@ -319,7 +329,7 @@ def test_dashboard_social_drafts_api_and_publish_due_are_exposed(server, monkeyp
         data = json.loads(body)
         assert status == 200
         assert data["ok"] is True
-        assert data["drafts"][0]["title"] == "Social Title"
+        assert data["drafts"][0]["title"] == "Rate limiting Laravel queues without losing jobs"
 
         when = "2000-01-01T00:00:00+00:00"
         status, body = _post_json(server + "/api/social_drafts/schedule", {"ids": [created.draft_id], "scheduled_at": when})

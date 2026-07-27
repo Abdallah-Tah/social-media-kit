@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -90,17 +91,97 @@ def _social_draft_path(draft_id: str) -> Path:
 
 
 def _extract_summary(body: str, max_chars: int = 240) -> str:
-    """Return a short plain-text summary from markdown-ish body."""
-    import re
-    text = re.sub(r"[#*`_\[\]()]", "", body)
-    text = re.sub(r"\s+", " ", text).strip()
+    """Return the first substantive paragraph, excluding headings and sources."""
+    body = re.sub(r"```.*?```", "", body or "", flags=re.S)
+    body = re.sub(r"^#\s+.*$", "", body, flags=re.M)
+    body = re.split(r"^##\s+(?:sources?|references?)\b", body, maxsplit=1, flags=re.I | re.M)[0]
+    for paragraph in re.split(r"\n\s*\n", body):
+        text = re.sub(r"^\s{0,3}#{1,6}\s+", "", paragraph, flags=re.M)
+        text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+        text = re.sub(r"[*`_]", "", text)
+        text = re.sub(r"\s+", " ", text).strip(" -")
+        if len(text) >= 80 and not _contains_placeholder(text):
+            return _truncate(text, max_chars)
+    return ""
+
+
+def _truncate(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
     return text[: max_chars - 3].rsplit(" ", 1)[0] + "..."
 
 
+def _contains_placeholder(text: str) -> bool:
+    normalized = " ".join((text or "").lower().split())
+    markers = (
+        "explain why this matters",
+        "what the reader should do next",
+        "deep technical analysis of the news",
+        "builder takeaway explain",
+        "angle deep technical analysis",
+        "what do you think?",
+    )
+    return any(marker in normalized for marker in markers)
+
+
+def _quality_error(title: str, body: str, summary: str = "") -> str | None:
+    if not title or len(title.strip()) < 12:
+        return "content needs a specific title before social drafts can be created"
+    if _contains_placeholder(title) or _contains_placeholder(body):
+        return "content contains placeholder copy; write a substantive article before creating social drafts"
+    if len(re.sub(r"\s+", "", body or "")) < 180:
+        return "content is too short to create a useful social post"
+    if not summary:
+        return "content has no substantive introductory paragraph for social copy"
+    return None
+
+
+def _social_post_quality_error(title: str, text: str) -> str | None:
+    if not title or len(title.strip()) < 12:
+        return "social draft needs a specific title before publishing"
+    if len(re.sub(r"\s+", "", text or "")) < 100:
+        return "social draft is too short to publish"
+    if _contains_placeholder(title) or _contains_placeholder(text):
+        return "social draft contains placeholder copy and cannot be published"
+    title_terms = set(re.findall(r"[a-z0-9]+", title.lower()))
+    post_terms = re.findall(r"[a-z0-9]+", text.lower())
+    non_title_terms = [term for term in post_terms if term not in title_terms]
+    if title.lower() in text.lower() and len(non_title_terms) < 18:
+        return "social draft mostly repeats its headline and cannot be published"
+    return None
+
+
 def _format_hashtags(tags: list[str]) -> list[str]:
-    return [t.lower().replace(" ", "") for t in tags if t]
+    cleaned = [re.sub(r"[^a-zA-Z0-9]", "", tag) for tag in tags if tag]
+    cleaned = [tag for tag in cleaned if tag]
+    if not any(tag.lower() == "buildwithabdallah" for tag in cleaned):
+        cleaned.append("BuildWithAbdallah")
+    return cleaned[:5]
+
+
+def _platform_copy(title: str, summary: str, blog_url: str, hashtags: list[str]) -> tuple[str, str, str]:
+    """Compose social-native copy from the article's own summary.
+
+    NOTE: this deliberately contains no per-article special cases. An earlier
+    revision dispatched three hardcoded narratives on loose substring matches
+    ("code review" in subject, etc.), which meant any future article whose
+    title+summary happened to contain those words would publish factually
+    unrelated copy verbatim to LinkedIn/Facebook/X. Keep this generic — the
+    LLM-written variants live in scripts/social_copy.py.
+    """
+    hashtag_str = " ".join(f"#{tag}" for tag in hashtags)
+    linkedin = (
+        f"{summary}\n\n"
+        "The interesting part is not the headline. It is the implementation decision that changes how this "
+        "behaves in a real project.\n\n"
+        f"I break that down in the full guide: {blog_url}\n\n{hashtag_str}"
+    )
+    facebook = (
+        f"{summary}\n\n"
+        "I focused on the practical implementation choices, not just the demo.\n\n"
+        f"Read the full guide: {blog_url}\n\n{hashtag_str}"
+    )
+    return linkedin, facebook, f"{_truncate(summary, 115)}\n{blog_url}\n{hashtag_str}"
 
 
 def generate_social_drafts(
@@ -118,9 +199,12 @@ def generate_social_drafts(
     if not blog_url or not platforms:
         return []
 
-    summary = _extract_summary(body, 240)
+    summary = _extract_summary(body, 280)
+    if _quality_error(title, body, summary):
+        return []
     hashtags = _format_hashtags(tags or [])
-    hashtag_str = " ".join(f"#{h}" for h in hashtags)
+    hashtag_str = " ".join(f"#{tag}" for tag in hashtags)
+    linkedin_text, facebook_text, x_text = _platform_copy(title, summary, blog_url, hashtags)
 
     builders = {
         "linkedin": lambda: SocialDraft(
@@ -128,7 +212,7 @@ def generate_social_drafts(
             platform="linkedin",
             blog_url=blog_url,
             title=title,
-            text=f"{title}\n\n{summary}\n\nWhat do you think? {blog_url}",
+            text=linkedin_text,
             description=summary,
             hashtags=hashtags,
         ),
@@ -137,7 +221,7 @@ def generate_social_drafts(
             platform="facebook",
             blog_url=blog_url,
             title=title,
-            text=f"{title}\n\n{summary}\n\nRead more: {blog_url}",
+            text=facebook_text,
             description=summary,
             hashtags=hashtags,
         ),
@@ -146,8 +230,8 @@ def generate_social_drafts(
             platform="x",
             blog_url=blog_url,
             title=title,
-            text=f"{title}\n\n{summary[:180]}\n\n{blog_url} {hashtag_str}",
-            description=summary[:180],
+            text=x_text,
+            description=_truncate(summary, 180),
             hashtags=hashtags,
         ),
         "threads": lambda: SocialDraft(
@@ -155,7 +239,7 @@ def generate_social_drafts(
             platform="threads",
             blog_url=blog_url,
             title=title,
-            text=f"{title}\n\n{summary}\n\nLink in bio: {blog_url}",
+            text=f"{summary}\n\nThe full implementation is here: {blog_url}\n\n{hashtag_str}",
             description=summary,
             hashtags=hashtags,
         ),
@@ -182,7 +266,7 @@ def generate_social_drafts(
             platform="youtube",
             blog_url=blog_url,
             title=title,
-            text=f"{title} — short covering the latest. Full details in the blog post: {blog_url}",
+            text=f"{summary}\n\nFull guide: {blog_url}",
             description=summary,
             hashtags=hashtags,
         ),
@@ -305,6 +389,9 @@ def publish_social_draft(draft_id: str, dry_run: bool = False) -> dict[str, Any]
         return {"ok": False, "error": "social draft not found"}
     if draft.status not in {"approved", "scheduled"}:
         return {"ok": False, "error": f"social draft must be approved or scheduled, current status: {draft.status}"}
+    error = _social_post_quality_error(draft.title, draft.text)
+    if error:
+        return {"ok": False, "error": error}
 
     result = publish(draft.platform, draft.to_dict(), dry_run=dry_run)
     if result.get("ok"):
