@@ -198,6 +198,12 @@ def test_every_valid_status_is_present_in_the_response(social_dir):
 
     for status in VALID_STATUSES:
         assert status in counts, f"{status} missing from analytics response"
+        # Unused statuses must report an explicit zero, not be absent — the
+        # dashboard renders these keys directly and a missing key reads as a
+        # gap in the data rather than a genuine count of none.
+        if status != "published":
+            assert counts[status] == 0, f"{status} should be 0 when unused"
+    assert counts["published"] == 1
     # Backward compatibility: the original keys must all survive.
     for legacy in ("created", "approved", "scheduled", "published", "failed", "draft"):
         assert legacy in counts
