@@ -62,3 +62,7 @@ frontend/.env.*
 content/feed/intelligence/
 content/newsletter_drafts/
 *.bak*
+
+# Phase 0 runtime ledgers — append-only, grow unbounded, machine-local.
+content/llm_usage.jsonl
+content/content_decisions.jsonl

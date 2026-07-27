@@ -399,5 +399,31 @@
     "steps": 8,
     "summary": "No technical report found. We'll not invent benchmarks.\n\nNow write article. Ensure word count. Let's draft in our head and then save.\n\nPotential issue: The user asked \"Kimi K3\" and tutorial-style. We can title \"Getting Started with Kimi K3: Build a Code Review CLI Using Moonshot's New Flagship Model\". Good.\n\nLet's write Markdown. Need include Sources section with URLs.\n\nNeed avoid Markdown in social posts. We'll create separate texts.\n\nLet's write article now.</think>",
     "date": "2026-07-18T01:29:07.497678+00:00"
+  },
+  {
+    "topic": "Qwen 3.8: Alibaba's 2.4T open-weight AI model vs Kimi K3",
+    "profile": "BuildWithAbdallah",
+    "provider": "ollama",
+    "channels": [
+      "blog",
+      "facebook",
+      "linkedin"
+    ],
+    "steps": 7,
+    "summary": "No existing content on this topic. Now I need to decide on the content mode. The user asked for a \"tutorial-style article\" about the comparison. Given this is breaking news with API access available, the best mode is **developer news analysis with a practical tutorial section** — but the routine says \"do not mix modes.\" \n\nI should choose the dominant mode. Since the user explicitly said \"tutorial-style article,\" and both models have APIs with code examples, I'll frame it as a **hands-on tutorial**: \"How to evaluate and use Qwen 3.8 and Kimi K3 from Python.\" This satisfies the tutorial requirement while covering the news comparison.\n\nHowever, I need to be realistic: Qwen 3.8 open weights are not released yet, and Kimi K3 open weights are promised but not released. So a full \"end-to-end working project\" with local weights is impossible. I can do a tutorial on **API-based evaluation** — real working code to call both APIs, compare outputs, and measure latency/cost. That is a legitimate hands-on tutorial.\n\nLet me write the article. It must be at least 1,500 words, with 5+ real code blocks, project structure, commands, explanations, common errors/fixes, and a final complete example.\n\nLet me draft the article now. I'll include:\n1. Title & hook\n2. What just happened (news context, verified facts)\n3. The two models at a glance\n4. Tutorial: setting up the evaluation project\n5. Code: calling Kimi K3 API\n6. Code: calling Qwen 3.8-Max-Preview API\n7. Code: running a structured comparison\n8. Code: measuring latency and token cost\n9. Code: a simple benchmark harness\n10. Results interpretation and what to watch\n11. Sources\n\nI must avoid banned phrases. I must use plain text for social posts. Let me write carefully.\n\nArticle title: \"Qwen 3.8 vs Kimi K3: A Hands-On Comparison for Developers\"\n\nSlug: qwen-38-vs-kimi-k3-hands-on-comparison\n\nLet me write the full markdown.</think>I have enough verified sources. The topic is fresh and not on the site. I’ll run this as a **hands-on tutorial**: comparing the two models through their real APIs, since the open weights are not fully released yet.\n\nLet me write the full article.",
+    "date": "2026-07-19T19:49:26.142033+00:00"
+  },
+  {
+    "topic": "How to try Qwen 3.8-Max-Preview API: Alibaba's 2.4T open-weight model",
+    "profile": "BuildWithAbdallah",
+    "provider": "ollama",
+    "channels": [
+      "blog",
+      "facebook",
+      "linkedin"
+    ],
+    "steps": 9,
+    "summary": "Sitemap confirms no Qwen 3.8 article exists yet. I see a related `alibaba-qwen3-7-plus-multimodal-agent-coding-ai` and `qwen-3-7-max-vs-claude-opus-pricing`, but nothing for 3.8. Slug will be unique.\n\nNow I have enough verified facts. Key points:\n- Qwen 3.8-Max-Preview is real, sold via Alibaba Token Plan / Qoder / QoderWork as early access (per The Decoder, BuildFastWithAI, HN, X posts).\n- Claims: 2.4T params, open weights coming soon, second only to Claude Fable 5, first multimodal >1T params, strong in coding/full-stack/data/office workflows.\n- No official Qwen blog post, model card, benchmark, or confirmed pricing as of July 19, 2026.\n- Access path: Alibaba Cloud Model Studio → Token Plan (Singapore region only for Team Edition) → dedicated API key starting with `sk-sp-` → OpenAI-compatible endpoint `https://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1` → model name likely `qwen3.8-max` or `qwen3.8-max-preview` (must check exact string).\n- I need to be honest that the exact model ID is not officially published; I should show how to discover it via the model list and try likely IDs.\n\nI should write a hands-on tutorial that:\n1. Sets expectations: what is confirmed vs claimed.\n2. Shows how to subscribe / get API key.\n3. Shows how to call via OpenAI-compatible Python SDK with the likely model name, plus how to list models / handle errors.\n4. Includes a complete working example: maybe a coding agent helper that asks Qwen 3.8-Max-Preview to plan a Laravel feature.\n5. Includes project structure, env setup, error handling, common issues (region, model name, token plan vs pay-as-you-go, key prefix).\n6. At least 5 real code blocks with language labels and explanations.\n7. 1500+ words.\n\nLet me draft the article. I need to avoid banned phrases and hype. Use plain language. Include sources.\n\nLet me write the markdown.</think>",
+    "date": "2026-07-19T19:51:00.001222+00:00"
   }
 ]
