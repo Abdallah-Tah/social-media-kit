@@ -66,3 +66,7 @@ content/newsletter_drafts/
 # Phase 0 runtime ledgers — append-only, grow unbounded, machine-local.
 content/llm_usage.jsonl
 content/content_decisions.jsonl
+
+# Machine-local Claude Code settings (a .tmp of this leaked into a commit once).
+.claude/settings.local.json
+.claude/*.tmp*
