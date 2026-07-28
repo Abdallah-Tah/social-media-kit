@@ -25,15 +25,37 @@ from .slots import (
     SlotConfigError,
     load_slots,
 )
+from .source_confidence import (
+    Candidate,
+    Claim,
+    Component,
+    ScoringConfig,
+    ScoringConfigError,
+    SourceConfidence,
+    SourceRef,
+    load_scoring_config,
+    registrable_domain,
+    score_source_confidence,
+)
 
 __all__ = [
+    "Candidate",
+    "Claim",
+    "Component",
     "ContentType",
+    "ScoringConfig",
+    "ScoringConfigError",
     "Slot",
     "SlotConfig",
     "SlotConfigError",
+    "SourceConfidence",
+    "SourceRef",
     "editorial_shadow_mode",
     "editorial_slots_enabled",
     "editorial_timezone",
     "editorial_zoneinfo",
+    "load_scoring_config",
     "load_slots",
+    "registrable_domain",
+    "score_source_confidence",
 ]

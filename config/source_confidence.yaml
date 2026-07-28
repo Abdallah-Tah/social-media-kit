@@ -1,0 +1,112 @@
+# Source-confidence scoring (Phase 1, Stage 2) — declarative policy.
+#
+# This scores the EVIDENCE behind a candidate, and nothing else. It is
+# deliberately separate from the opportunity score, the editorial-quality
+# score, and the publication-readiness decision. Nothing here admits or rejects
+# anything; admission is Stage 4.
+#
+# agent/editorial/source_confidence.py holds structure and validation only.
+# Component maximums must sum to exactly 100 or the file is rejected at load.
+
+version: 1
+
+weights:
+  primary_source: 30
+  corroboration: 25
+  domain_authority: 20
+  recency: 15
+  claim_traceability: 10
+
+# ── 1. Primary-source availability ─────────────────────────────────────────
+# A vendor benchmark appearing in a first-party source is still a vendor claim.
+# It earns primary-source points (the document is primary) but is never treated
+# as independently verified — see claim_traceability below.
+primary_source:
+  direct: 30              # primary source tied to the exact development
+  first_party_indirect: 20  # authoritative first-party, incomplete or indirect
+  secondary_linking: 10     # credible secondary citing an unavailable primary
+  none: 0
+
+# ── 2. Independent corroboration ───────────────────────────────────────────
+corroboration:
+  two_or_more: 25
+  one: 15
+  same_org_only: 5        # several pages, all one organization or syndicated
+  none: 0
+
+# ── 3. Domain authority ────────────────────────────────────────────────────
+# Normalized from the existing feed_authority.item_authority() final_score.
+# Its tables and history logic are NOT duplicated here.
+#
+# Authority can never rescue missing evidence: authority + recency +
+# traceability max out at 20 + 15 + 10 = 45, below every slot threshold. A
+# famous outlet with no primary source and no corroboration cannot be admitted.
+domain_authority:
+  normalize_from: feed_authority.item_authority.final_score
+
+# ── 4. Recency ─────────────────────────────────────────────────────────────
+# Measured from the actual event / source publication time, never ingestion.
+# Bands are upper-bound inclusive on age; the final band with a null bound is
+# the catch-all. Bands must be strictly increasing in age and non-increasing in
+# score, with no duplicate boundaries.
+recency_default_profile: news
+
+recency_profiles:
+  news:
+    - {max_age_hours: 24, score: 15}
+    - {max_age_hours: 72, score: 12}
+    - {max_age_hours: 168, score: 8}
+    - {max_age_hours: 336, score: 4}
+    - {max_age_hours: null, score: 0}
+
+  # Tutorials age far more slowly — a good guide from last quarter is still good.
+  tutorial:
+    - {max_age_hours: 720, score: 15}
+    - {max_age_hours: 2160, score: 12}
+    - {max_age_hours: 4320, score: 8}
+    - {max_age_hours: 8760, score: 4}
+    - {max_age_hours: null, score: 0}
+
+  # Repository activity: a release from last week is still current.
+  repository:
+    - {max_age_hours: 168, score: 15}
+    - {max_age_hours: 336, score: 12}
+    - {max_age_hours: 720, score: 8}
+    - {max_age_hours: 2160, score: 4}
+    - {max_age_hours: null, score: 0}
+
+  # Papers stay relevant for months.
+  paper:
+    - {max_age_hours: 336, score: 15}
+    - {max_age_hours: 1440, score: 12}
+    - {max_age_hours: 4320, score: 8}
+    - {max_age_hours: 8760, score: 4}
+    - {max_age_hours: null, score: 0}
+
+  # Weekly artifacts look back over the week they cover.
+  weekly_analysis:
+    - {max_age_hours: 168, score: 15}
+    - {max_age_hours: 336, score: 10}
+    - {max_age_hours: 720, score: 5}
+    - {max_age_hours: null, score: 0}
+
+# Recency profile per once-weekly artifact. Keys must name a real
+# EDITORIAL_ARTIFACTS entry and values a profile defined above.
+artifact_profiles:
+  github_roundup: repository
+  weekly_trend_analysis: weekly_analysis
+  weekly_intelligence_report: weekly_analysis
+
+timestamps:
+  # Clock skew allowance before a timestamp counts as "in the future".
+  future_tolerance_minutes: 5
+  # Spread across source timestamps beyond which they are flagged as conflicting.
+  conflict_tolerance_hours: 24
+
+# ── 5. Claim traceability ──────────────────────────────────────────────────
+claim_traceability:
+  all_traceable: 10
+  most_traceable: 7
+  most_threshold: 0.6     # ratio at or above which "most" applies
+  basic_only: 3
+  none: 0
