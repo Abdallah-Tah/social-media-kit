@@ -124,6 +124,20 @@ from .quality import (
     QualityResult,
     evaluate_quality,
 )
+from .readiness import (
+    STATUS_READY,
+    STATUS_READY_WITH_WARNINGS,
+    STATUS_REJECTED,
+    STATUS_REQUIRES_MANUAL_REVIEW,
+    ReadinessConfig,
+    ReadinessConfigError,
+    ReadinessInput,
+    ReadinessDecision,
+    evaluate_readiness,
+    evaluate_and_record_readiness,
+    load_readiness_config,
+    record_readiness_decision,
+)
 
 __all__ = [
     "DEVELOPMENT_TYPES",
@@ -217,4 +231,17 @@ __all__ = [
     "DraftInput",
     "QualityResult",
     "evaluate_quality",
+    # Stage 6 — readiness verdict
+    "STATUS_READY",
+    "STATUS_READY_WITH_WARNINGS",
+    "STATUS_REJECTED",
+    "STATUS_REQUIRES_MANUAL_REVIEW",
+    "ReadinessConfig",
+    "ReadinessConfigError",
+    "ReadinessInput",
+    "ReadinessDecision",
+    "evaluate_readiness",
+    "evaluate_and_record_readiness",
+    "load_readiness_config",
+    "record_readiness_decision",
 ]

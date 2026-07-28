@@ -174,3 +174,74 @@ validation:
   hard_failures_immutable: true
   # High prose quality cannot override evidence failures.
   prose_cannot_override_evidence: true
+
+# ── Stage 6 readiness policy ──
+readiness:
+  schema_version: 1
+  ready_quality_threshold: 80
+  warning_quality_threshold: 60
+  near_threshold_margin: 3
+
+  # Quality warning/issue codes that may still be auto-cleared as
+  # ready_with_warnings when no material concern exists.
+  allowed_non_blocking_quality_issues:
+    - above_word_range
+    - truncated_sentence
+    - generic_filler
+    - long_paragraph
+    - generic_intro
+    - summary_missing
+    - excessive_hedging
+    - title_body_low_overlap
+
+  # Stable Stage 6 codes that require manual review instead of silent readiness.
+  manual_review_triggers:
+    - important_quality_warning
+    - source_confidence_near_threshold
+    - relationship_material_unknowns
+    - sensitive_legal_content
+    - sensitive_security_content
+    - sensitive_financial_content
+    - sensitive_accusation_content
+    - vendor_benchmark_unverified
+    - r4_material_override_used
+    - sources_changed_materially
+    - traceable_but_ambiguous_claim
+
+  # These may not overlap auto-ready development types.
+  sensitive_development_types:
+    - security_issue
+    - pricing_change
+    - licensing_change
+    - funding_or_company_news
+
+  auto_ready_development_types: []
+
+  required_fingerprint_fields:
+    draft:
+      - title
+      - body
+      - summary
+      - artifact_type
+      - format_id
+    source:
+      - candidate_id
+      - canonical_topic_id
+      - source_urls
+      - claim_ids
+      - candidate_source_fingerprint
+
+  duplicate_detection:
+    stages:
+      - article_gate
+    blocking_statuses:
+      - ready
+      - ready_with_warnings
+    identity_keys:
+      - candidate_id
+      - slot_id
+      - editorial_day
+
+  # Declarative hard stops; validation enforces that these stay false.
+  allow_hard_failures_to_pass: false
+  allow_rejected_admissions_to_pass: false
