@@ -73,6 +73,9 @@ state/
 logs/automation_log.jsonl
 content/automation_log.jsonl
 
+# Editorial shadow/replay pipeline output — git-ignored.
+state/editorial/
+
 # Private backup bundles (git bundle create ...). Never push these.
 *.bundle
 

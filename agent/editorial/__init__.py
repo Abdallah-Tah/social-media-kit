@@ -158,6 +158,22 @@ from .artifacts import (
     save_artifact,
     validate_artifact_distinctness,
 )
+from .orchestrator import (
+    ALLOWED_MODES,
+    MODE_REPLAY,
+    MODE_SHADOW,
+    OUTCOME_DRAFT_GENERATION_FAILED,
+    OUTCOME_INVALID_CONFIGURATION,
+    OUTCOME_PIPELINE_FAILED,
+    OUTCOME_QUALITY_REJECTED,
+    OUTCOME_READY_IN_SHADOW,
+    OUTCOME_REQUIRES_MANUAL_REVIEW,
+    OUTCOME_SKIPPED_NO_CANDIDATE,
+    PipelineInput,
+    PipelineResult,
+    SlotResult,
+    run_pipeline,
+)
 
 __all__ = [
     "DEVELOPMENT_TYPES",
@@ -280,4 +296,19 @@ __all__ = [
     "build_weekly_trend_analysis",
     "save_artifact",
     "validate_artifact_distinctness",
+    # Stage 7B — dormant end-to-end orchestrator
+    "ALLOWED_MODES",
+    "MODE_REPLAY",
+    "MODE_SHADOW",
+    "OUTCOME_DRAFT_GENERATION_FAILED",
+    "OUTCOME_INVALID_CONFIGURATION",
+    "OUTCOME_PIPELINE_FAILED",
+    "OUTCOME_QUALITY_REJECTED",
+    "OUTCOME_READY_IN_SHADOW",
+    "OUTCOME_REQUIRES_MANUAL_REVIEW",
+    "OUTCOME_SKIPPED_NO_CANDIDATE",
+    "PipelineInput",
+    "PipelineResult",
+    "SlotResult",
+    "run_pipeline",
 ]
