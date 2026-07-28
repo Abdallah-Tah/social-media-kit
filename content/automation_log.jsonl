@@ -109,3 +109,11 @@
 {"ts": "2026-07-27T15:15:55.536655+00:00", "job_id": "feed_run", "ok": true, "message": "Feed refresh: 20 items saved", "dry_run": false}
 {"ts": "2026-07-27T18:16:49.750067+00:00", "job_id": "feed_run", "ok": true, "message": "Feed refresh: 20 items saved", "dry_run": false}
 {"ts": "2026-07-27T21:16:59.731247+00:00", "job_id": "feed_run", "ok": true, "message": "Feed refresh: 20 items saved", "dry_run": false}
+{"ts": "2026-07-28T00:17:09.411030+00:00", "job_id": "feed_run", "ok": true, "message": "Feed refresh: 20 items saved", "dry_run": false}
+{"ts": "2026-07-28T00:21:22.585623+00:00", "job_id": "feed_run", "ok": true, "message": "Feed refresh: 20 items saved | llm: 6 calls, 1 enriched, 0 cached, 4 failed", "dry_run": false}
+{"ts": "2026-07-28T00:24:07.792753+00:00", "job_id": "feed_run", "ok": true, "message": "Feed refresh: 20 items saved | llm: 8 calls, 3 enriched, 1 cached, 2 failed", "dry_run": false}
+{"ts": "2026-07-28T00:41:01.654699+00:00", "job_id": "feed_run", "ok": true, "message": "Feed refresh: 20 items saved | llm: 5 calls, 5 enriched, 0 cached, 0 failed", "dry_run": false}
+{"ts": "2026-07-28T00:41:19.915164+00:00", "job_id": "feed_run", "ok": true, "message": "Feed refresh: 20 items saved | llm: 5 calls, 5 enriched, 5 cached, 0 failed", "dry_run": false}
+{"ts": "2026-07-28T00:52:55.607869+00:00", "job_id": "feed_run", "ok": true, "message": "Feed refresh: 20 items saved | llm: 5 calls, 5 enriched, 10 cached, 0 failed", "dry_run": false}
+{"ts": "2026-07-28T00:53:12.067621+00:00", "job_id": "feed_run", "ok": true, "message": "Feed refresh: 20 items saved | llm: 5 calls, 5 enriched, 15 cached, 0 failed", "dry_run": false}
+{"ts": "2026-07-28T00:53:43.315479+00:00", "job_id": "feed_run", "ok": true, "message": "Feed refresh: 20 items saved | llm: 1 calls, 1 enriched, 19 cached, 0 failed", "dry_run": false}
