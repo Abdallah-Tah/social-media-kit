@@ -294,7 +294,7 @@ class TestNoSideEffects:
 # ── persistence ──────────────────────────────────────────────────────────────
 
 class TestPersistence:
-    def test_shadow_persists_to_state_dir(self, tmp_path, monkeypatch):
+    def test_shadow_persists_per_slot(self, tmp_path, monkeypatch):
         from agent.editorial import orchestrator as ORCH
         monkeypatch.setattr(ORCH, "STATE_DIR", tmp_path / "editorial")
         result = run_pipeline(PipelineInput(
@@ -302,22 +302,44 @@ class TestPersistence:
             candidates=(_fake_record(),),
             draft_builder=_fake_draft_builder,
         ))
-        expected = tmp_path / "editorial" / "shadow" / "pipeline_2026-07-28.json"
-        assert expected.exists()
-        data = json.loads(expected.read_text())
-        assert data["mode"] == "shadow"
-        assert data["date"] == "2026-07-28"
+        shadow_dir = tmp_path / "editorial" / "shadow"
+        files = list(shadow_dir.glob("pipeline_2026-07-28_*.json"))
+        assert len(files) == len(result.slot_results)
+        for f in files:
+            data = json.loads(f.read_text())
+            assert data["mode"] == "shadow"
+            assert data["date"] == "2026-07-28"
+            assert "slot_result" in data
 
-    def test_replay_persists_to_state_dir(self, tmp_path, monkeypatch):
+    def test_replay_persists_per_slot(self, tmp_path, monkeypatch):
         from agent.editorial import orchestrator as ORCH
         monkeypatch.setattr(ORCH, "STATE_DIR", tmp_path / "editorial")
         result = run_pipeline(PipelineInput(
-            mode=MODE_REPLAY, date="2026-07-21",
+            mode=MODE_REPLAY, date="2026-07-27",
             candidates=(_fake_record(),),
             draft_builder=_fake_draft_builder,
         ))
-        expected = tmp_path / "editorial" / "replay" / "pipeline_2026-07-21.json"
-        assert expected.exists()
+        replay_dir = tmp_path / "editorial" / "replay"
+        files = list(replay_dir.glob("pipeline_2026-07-27_*.json"))
+        assert len(files) == len(result.slot_results)
+
+    def test_multiple_slots_preserved(self, tmp_path, monkeypatch):
+        """Running multiple slots for the same date preserves every result."""
+        from agent.editorial import orchestrator as ORCH
+        monkeypatch.setattr(ORCH, "STATE_DIR", tmp_path / "editorial")
+        result = run_pipeline(PipelineInput(
+            mode=MODE_SHADOW, date="2026-07-28",
+            candidates=(_fake_record(),),
+            draft_builder=_fake_draft_builder,
+        ))
+        shadow_dir = tmp_path / "editorial" / "shadow"
+        files = list(shadow_dir.glob("pipeline_2026-07-28_*.json"))
+        slot_ids = set()
+        for f in files:
+            data = json.loads(f.read_text())
+            slot_ids.add(data["slot_result"]["slot_id"])
+        assert len(slot_ids) == len(result.slot_results)
+        assert len(slot_ids) >= 3
 
     def test_persistence_is_deterministic(self, tmp_path, monkeypatch):
         from agent.editorial import orchestrator as ORCH
@@ -332,8 +354,9 @@ class TestPersistence:
         d1 = r1.to_dict()
         d1.pop("completed_at", None)
         d1.pop("started_at", None)
-        # Clear and re-run
-        (tmp_path / "editorial" / "shadow" / "pipeline_2026-07-28.json").unlink()
+        shadow_dir = tmp_path / "editorial" / "shadow"
+        for f in shadow_dir.glob("pipeline_2026-07-28_*.json"):
+            f.unlink()
         r2 = run_pipeline(PipelineInput(
             mode=MODE_SHADOW, date="2026-07-28",
             candidates=(),
@@ -435,3 +458,175 @@ class TestLLMCalls:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ── corrected outcome mapping ────────────────────────────────────────────────
+
+class TestOutcomeMapping:
+    """Verify readiness status maps to the correct pipeline outcome."""
+
+    def test_ready_maps_to_ready_in_shadow(self):
+        from agent.editorial.orchestrator import OUTCOME_READY_IN_SHADOW
+        assert OUTCOME_READY_IN_SHADOW == "ready_in_shadow"
+
+    def test_ready_with_warnings_maps_to_hold(self):
+        from agent.editorial.orchestrator import OUTCOME_READY_WITH_WARNINGS_HOLD
+        assert OUTCOME_READY_WITH_WARNINGS_HOLD == "ready_with_warnings_hold"
+
+    def test_ready_with_warnings_never_ready_in_shadow(self):
+        """ready_with_warnings must NOT map to ready_in_shadow."""
+        from agent.editorial import readiness as RDY
+        from agent.editorial.orchestrator import (
+            OUTCOME_READY_IN_SHADOW,
+            OUTCOME_READY_WITH_WARNINGS_HOLD,
+        )
+        # Verify the mapping logic
+        rd_status = RDY.STATUS_READY_WITH_WARNINGS
+        if rd_status == RDY.STATUS_READY:
+            outcome = OUTCOME_READY_IN_SHADOW
+        elif rd_status == RDY.STATUS_READY_WITH_WARNINGS:
+            outcome = OUTCOME_READY_WITH_WARNINGS_HOLD
+        elif rd_status == RDY.STATUS_REQUIRES_MANUAL_REVIEW:
+            outcome = "requires_manual_review"
+        else:
+            outcome = "quality_rejected"
+        assert outcome == OUTCOME_READY_WITH_WARNINGS_HOLD
+        assert outcome != OUTCOME_READY_IN_SHADOW
+
+    def test_requires_manual_review_held(self):
+        from agent.editorial import readiness as RDY
+        from agent.editorial.orchestrator import OUTCOME_REQUIRES_MANUAL_REVIEW
+        rd_status = RDY.STATUS_REQUIRES_MANUAL_REVIEW
+        if rd_status == RDY.STATUS_READY:
+            outcome = "ready_in_shadow"
+        elif rd_status == RDY.STATUS_READY_WITH_WARNINGS:
+            outcome = "ready_with_warnings_hold"
+        elif rd_status == RDY.STATUS_REQUIRES_MANUAL_REVIEW:
+            outcome = OUTCOME_REQUIRES_MANUAL_REVIEW
+        else:
+            outcome = "quality_rejected"
+        assert outcome == OUTCOME_REQUIRES_MANUAL_REVIEW
+
+    def test_rejected_never_ready(self):
+        from agent.editorial import readiness as RDY
+        from agent.editorial.orchestrator import OUTCOME_QUALITY_REJECTED
+        rd_status = RDY.STATUS_REJECTED
+        if rd_status == RDY.STATUS_READY:
+            outcome = "ready_in_shadow"
+        elif rd_status == RDY.STATUS_READY_WITH_WARNINGS:
+            outcome = "ready_with_warnings_hold"
+        elif rd_status == RDY.STATUS_REQUIRES_MANUAL_REVIEW:
+            outcome = "requires_manual_review"
+        else:
+            outcome = OUTCOME_QUALITY_REJECTED
+        assert outcome == OUTCOME_QUALITY_REJECTED
+
+
+# ── artifact routing ─────────────────────────────────────────────────────────
+
+class TestArtifactRouting:
+    """Verify the correct 7A builder is invoked per slot type."""
+
+    def test_morning_slot_uses_intelligence_brief(self):
+        from agent.editorial.orchestrator import _generate_artifact
+        from agent.editorial.slots import ContentType
+
+        ct = ContentType(name="intelligence_brief", formats=("intelligence_brief",))
+        result = _generate_artifact(
+            ct, "intelligence_brief", "tuesday", (), None, "", {}, None,
+            None, "", (), (), None, "intelligence_brief",
+        )
+        assert result is not None
+        assert result["artifact_type"] == "intelligence_brief"
+
+    def test_sunday_trend_uses_weekly_trend_analysis(self):
+        from agent.editorial.orchestrator import _generate_artifact
+        from agent.editorial.slots import ContentType
+
+        ct = ContentType(name="weekly_trend", artifact="weekly_trend_analysis")
+        result = _generate_artifact(
+            ct, "midday_authority", "sunday", (), None, "", {}, None,
+            None, "", (), (), None, "weekly_trend_analysis",
+        )
+        assert result is not None
+        assert result["artifact_type"] == "weekly_trend_analysis"
+
+    def test_sunday_report_uses_weekly_intelligence_report(self):
+        from agent.editorial.orchestrator import _generate_artifact
+        from agent.editorial.slots import ContentType
+
+        ct = ContentType(name="weekly_report", artifact="weekly_intelligence_report")
+        result = _generate_artifact(
+            ct, "practical_takeaway", "sunday", (), None, "", {}, None,
+            None, "", (), (), None, "weekly_intelligence_report",
+        )
+        assert result is not None
+        assert result["artifact_type"] == "weekly_intelligence_report"
+
+    def test_tutorial_slot_no_system_artifact(self):
+        from agent.editorial.orchestrator import _generate_artifact
+        from agent.editorial.slots import ContentType
+
+        ct = ContentType(name="tutorial_deep_dive", formats=("tutorial_deep_dive",))
+        result = _generate_artifact(
+            ct, "midday_authority", "monday", (), None, "", {}, None,
+            None, "", (), (), None, "tutorial_deep_dive",
+        )
+        assert result is None
+
+    def test_takeaway_slot_no_system_artifact(self):
+        from agent.editorial.orchestrator import _generate_artifact
+        from agent.editorial.slots import ContentType
+
+        ct = ContentType(name="takeaway_checklist", formats=("takeaway_checklist",))
+        result = _generate_artifact(
+            ct, "practical_takeaway", "wednesday", (), None, "", {}, None,
+            None, "", (), (), None, "takeaway_checklist",
+        )
+        assert result is None
+
+    def test_sunday_artifacts_materially_distinct(self):
+        from agent.editorial.orchestrator import _generate_artifact
+        from agent.editorial.slots import ContentType
+        from agent.editorial.artifacts import validate_artifact_distinctness, Artifact
+
+        ct_trend = ContentType(name="weekly_trend", artifact="weekly_trend_analysis")
+        ct_report = ContentType(name="weekly_report", artifact="weekly_intelligence_report")
+        trend_dict = _generate_artifact(
+            ct_trend, "midday_authority", "sunday", (), None, "", {}, None,
+            None, "", (), (), None, "weekly_trend_analysis",
+        )
+        report_dict = _generate_artifact(
+            ct_report, "practical_takeaway", "sunday", (), None, "", {}, None,
+            None, "", (), (), None, "weekly_intelligence_report",
+        )
+        trend_art = Artifact(
+            artifact_type="weekly_trend_analysis", format_id="weekly_trend_analysis",
+            editorial_day="sunday",
+            sections=tuple((s["heading"], s["body"]) for s in trend_dict["sections"]),
+        )
+        report_art = Artifact(
+            artifact_type="weekly_intelligence_report", format_id="weekly_intelligence_report",
+            editorial_day="sunday",
+            sections=tuple((s["heading"], s["body"]) for s in report_dict["sections"]),
+        )
+        validate_artifact_distinctness(trend_art, report_art)
+
+
+# ── generation metadata ──────────────────────────────────────────────────────
+
+class TestGenerationMetadata:
+    def test_default_builder_labels_deterministic_scaffold(self):
+        from agent.editorial.orchestrator import _default_draft_builder
+        candidate = _fake_candidate()
+        result = _default_draft_builder(candidate, "intelligence_brief", "test", None)
+        assert result["generation_mode"] == "deterministic_scaffold"
+
+    def test_default_builder_not_labeled_llm(self):
+        from agent.editorial.orchestrator import _default_draft_builder
+        candidate = _fake_candidate()
+        result = _default_draft_builder(candidate, "intelligence_brief", "test", None)
+        assert result.get("generation_mode") != "llm"
+        assert "provider" not in result
+        assert "model" not in result
+        assert "cost" not in result

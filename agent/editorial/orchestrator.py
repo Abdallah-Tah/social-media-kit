@@ -59,6 +59,7 @@ ALLOWED_MODES = frozenset({MODE_SHADOW, MODE_REPLAY})
 # ── Outcome constants ────────────────────────────────────────────────────────
 
 OUTCOME_READY_IN_SHADOW = "ready_in_shadow"
+OUTCOME_READY_WITH_WARNINGS_HOLD = "ready_with_warnings_hold"
 OUTCOME_REQUIRES_MANUAL_REVIEW = "requires_manual_review"
 OUTCOME_QUALITY_REJECTED = "quality_rejected"
 OUTCOME_SKIPPED_NO_CANDIDATE = "skipped_no_candidate"
@@ -229,7 +230,183 @@ def _default_draft_builder(
             for c in claim_dicts
             if c["verification"] in ("verified_independent", "verified_unknown")
         ),
+        "generation_mode": "deterministic_scaffold",
     }
+
+
+# ── Artifact routing ─────────────────────────────────────────────────────────
+
+def _generate_artifact(
+    content_type: Any,
+    slot_id: str,
+    editorial_day: str,
+    normalized: Sequence[Any],
+    selected: Any,
+    selected_id: str,
+    sc_results: dict[str, Any],
+    sc_result: Any,
+    quality_result: Any,
+    rd_status: str,
+    rd_codes: tuple[str, ...],
+    candidates: Sequence[Any],
+    admission_result: Any,
+    format_id: str,
+) -> dict[str, Any] | None:
+    """Route to the correct 7A artifact builder based on content type.
+
+    - intelligence_brief slot → build_intelligence_brief()
+    - Sunday weekly_trend_analysis → build_weekly_trend_analysis()
+    - Sunday weekly_intelligence_report → build_weekly_intelligence_report()
+    - Other slots → None (no system artifact)
+    """
+    from .artifacts import (
+        BriefCandidate,
+        BriefClaim,
+        BriefSource,
+        DailyBriefInput,
+        QualityBreakdown,
+        SourceConfidenceBreakdown,
+        WeeklyReportInput,
+        WeeklyTrendInput,
+        build_intelligence_brief,
+        build_weekly_intelligence_report,
+        build_weekly_trend_analysis,
+    )
+
+    ct_name = content_type.name if hasattr(content_type, "name") else str(content_type)
+    artifact_name = content_type.artifact if hasattr(content_type, "artifact") and content_type.artifact else None
+
+    # ── Sunday weekly artifacts ────────────────────────────────────────────
+    if artifact_name == "weekly_trend_analysis":
+        trend_input = WeeklyTrendInput(
+            week_start=editorial_day,
+            week_end=editorial_day,
+            entity_counts=tuple(
+                (c.subject_org or c.subject_name or "unknown", 1)
+                for c in normalized
+            ),
+            theme_counts=(),
+            source_activity=tuple(
+                (c.source or "unknown", 1) for c in normalized
+            ),
+            development_type_counts=tuple(
+                (c.development_type, 1) for c in normalized
+            ),
+            total_candidates_evaluated=len(candidates),
+            total_admitted=1 if selected_id else 0,
+            total_rejected=len(candidates) - (1 if selected_id else 0),
+        )
+        return build_weekly_trend_analysis(trend_input).to_dict()
+
+    if artifact_name == "weekly_intelligence_report":
+        report_input = WeeklyReportInput(
+            week_start=editorial_day,
+            week_end=editorial_day,
+            total_decisions=len(candidates),
+            accepted=1 if selected_id else 0,
+            rejected=len(candidates) - (1 if selected_id else 0),
+            rejected_by_reason=(),
+            readiness_decisions=((rd_status, 1),) if rd_status else (),
+            avg_source_confidence=float(sc_result.score) if sc_result else None,
+            avg_editorial_quality=float(quality_result.score) if quality_result else None,
+            slots_filled=1 if selected_id else 0,
+            slots_skipped=0 if selected_id else 1,
+        )
+        return build_weekly_intelligence_report(report_input).to_dict()
+
+    # ── Morning intelligence_brief slot ────────────────────────────────────
+    if ct_name == "intelligence_brief" or artifact_name == "intelligence_brief":
+        brief_sources = (
+            BriefSource(name="feed", candidate_count=len(candidates)),
+        )
+        brief_candidates = []
+        for c in normalized:
+            ev = None
+            for e in (admission_result.evaluated_candidates
+                      if hasattr(admission_result, "evaluated_candidates") else ()):
+                if getattr(e, "candidate_id", "") == c.candidate_id:
+                    ev = e
+                    break
+            brief_candidates.append(BriefCandidate(
+                candidate_id=c.candidate_id,
+                title=c.title,
+                entity=c.subject_org or c.subject_name or "",
+                development_type=c.development_type,
+                source_confidence=sc_results[c.candidate_id].score
+                    if c.candidate_id in sc_results else None,
+                admission_status="admitted" if c.candidate_id == selected_id else "rejected",
+                rejection_reasons=tuple(
+                    getattr(ev, "reason_codes", ()) or ()
+                ) if ev and c.candidate_id != selected_id else (),
+                primary_source_url=(c.primary_source.url if c.primary_source else "")
+                    if hasattr(c, "primary_source") and c.primary_source else "",
+            ))
+
+        sel_brief = None
+        for bc in brief_candidates:
+            if bc.candidate_id == selected_id:
+                sel_brief = bc
+                break
+
+        confirmed = []
+        unverified = []
+        if selected is not None:
+            for claim in (selected.claims or ()):
+                bc = BriefClaim(
+                    text=claim.text,
+                    verification=getattr(claim, "verification", "unverified"),
+                    source_url=getattr(claim, "source_url", ""),
+                )
+                if getattr(claim, "verification", "") in ("verified_independent", "verified_unknown"):
+                    confirmed.append(bc)
+                else:
+                    unverified.append(bc)
+
+        sc_breakdown = None
+        if sc_result:
+            comps = sc_result.components
+            sc_breakdown = SourceConfidenceBreakdown(
+                primary_source=getattr(comps.get("primary_source"), "score", 0) if comps.get("primary_source") else 0,
+                corroboration=getattr(comps.get("corroboration"), "score", 0) if comps.get("corroboration") else 0,
+                domain_authority=getattr(comps.get("domain_authority"), "score", 0) if comps.get("domain_authority") else 0,
+                recency=getattr(comps.get("recency"), "score", 0) if comps.get("recency") else 0,
+                claim_traceability=getattr(comps.get("claim_traceability"), "score", 0) if comps.get("claim_traceability") else 0,
+                total=sc_result.score,
+            )
+
+        q_breakdown = None
+        if quality_result:
+            qcomps = {c.name: c for c in quality_result.components}
+            q_breakdown = QualityBreakdown(
+                format_conformance=getattr(qcomps.get("format_conformance"), "score", 0),
+                specificity_evidence=getattr(qcomps.get("specificity_evidence"), "score", 0),
+                practical_value=getattr(qcomps.get("practical_value"), "score", 0),
+                structure_readability=getattr(qcomps.get("structure_readability"), "score", 0),
+                language_originality=getattr(qcomps.get("language_originality"), "score", 0),
+                total=quality_result.score,
+                hard_failures=tuple(quality_result.hard_failures or ()),
+                issues=tuple(quality_result.issues or ()),
+                warnings=tuple(quality_result.warnings or ()),
+            )
+
+        brief_input = DailyBriefInput(
+            editorial_day=editorial_day,
+            sources_scanned=brief_sources,
+            candidates=tuple(brief_candidates),
+            selected_candidate=sel_brief,
+            confirmed_claims=tuple(confirmed),
+            unverified_claims=tuple(unverified),
+            source_confidence=sc_breakdown,
+            quality=q_breakdown,
+            readiness_status=rd_status,
+            readiness_reason_codes=tuple(rd_codes),
+            slot_id=slot_id,
+            format_id=format_id,
+        )
+        return build_intelligence_brief(brief_input).to_dict()
+
+    # ── Other slots: no system artifact ────────────────────────────────────
+    return None
 
 
 # ── Pipeline execution ───────────────────────────────────────────────────────
@@ -502,114 +679,21 @@ def _run_slot(
     if rd_status == RDY.STATUS_READY:
         outcome = OUTCOME_READY_IN_SHADOW
     elif rd_status == RDY.STATUS_READY_WITH_WARNINGS:
-        outcome = OUTCOME_READY_IN_SHADOW
+        outcome = OUTCOME_READY_WITH_WARNINGS_HOLD
     elif rd_status == RDY.STATUS_REQUIRES_MANUAL_REVIEW:
         outcome = OUTCOME_REQUIRES_MANUAL_REVIEW
     else:
         outcome = OUTCOME_QUALITY_REJECTED
 
-    # ── Artifact generation (7A) ───────────────────────────────────────────
+    # ── Artifact generation (7A) — routed by content type ──────────────────
     artifact_dict = None
     try:
-        from .artifacts import (
-            BriefCandidate,
-            BriefClaim,
-            BriefSource,
-            DailyBriefInput,
-            QualityBreakdown,
-            SourceConfidenceBreakdown,
-            build_intelligence_brief,
+        artifact_dict = _generate_artifact(
+            content_type, slot_id, editorial_day, normalized,
+            selected, selected_id, sc_results, sc_result,
+            quality_result, rd_status, rd_codes, candidates,
+            admission_result, format_id,
         )
-        brief_sources = tuple(
-            BriefSource(name="feed", candidate_count=len(candidates))
-        )
-        brief_candidates = []
-        for c in normalized:
-            ev = None
-            for e in (admission_result.evaluations if hasattr(admission_result, "evaluations") else ()):
-                if getattr(e, "candidate_id", "") == c.candidate_id:
-                    ev = e
-                    break
-            brief_candidates.append(BriefCandidate(
-                candidate_id=c.candidate_id,
-                title=c.title,
-                entity=c.subject_org or c.subject_name or "",
-                development_type=c.development_type,
-                source_confidence=sc_results.get(c.candidate_id, {}).score
-                    if c.candidate_id in sc_results else None,
-                admission_status="admitted" if c.candidate_id == selected_id else "rejected",
-                rejection_reasons=tuple(
-                    getattr(ev, "rejection_reasons", ()) or ()
-                ) if ev and c.candidate_id != selected_id else (),
-                primary_source_url=(c.primary_source.url if c.primary_source else "")
-                    if hasattr(c, "primary_source") and c.primary_source else "",
-            ))
-
-        sel_brief = None
-        for bc in brief_candidates:
-            if bc.candidate_id == selected_id:
-                sel_brief = bc
-                break
-
-        confirmed = []
-        unverified = []
-        for claim in (selected.claims or ()):
-            bc = BriefClaim(
-                text=claim.text,
-                verification=getattr(claim, "verification", "unverified"),
-                source_url=getattr(claim, "source_url", ""),
-            )
-            if getattr(claim, "verification", "") in ("verified_independent", "verified_unknown"):
-                confirmed.append(bc)
-            else:
-                unverified.append(bc)
-
-        sc_breakdown = None
-        if sc_result:
-            comps = sc_result.components
-            sc_breakdown = SourceConfidenceBreakdown(
-                primary_source=comps.get("primary_source", {}).score
-                    if isinstance(comps.get("primary_source"), object) and hasattr(comps.get("primary_source", None), "score")
-                    else getattr(comps.get("primary_source"), "score", 0)
-                    if comps.get("primary_source") else 0,
-                corroboration=getattr(comps.get("corroboration"), "score", 0) if comps.get("corroboration") else 0,
-                domain_authority=getattr(comps.get("domain_authority"), "score", 0) if comps.get("domain_authority") else 0,
-                recency=getattr(comps.get("recency"), "score", 0) if comps.get("recency") else 0,
-                claim_traceability=getattr(comps.get("claim_traceability"), "score", 0) if comps.get("claim_traceability") else 0,
-                total=sc_result.score,
-            )
-
-        q_breakdown = None
-        if quality_result:
-            qcomps = {c.name: c for c in quality_result.components}
-            q_breakdown = QualityBreakdown(
-                format_conformance=getattr(qcomps.get("format_conformance"), "score", 0),
-                specificity_evidence=getattr(qcomps.get("specificity_evidence"), "score", 0),
-                practical_value=getattr(qcomps.get("practical_value"), "score", 0),
-                structure_readability=getattr(qcomps.get("structure_readability"), "score", 0),
-                language_originality=getattr(qcomps.get("language_originality"), "score", 0),
-                total=quality_result.score,
-                hard_failures=tuple(quality_result.hard_failures or ()),
-                issues=tuple(quality_result.issues or ()),
-                warnings=tuple(quality_result.warnings or ()),
-            )
-
-        brief_input = DailyBriefInput(
-            editorial_day=editorial_day,
-            sources_scanned=brief_sources,
-            candidates=tuple(brief_candidates),
-            selected_candidate=sel_brief,
-            confirmed_claims=tuple(confirmed),
-            unverified_claims=tuple(unverified),
-            source_confidence=sc_breakdown,
-            quality=q_breakdown,
-            readiness_status=rd_status,
-            readiness_reason_codes=tuple(rd_codes),
-            slot_id=slot_id,
-            format_id=format_id,
-        )
-        artifact = build_intelligence_brief(brief_input)
-        artifact_dict = artifact.to_dict()
     except Exception:
         pass  # Artifact generation is best-effort; don't fail the slot
 
@@ -718,14 +802,31 @@ def run_pipeline(
 
 # ── Persistence ──────────────────────────────────────────────────────────────
 
-def _persist(result: PipelineResult, mode: str) -> Path:
-    """Write the pipeline result to the git-ignored state directory."""
+def _persist(result: PipelineResult, mode: str) -> list[Path]:
+    """Write per-slot pipeline results to the git-ignored state directory.
+
+    Each slot gets its own file so repeated runs for the same date do not
+    overwrite each other. File naming:
+      pipeline_YYYY-MM-DD_<slot_id>.json
+    """
     out_dir = _mode_dir(mode)
     out_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"pipeline_{result.date}.json"
-    path = out_dir / filename
-    path.write_text(
-        json.dumps(result.to_dict(), indent=2, sort_keys=True, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    return path
+    paths: list[Path] = []
+    for sr in result.slot_results:
+        filename = f"pipeline_{result.date}_{sr.slot_id}.json"
+        path = out_dir / filename
+        data = {
+            "mode": result.mode,
+            "date": result.date,
+            "editorial_day": result.editorial_day,
+            "started_at": result.started_at,
+            "completed_at": result.completed_at,
+            "config_errors": list(result.config_errors),
+            "slot_result": _slot_to_dict(sr),
+        }
+        path.write_text(
+            json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        paths.append(path)
+    return paths
