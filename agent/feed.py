@@ -928,6 +928,8 @@ def print_feed(items: list[FeedItem]) -> None:
 # ── Notification ───────────────────────────────────────────────────────────
 
 def notify_feed(items: list[FeedItem], channel: str | None = None, profile_name: str = "default", dry_run: bool = True) -> dict[str, Any]:
+    from .notify import notifications_enabled
+
     profile = load_profile_with_interests(profile_name)
     channel = channel or get_notification_channel(profile) or "telegram"
     top = items[:NOTIFY_TOP_N]
@@ -941,6 +943,9 @@ def notify_feed(items: list[FeedItem], channel: str | None = None, profile_name:
     message = "\n".join(lines)
     if dry_run:
         return {"ok": True, "channel": channel, "sent": len(top), "dry_run": True, "message": message}
+
+    if not notifications_enabled():
+        return {"ok": True, "channel": channel, "sent": len(top), "suppressed": True, "message": message[:200]}
 
     if channel.lower() in ("telegram", "tg"):
         from scripts.telegram_poster import post_message
