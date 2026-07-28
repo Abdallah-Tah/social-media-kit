@@ -498,26 +498,47 @@ def _budget_enforceable(model: str) -> bool:
     return model in llm_ops.PRICING
 
 
+def _parse_ledger_ts(raw: Any) -> dt.datetime | None:
+    """Parse a ledger timestamp into an aware datetime, or None if unusable."""
+    if not raw:
+        return None
+    try:
+        parsed = dt.datetime.fromisoformat(str(raw))
+    except (TypeError, ValueError):
+        return None
+    # A naive row predates the offset-stamped format; assume host local rather
+    # than silently treating it as UTC, which would shift it a whole day.
+    return parsed.astimezone() if parsed.tzinfo is None else parsed
+
+
 def _spend_today() -> float:
     """Known feed_llm cost recorded so far today, from the usage ledger.
 
-    The date is taken from `time.strftime` (LOCAL), not from `_now()` (UTC),
-    because `llm_ops._record` stamps rows with a local timestamp. Comparing a
-    UTC date against locally-stamped rows made the window match nothing between
-    20:00 and midnight in a UTC-4 zone — the budget silently stopped binding for
-    the last four hours of every day. Both sides must read the same clock.
+    "Today" is a calendar day in the **configured editorial timezone**, and each
+    ledger row is converted into that zone before its date is compared. Both
+    weaker approaches have already failed here:
+
+      - a UTC date prefix matched against locally-stamped rows made the window
+        match nothing between 20:00 and midnight in a UTC-4 zone, so the budget
+        silently stopped binding for the last four hours of every day;
+      - naive host-local time means the budget window quietly changes meaning if
+        the host's zone changes, and has no defined behaviour across a DST fold.
+
+    Comparing instants in one explicit zone has neither problem.
     """
-    import time
-
     from . import llm_ops
+    from .editorial.flags import editorial_zoneinfo
 
-    today = time.strftime("%Y-%m-%d")
+    tz = editorial_zoneinfo()
+    today = dt.datetime.now(tz).date()
     total = 0.0
     for row in llm_ops.read_usage():
         if row.get("job_id") != ENRICHMENT_JOB_ID or not row.get("cost_known"):
             continue
-        if str(row.get("ts", "")).startswith(today):
-            total += row.get("cost_usd") or 0.0
+        stamped = _parse_ledger_ts(row.get("ts"))
+        if stamped is None or stamped.astimezone(tz).date() != today:
+            continue
+        total += row.get("cost_usd") or 0.0
     return round(total, 6)
 
 

@@ -365,31 +365,68 @@ def test_the_daily_budget_is_enforced(monkeypatch, tmp_path):
     assert actions(tmp_path).count("budget") == 4
 
 
-def test_spend_is_read_on_the_same_clock_the_ledger_is_written_with(monkeypatch):
+def test_spend_window_uses_the_configured_editorial_timezone(monkeypatch):
     """Regression: a UTC 'today' against locally-stamped rows read $0.
 
     Caught in live verification at 20:40 EDT — the UTC date was already the next
-    day, so the budget window matched nothing and stopped binding for the last
-    four hours of every day. Reproduced by pushing the local zone west so local
-    and UTC dates differ.
+    day, so the budget window matched nothing and the budget stopped binding for
+    the last four hours of every day. The window is now a calendar day in the
+    configured editorial zone, with every row converted into that zone first, so
+    neither the host's zone nor UTC skew can move it.
     """
+    import datetime as dt
     import time
+    from zoneinfo import ZoneInfo
 
-    monkeypatch.setenv("TZ", "Pacific/Honolulu")  # UTC-10, no DST
+    monkeypatch.setenv("EDITORIAL_TIMEZONE", "America/New_York")
+    monkeypatch.setenv("TZ", "Pacific/Honolulu")  # host zone deliberately elsewhere
     time.tzset()
     try:
         monkeypatch.setenv("FEED_LLM_DAILY_BUDGET_USD", "0.50")
-        write_ledger_row(0.75)
+        # Stamped as "now" in the editorial zone — the same instant the ledger
+        # would record, expressed with an offset like _record writes.
+        now_ny = dt.datetime.now(ZoneInfo("America/New_York"))
+        LLM.USAGE_LEDGER.parent.mkdir(parents=True, exist_ok=True)
+        LLM.USAGE_LEDGER.write_text(json.dumps({
+            "ts": now_ny.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "job_id": FEED.ENRICHMENT_JOB_ID, "model": "gpt-4o-mini",
+            "cost_usd": 0.75, "cost_known": True, "ok": True,
+        }) + "\n")
         w = wire(monkeypatch)
 
         FEED._summarize_top(make_items(2), {})
 
         assert FEED._spend_today() == 0.75, "today's spend must be visible"
-        assert w.count == 0, "over budget, regardless of local/UTC date skew"
+        assert w.count == 0, "over budget regardless of host/UTC skew"
         assert FEED.last_enrichment_stats().skipped_budget == 2
     finally:
         monkeypatch.delenv("TZ", raising=False)
         time.tzset()
+
+
+def test_yesterdays_spend_does_not_count_against_today(monkeypatch):
+    """The window is a day, not a running total."""
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+
+    monkeypatch.setenv("EDITORIAL_TIMEZONE", "America/New_York")
+    monkeypatch.setenv("FEED_LLM_DAILY_BUDGET_USD", "0.50")
+    yesterday = dt.datetime.now(ZoneInfo("America/New_York")) - dt.timedelta(days=1)
+    LLM.USAGE_LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    LLM.USAGE_LEDGER.write_text(json.dumps({
+        "ts": yesterday.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "job_id": FEED.ENRICHMENT_JOB_ID, "model": "gpt-4o-mini",
+        "cost_usd": 99.0, "cost_known": True, "ok": True,
+    }) + "\n")
+    w = wire(monkeypatch)
+
+    FEED._summarize_top(make_items(1), {})
+
+    stats = FEED.last_enrichment_stats()
+    # Measured before the run's own calls landed in the ledger.
+    assert stats.spend_usd_at_start == 0.0, "yesterday's $99 must not carry over"
+    assert stats.skipped_budget == 0
+    assert w.count == 1
 
 
 def test_spend_under_the_budget_still_enriches(monkeypatch):

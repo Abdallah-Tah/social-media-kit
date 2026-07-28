@@ -1,0 +1,157 @@
+# Professional publishing slots (Phase 1) — DORMANT.
+#
+# `enabled: false` is load-bearing. Nothing in this file affects production
+# until the approved cadence cutover; the live lane is still 5 news posts/day
+# from crontab, unchanged. EDITORIAL_SLOTS_ENABLED in the environment always
+# wins over the value here, so a runaway can be stopped without a commit.
+#
+# Editable policy lives here rather than in Python so thresholds can change
+# without a deploy. agent/editorial/slots.py only loads and validates.
+
+version: 1
+
+enabled: false
+
+# Shadow mode runs the full decision pipeline and writes decision records and
+# artifacts, but never publishes and never touches live rotation or saturation
+# history. This is what produces the required full-day simulation.
+shadow_mode: false
+
+# All scheduling and display is converted to this zone. Internal timestamps stay
+# timezone-aware UTC. Never rely on the host's local zone implicitly.
+timezone: America/New_York
+
+defaults:
+  fallback:
+    max_backup_candidates: 5
+    on_no_candidate: skip_slot     # never relax thresholds to fill the schedule
+    record_rejections: true
+
+  saturation:
+    rolling_days: 14
+    recent_items: 12
+    max_entity_share_recent: 0.25
+    material_types_always_allowed: true
+
+  claims:
+    require_claim_labelling: true
+    label_unverified_as: "unverified or vendor-provided"
+
+  limits:
+    linkedin_per_day: 1            # per slot; 3/day total after cutover
+
+slots:
+
+  intelligence_brief:
+    order: 1
+    publish_at: "08:00"
+    label: "SMKit Intelligence Brief"
+    purpose: >
+      Expose SMKit's intelligence process and select the highest-value
+      development from the previous 24 hours.
+    lookback_hours: 24
+
+    # Runs 7 days a week, so it needs 3 shapes to avoid a visible weekly pattern.
+    content_types:
+      intelligence_brief:
+        formats: [intelligence_brief, signal_vs_noise, one_story_that_matters]
+
+    required_sections:
+      - sources_scanned
+      - opportunities_discovered
+      - opportunities_rejected
+      - duplicates_prevented
+      - selected_lead_opportunity
+      - selection_rationale
+      - confirmed_facts
+      - unverified_or_vendor_claims
+      - source_confidence_score
+      - primary_sources
+
+    admission:
+      source_confidence_min: 75
+      editorial_quality_min: 75
+      evidence:
+        require_any_of:
+          - primary_source: true
+          - independent_sources_min: 2
+      duplicate_policy: reject_unchanged_topic
+
+  midday_authority:
+    order: 2
+    publish_at: "12:00"
+    label: "Midday Authority"
+
+    weekly_schedule:
+      monday:    long_form_tutorial
+      tuesday:   technical_analysis
+      wednesday: long_form_tutorial
+      thursday:  technical_analysis
+      friday:    long_form_tutorial
+      saturday:  github_roundup
+      sunday:    weekly_trend_analysis
+
+    content_types:
+      long_form_tutorial:
+        formats: [tutorial_deep_dive, guided_build, ground_up_build]
+      technical_analysis:
+        formats: [technical_analysis, architecture_teardown, tradeoff_study]
+      # Once-weekly artifacts generated from records, not rotated article
+      # shapes. Generators land in Stage 7; dormant until cutover.
+      github_roundup:
+        artifact: github_roundup
+      weekly_trend_analysis:
+        artifact: weekly_trend_analysis
+
+    admission:
+      source_confidence_min: 70
+      editorial_quality_min: 80
+      require_practical_developer_value: true
+      grounding:
+        require_any_of:
+          - primary_documentation
+          - source_code
+          - repository_data
+          - reproducible_evidence
+      duplicate_policy: reject_unchanged_topic
+
+  practical_takeaway:
+    order: 3
+    publish_at: "17:00"
+    label: "Practical Takeaway"
+
+    weekly_schedule:
+      monday:    practical_takeaway
+      tuesday:   practical_takeaway
+      wednesday: practical_takeaway
+      thursday:  practical_takeaway
+      friday:    practical_takeaway
+      saturday:  practical_takeaway
+      sunday:    weekly_intelligence_report
+
+    content_types:
+      practical_takeaway:
+        formats: [takeaway_checklist, migration_note, compatibility_brief]
+      weekly_intelligence_report:
+        artifact: weekly_intelligence_report
+
+    required_value_any_of:
+      - test_procedure
+      - implementation_guidance
+      - compatibility_impact
+      - migration_advice
+      - architecture_implication
+      - security_action
+      - cost_implication
+      - decision_checklist
+
+    admission:
+      source_confidence_min: 65
+      editorial_quality_min: 75
+      require_actionable_value: true
+      same_day_reuse:
+        allowed: true
+        require_all_of:
+          - explicit_link_to_earlier_item
+          - materially_different_practical_angle
+          - passes_saturation_and_duplicate_independently

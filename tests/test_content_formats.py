@@ -21,6 +21,15 @@ def history(tmp_path, monkeypatch):
     return path
 
 
+# Minimum length floor per registry kind. The live lanes keep the original 800.
+# `editorial` is lower on purpose: the intelligence brief is assembled from
+# ContentDecision records and may contain nothing that is not in a record, so an
+# 800-word floor would be a standing instruction to pad it with invented prose.
+# The floor still exists — it is just set where the shortest honest artifact
+# lands rather than where a long-form article does.
+MIN_WORDS_FLOOR = {"news": 800, "tutorial": 800, "editorial": 500}
+
+
 def test_every_format_is_well_formed():
     for kind, table in CF.REGISTRY.items():
         for fid, spec in table.items():
@@ -29,7 +38,23 @@ def test_every_format_is_well_formed():
                 f"{kind}/{fid} repeats a section"
             assert all(s.startswith("## ") for s in spec["sections"])
             assert spec["angle"] and spec["title_hint"]
-            assert spec["min_words"] >= 800
+            assert spec["min_words"] >= MIN_WORDS_FLOOR[kind], \
+                f"{kind}/{fid} below the {kind} floor"
+
+
+def test_the_live_lanes_keep_their_original_length_floor():
+    """Guards the scoping above from quietly relaxing production standards."""
+    assert MIN_WORDS_FLOOR["news"] == 800
+    assert MIN_WORDS_FLOOR["tutorial"] == 800
+    for kind in ("news", "tutorial"):
+        for fid, spec in CF.REGISTRY[kind].items():
+            assert spec["min_words"] >= 800, f"{kind}/{fid}"
+
+
+def test_every_editorial_format_carries_a_sources_section():
+    """Traceability is the point of the whole editorial layer."""
+    for fid, spec in CF.EDITORIAL_FORMATS.items():
+        assert any(s in ("## Sources", "## Primary Sources") for s in spec["sections"]), fid
 
 
 def test_tutorial_split_divides_sections():

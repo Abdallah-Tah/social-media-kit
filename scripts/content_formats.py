@@ -639,7 +639,328 @@ SOCIAL_SHAPES = {
 }
 
 
-REGISTRY = {"tutorial": TUTORIAL_FORMATS, "news": NEWS_FORMATS}
+# --------------------------------------------------------------------------
+# Editorial formats (Phase 1) — DORMANT until the approved cadence cutover.
+# --------------------------------------------------------------------------
+# These belong to the three professional publishing slots and are deliberately
+# NOT members of NEWS_FORMATS or TUTORIAL_FORMATS. `pick_format('news')` runs
+# live 5x/day on cron and rotates least-recently-used over its table, so
+# appending here would change which shape every production post takes today.
+#
+# The isolation is structural rather than flag-conditional: there is no value of
+# EDITORIAL_SLOTS_ENABLED that merges these into a production pool, because they
+# are a separate registry kind. See tests/test_editorial_dormancy.py, whose
+# expected sequences were captured before this table existed.
+#
+# Ids are disjoint from every live id. `guided_build` and `ground_up_build` are
+# named that way because `build_along` and `from_scratch` are already taken by
+# TUTORIAL_FORMATS — a collision would make get()/detect_format() ambiguous.
+EDITORIAL_FORMATS = {
+
+    # ── Slot 1: intelligence_brief (08:00) ─────────────────────────────────
+    # Deterministic artifacts. Every section is filled from ContentDecision
+    # records; the brief text below says which fields, not how to write prose.
+    # No LLM narration (resolution 5) — nothing may appear here that is not
+    # already in a decision record.
+    "intelligence_brief": {
+        "label": "SMKit Intelligence Brief",
+        "angle": (
+            "expose the selection process itself: what was scanned, what was "
+            "rejected and why, and which single development won"
+        ),
+        "title_hint": "name the lead development and the date, not 'daily briefing'",
+        "sections": [
+            "## What I Scanned", "## What Surfaced", "## What I Rejected",
+            "## Duplicates Prevented", "## The Lead Story", "## Why This One",
+            "## Confirmed Facts", "## Unverified Or Vendor Claims",
+            "## Source Confidence", "## Primary Sources",
+        ],
+        "brief": (
+            "Generated from decision records only. No claim may appear that is "
+            "not traceable to a record field.\n"
+            "What I Scanned: source names and candidate counts.\n"
+            "What Surfaced / What I Rejected: candidate titles with their "
+            "rejection reason verbatim from the record.\n"
+            "Duplicates Prevented: topics blocked by the duplicate or saturation "
+            "check, with which rule fired.\n"
+            "The Lead Story / Why This One: the admitted candidate and its "
+            "ranking rationale.\n"
+            "Confirmed Facts vs Unverified Or Vendor Claims: split strictly by "
+            "claim traceability. A vendor statement is never listed as confirmed.\n"
+            "Source Confidence: the five components and the total, not just the total.\n"
+            "Primary Sources: resolvable URLs only."
+        ),
+        "min_words": 500,
+    },
+    "signal_vs_noise": {
+        "label": "Signal vs noise",
+        "angle": "what cleared the bar versus what looked important and did not",
+        "title_hint": "contrast the thing that mattered with the thing that didn't",
+        "sections": [
+            "## The Signal", "## The Noise", "## How I Told Them Apart",
+            "## What I Scanned", "## What I Rejected", "## Duplicates Prevented",
+            "## Confirmed Facts", "## Unverified Or Vendor Claims",
+            "## Source Confidence", "## Primary Sources",
+        ],
+        "brief": (
+            "Same record set as intelligence_brief, framed as a comparison.\n"
+            "The Signal: the admitted candidate.\n"
+            "The Noise: the highest-scoring rejected candidates — name them and "
+            "give the exact reason each failed.\n"
+            "How I Told Them Apart: the threshold that separated them, quoted "
+            "with its numeric value.\n"
+            "Never imply a rejected item was low quality when it was rejected for "
+            "saturation or duplication."
+        ),
+        "min_words": 500,
+    },
+    "one_story_that_matters": {
+        "label": "One story that matters",
+        "angle": "a single development, with the full evidence trail behind it",
+        "title_hint": "state the development plainly; no 'the only story you need'",
+        "sections": [
+            "## The One Story", "## Why It Beat The Rest", "## What I Scanned",
+            "## What I Rejected", "## Duplicates Prevented", "## Confirmed Facts",
+            "## Unverified Or Vendor Claims", "## Source Confidence",
+            "## Primary Sources",
+        ],
+        "brief": (
+            "The narrowest of the three brief shapes: one candidate, examined "
+            "closely.\n"
+            "The One Story: what happened, from the primary source.\n"
+            "Why It Beat The Rest: the score gap to the runner-up, with both "
+            "numbers.\n"
+            "Everything else as in intelligence_brief. If the lead's confidence "
+            "came mostly from corroboration rather than a primary source, say so."
+        ),
+        "min_words": 500,
+    },
+
+    # ── Slot 2: midday_authority — long-form tutorial (Mon/Wed/Fri) ────────
+    "tutorial_deep_dive": {
+        "label": "Deep-dive tutorial",
+        "angle": "one capability taught thoroughly, from first principles to production",
+        "title_hint": "name the capability and the end state, not 'a complete guide'",
+        "sections": [
+            "## What You'll Be Able To Do", "## The Mental Model",
+            "## Setting Up", "## The Core Implementation", "## Handling The Edge Cases",
+            "## Testing It", "## Taking It To Production", "## What I'd Do Differently",
+            "## Sources",
+        ],
+        "brief": (
+            "The Mental Model: explain the underlying idea before any code, so the "
+            "reader can adapt it rather than copy it.\n"
+            "The Core Implementation: real, runnable code with versions pinned.\n"
+            "Handling The Edge Cases: the failures that actually happen — empty "
+            "input, auth expiry, rate limits, partial writes.\n"
+            "Testing It: an actual test, not a description of testing.\n"
+            "Taking It To Production: config, monitoring, and the failure mode you "
+            "would page on.\n"
+            "What I'd Do Differently: honest limitations of the approach shown."
+        ),
+        "min_words": 1200,
+        "min_code": 5,
+    },
+    "guided_build": {
+        "label": "Guided build",
+        "angle": "build one working thing end to end, in order, with the reader following along",
+        "title_hint": "name the artifact being built and what it does",
+        "sections": [
+            "## What We're Building", "## Before You Start", "## Step 1: The Skeleton",
+            "## Step 2: Making It Work", "## Step 3: Making It Correct",
+            "## Where It Breaks", "## Running The Finished Thing", "## Sources",
+        ],
+        "brief": (
+            "Each step must leave the reader with something that runs. Never show a "
+            "step whose output cannot be checked.\n"
+            "Before You Start: exact prerequisites with versions.\n"
+            "Step 2 vs Step 3: separate 'it works' from 'it is correct' — error "
+            "handling and validation belong in step 3, not sprinkled through step 2.\n"
+            "Where It Breaks: the mistakes you actually hit building it.\n"
+            "Running The Finished Thing: the command and the expected output, "
+            "verbatim."
+        ),
+        "min_words": 1200,
+        "min_code": 6,
+    },
+    "ground_up_build": {
+        "label": "Ground-up rebuild",
+        "angle": "reimplement something normally taken as given, to show what it does",
+        "title_hint": "name the thing being rebuilt and how small the rebuild is",
+        "sections": [
+            "## What We're Replacing", "## What It Actually Has To Do",
+            "## The Smallest Version That Works", "## Making It Honest",
+            "## Measuring It Against The Real One", "## What The Real One Earns",
+            "## Sources",
+        ],
+        "brief": (
+            "The point is understanding, not replacement. Say so explicitly.\n"
+            "What It Actually Has To Do: derive the requirements before writing code.\n"
+            "Making It Honest: add the correctness the naive version skipped.\n"
+            "Measuring It Against The Real One: real numbers from a real comparison, "
+            "or state plainly that you did not measure.\n"
+            "What The Real One Earns: end by crediting what the production library "
+            "does that the rebuild does not. Never conclude that the toy is enough."
+        ),
+        "min_words": 1100,
+        "min_code": 6,
+    },
+
+    # ── Slot 2: midday_authority — technical analysis (Tue/Thu) ────────────
+    "technical_analysis": {
+        "label": "Technical analysis",
+        "angle": "how a system actually works, grounded in its documentation or source",
+        "title_hint": "name the system and the specific mechanism examined",
+        "sections": [
+            "## The Question", "## How It Actually Works", "## Reading The Source",
+            "## What The Docs Don't Say", "## What This Means In Practice",
+            "## Sources", "## What I'll Be Watching",
+        ],
+        "brief": (
+            "Every technical claim must be grounded in primary documentation, source "
+            "code, repository data, or a reproducible measurement. Cite the file, "
+            "section, or commit.\n"
+            "Reading The Source: quote the actual code and say where it lives.\n"
+            "What The Docs Don't Say: only gaps you verified, never speculation "
+            "dressed as insight. If you inferred something, label it an inference.\n"
+            "What This Means In Practice: the decision this changes for a reader."
+        ),
+        "min_words": 900,
+        "min_code": 2,
+    },
+    "architecture_teardown": {
+        "label": "Architecture teardown",
+        "angle": "the shape of a real system and why it was built that way",
+        "title_hint": "name the system and the structural choice under examination",
+        "sections": [
+            "## The System", "## The Shape Of It", "## The Decision That Drove It",
+            "## What It Costs", "## Where It Would Fall Over",
+            "## What I'd Borrow", "## Sources", "## What I'll Be Watching",
+        ],
+        "brief": (
+            "Describe only structure you can evidence from docs, source, or published "
+            "design notes. Never reconstruct an architecture from a product page.\n"
+            "The Decision That Drove It: the constraint that made this shape "
+            "reasonable — not 'best practice'.\n"
+            "What It Costs: the concrete tradeoff accepted, in latency, complexity, "
+            "or operational burden.\n"
+            "Where It Would Fall Over: the load or requirement change that breaks it.\n"
+            "What I'd Borrow: the transferable part, scoped to who it suits."
+        ),
+        "min_words": 900,
+    },
+    "tradeoff_study": {
+        "label": "Tradeoff study",
+        "angle": "two defensible options compared on evidence, with the conditions that pick each",
+        "title_hint": "name both options and the axis they differ on",
+        "sections": [
+            "## The Choice", "## Option A", "## Option B", "## How They Compare",
+            "## When A Wins", "## When B Wins", "## What Would Change My Mind",
+            "## Sources", "## What I'll Be Watching",
+        ],
+        "brief": (
+            "Both options must be presented as genuinely defensible. A comparison "
+            "with a straw man is worthless.\n"
+            "How They Compare: measured or documented differences with numbers and "
+            "their source. If no measurement exists, say so rather than estimating.\n"
+            "When A Wins / When B Wins: name the conditions — team size, scale, "
+            "latency budget, existing stack.\n"
+            "What Would Change My Mind: the evidence that would flip the "
+            "recommendation. Never conclude 'it depends' without saying on what."
+        ),
+        "min_words": 900,
+    },
+
+    # ── Slot 3: practical_takeaway (17:00, Mon–Sat) ────────────────────────
+    # Each must deliver at least one of the slot's required_value_any_of
+    # categories. These run six days a week, so three shapes is the minimum
+    # variation that avoids a visible weekly pattern.
+    "takeaway_checklist": {
+        "label": "Decision checklist",
+        "angle": "turn a development into the specific checks a reader should run",
+        "title_hint": "state the decision the checklist resolves",
+        "sections": [
+            "## What Changed", "## Does This Affect You",
+            "## The Checklist", "## How To Verify Each Item",
+            "## If You Find A Problem", "## Sources", "## What I'll Be Watching",
+        ],
+        "brief": (
+            "Delivers: decision_checklist, test_procedure.\n"
+            "Does This Affect You: a filter the reader can answer in one minute — "
+            "versions, flags, configurations. Say plainly if most readers are "
+            "unaffected.\n"
+            "The Checklist: numbered, each item independently checkable.\n"
+            "How To Verify Each Item: the actual command or query, with the output "
+            "that means 'fine' and the output that means 'act'.\n"
+            "Must add value beyond the morning brief and midday piece — link them "
+            "and state the different angle explicitly."
+        ),
+        "min_words": 700,
+        "min_code": 2,
+    },
+    "migration_note": {
+        "label": "Migration note",
+        "angle": "the work a change forces on an existing codebase, and the order to do it in",
+        "title_hint": "lead with what must be migrated and roughly what it costs",
+        "sections": [
+            "## What Forces The Move", "## Who Has To Act", "## The Migration Path",
+            "## What Breaks On The Way", "## Rolling Back",
+            "## If You're Staying Put", "## Sources", "## What I'll Be Watching",
+        ],
+        "brief": (
+            "Delivers: migration_advice, compatibility_impact, implementation_guidance.\n"
+            "Who Has To Act: exact versions and configurations. Never widen the blast "
+            "radius to make the piece feel more urgent.\n"
+            "The Migration Path: real commands and config diffs from the official "
+            "notes, in execution order.\n"
+            "What Breaks On The Way: itemised from source material only — never "
+            "invent a breakage.\n"
+            "Rolling Back: the actual reverse procedure, or an explicit statement "
+            "that rollback is not possible.\n"
+            "If You're Staying Put: honest mitigations, or say there are none."
+        ),
+        "min_words": 700,
+    },
+    "compatibility_brief": {
+        "label": "Compatibility brief",
+        "angle": "what a change means for the versions, platforms, and dependencies in use",
+        "title_hint": "name the change and the compatibility boundary it moves",
+        "sections": [
+            "## The Change", "## The Compatibility Matrix", "## What Still Works",
+            "## What Stops Working", "## Security And Cost Implications",
+            "## What To Do This Week", "## Sources", "## What I'll Be Watching",
+        ],
+        "brief": (
+            "Delivers: compatibility_impact, security_action, cost_implication, "
+            "architecture_implication.\n"
+            "The Compatibility Matrix: a real table of versions and support status, "
+            "sourced. Drop any cell you cannot source — never estimate one.\n"
+            "Security And Cost Implications: only where the source material supports "
+            "them; omit the section content and say so if it does not.\n"
+            "What To Do This Week: one concrete action, scoped to who should take it.\n"
+            "Must add value beyond the morning brief and midday piece — link them "
+            "and state the different angle explicitly."
+        ),
+        "min_words": 700,
+    },
+}
+
+# Once-weekly artifacts generated from records rather than rotated as article
+# shapes. Declared here so slot validation can reference them by name; their
+# generators land in Stage 7. `github_roundup` reuses the existing roundup
+# pillar (scripts/github_roundup.py) rather than a new format.
+EDITORIAL_ARTIFACTS = (
+    "github_roundup",
+    "weekly_trend_analysis",
+    "weekly_intelligence_report",
+)
+
+REGISTRY = {
+    "tutorial": TUTORIAL_FORMATS,
+    "news": NEWS_FORMATS,
+    # Separate kind on purpose — never merged into the two above.
+    "editorial": EDITORIAL_FORMATS,
+}
 
 
 def formats_for(kind):
