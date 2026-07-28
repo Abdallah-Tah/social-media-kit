@@ -70,55 +70,27 @@ def _http():
     return llm_ops.requests
 
 
-# ── agent/feed.py::_llm_chat ───────────────────────────────────────────────
-
-FEED_CONFIG = SimpleNamespace(
-    api_key="feed-key",
-    base_url="http://localhost:11434/v1",
-    model="kimi-k2.7-code:cloud",
-    provider="ollama",
-)
-
-
-def test_feed_llm_chat_request_shape(monkeypatch):
-    from agent import feed
-
-    cap = Captured(content="  a reason  ")
-    monkeypatch.setattr(_http(), "post", cap)
-
-    out = feed._llm_chat("why does this matter?", FEED_CONFIG)
-
-    assert out == "a reason", "response is stripped"
-    assert cap.last["url"] == "http://localhost:11434/v1/chat/completions"
-    assert cap.payload["model"] == "kimi-k2.7-code:cloud"
-    assert cap.payload["messages"] == [{"role": "user", "content": "why does this matter?"}]
-    assert cap.payload["max_tokens"] == 256
-    assert cap.payload["temperature"] == 0.4
-    assert "response_format" not in cap.payload
-    assert cap.last["timeout"] == 60
-    assert cap.last["headers"]["Authorization"] == "Bearer feed-key"
-
-
-def test_feed_llm_chat_defaults_to_openai_when_no_base_url(monkeypatch):
-    from agent import feed
-
-    cap = Captured()
-    monkeypatch.setattr(_http(), "post", cap)
-    cfg = SimpleNamespace(api_key="k", base_url=None, model="gpt-4o", provider="openai")
-
-    feed._llm_chat("p", cfg)
-    assert cap.last["url"] == OPENAI_URL
-
-
-def test_feed_llm_chat_raises_on_http_error(monkeypatch):
-    """Callers rely on this propagating; feed.py wraps it upstream."""
-    from agent import feed
-
-    cap = Captured(ok=False, status=500)
-    monkeypatch.setattr(_http(), "post", cap)
-
-    with pytest.raises(Exception):
-        feed._llm_chat("p", FEED_CONFIG)
+# ── agent/feed.py::_llm_chat — RETIRED, deliberately ───────────────────────
+#
+# This file used to pin feed._llm_chat's wire request: kimi-k2.7-code:cloud,
+# 256 max_tokens, no json mode, two calls per item (summary, then reason).
+#
+# Those pins were correct for Phase 0.5, whose whole point was that
+# instrumenting the call sites must not change the payload. They were retired
+# on purpose once live verification showed the pinned payload was the defect:
+# kimi-k2.7-code is a reasoning model whose reasoning tokens are drawn from the
+# same completion budget as its content, so at 256 max_tokens 6 of 10 live
+# attempts returned finish_reason=length with truncated or empty content.
+#
+# feed enrichment now runs its own provider (default openai/gpt-4o-mini,
+# independent of the agent loop) and makes ONE structured request per item
+# returning {"summary": ..., "reason": ...}.
+#
+# The replacement pins live in tests/test_feed_enrichment_bounds.py, which
+# counts requests at this same llm_ops.requests boundary — so "one wire request
+# per item" stays a claim about the wire, not about a mock.
+#
+# agent/shorts.py's pins below are UNCHANGED and still in force.
 
 
 # ── agent/shorts.py::_llm_plan ─────────────────────────────────────────────

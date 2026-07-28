@@ -34,6 +34,7 @@ __all__ = [
     "doctor_feed",
     "enrichment_fingerprint",
     "enrichment_settings",
+    "feed_llm_config",
     "is_seen",
     "last_enrichment_stats",
     "load_profile_with_interests",
@@ -73,7 +74,17 @@ ENRICHMENT_CACHE_PATH = FEED_DIR / "enrichment_cache.json"
 ENRICHMENT_LOG_PATH = FEED_DIR / "enrichment_log.jsonl"
 ENRICHMENT_CACHE_TTL_DAYS = 30
 ENRICHMENT_JOB_ID = "feed_llm"
-LLM_CALLS_PER_ITEM = 2  # _llm_summary + _llm_reason
+
+# One structured request per item returns {"summary": ..., "reason": ...}.
+# Two separate calls doubled the per-item cost for no editorial benefit.
+LLM_CALLS_PER_ITEM = 1
+
+# Bumped whenever the prompt or the response schema changes. It is part of the
+# cache fingerprint, so a bump invalidates every stored entry rather than
+# serving answers produced by a prompt that no longer exists.
+#   v1 — two calls, free-text summary and reason
+#   v2 — one call, JSON object {summary, reason}
+ENRICHMENT_SCHEMA_VERSION = 2
 
 # Production defaults. Enrichment is ON because the summaries are the point of
 # the feed, but capped at the 5 items the pre-existing code already implied, so
@@ -82,13 +93,59 @@ DEFAULT_ENRICHMENT_ENABLED = True
 DEFAULT_MAX_ITEMS_PER_RUN = 5
 DEFAULT_DAILY_BUDGET_USD = 0.50
 
+# ── Dedicated feed-enrichment model ─────────────────────────────────────────
+# Deliberately NOT AgentConfig. The agent loop runs kimi-k2.7-code:cloud, a
+# reasoning model whose reasoning tokens are drawn from the same completion
+# budget as its content — at 256 max_tokens it truncated or emitted nothing on
+# 6 of 10 live attempts. Feed enrichment is a small, structured extraction job
+# and wants a small, non-reasoning model. The two are configured separately so
+# neither can drag the other.
+DEFAULT_FEED_LLM_PROVIDER = "openai"
+DEFAULT_FEED_LLM_MODEL = "gpt-4o-mini"
+DEFAULT_FEED_LLM_MAX_TOKENS = 400
+DEFAULT_FEED_LLM_TEMPERATURE = 0.4
+DEFAULT_FEED_LLM_TIMEOUT = 60
 
-class EnrichmentEmpty(RuntimeError):
-    """Provider returned 200 with blank content.
+# Validation bounds on the structured response.
+MAX_SUMMARY_CHARS = 400
+MIN_SUMMARY_CHARS = 20
+MAX_REASON_CHARS = 300
+MIN_REASON_CHARS = 24
 
-    Treated as a failure, never as a successful empty summary — an empty string
-    written to `item.summary` would cache as valid and suppress every retry.
+_SENTENCE_ENDINGS = (".", "!", "?", '"', "'", ")", "”", "’")
+_STUB_REASONS = {"it matters", "important", "n/a", "none", "unknown", "tbd"}
+
+
+class EnrichmentError(RuntimeError):
+    """Base for every reason an enrichment attempt is not usable.
+
+    Each subclass names the exact failure so the decision log records what went
+    wrong rather than a generic exception string.
     """
+
+
+class EnrichmentEmpty(EnrichmentError):
+    """Blank content, or a blank field inside an otherwise valid response.
+
+    Never written to the item and never cached — an empty string would cache as
+    valid and suppress every future retry.
+    """
+
+
+class EnrichmentMalformed(EnrichmentError):
+    """Response was not a JSON object with the expected keys."""
+
+
+class EnrichmentTruncated(EnrichmentError):
+    """finish_reason=length, or text that ends mid-thought.
+
+    A truncated summary reads as complete once stored, so it must fail loudly
+    rather than be cached as a good answer.
+    """
+
+
+class EnrichmentInvalid(EnrichmentError):
+    """Well-formed but fails a content rule (too long, stub reason, echo)."""
 
 
 def _now() -> dt.datetime:
@@ -376,6 +433,7 @@ def enrichment_fingerprint(item: FeedItem) -> str:
     interpolated into the reason prompt.
     """
     basis = "\n".join([
+        f"v{ENRICHMENT_SCHEMA_VERSION}",
         canonical_url(item.url),
         (item.title or "").strip(),
         (item.source or "").strip(),
@@ -465,13 +523,15 @@ class EnrichmentStats:
     skipped_item_limit: int = 0
     skipped_budget: int = 0
     failed: int = 0
-    llm_calls: int = 0
+    llm_calls: int = 0          # wire requests; with v2 this equals attempts
     max_items_per_run: int = 0
     daily_budget_usd: float = 0.0
     budget_enforceable: bool = False
     spend_usd_at_start: float = 0.0
     spend_usd_at_end: float = 0.0
     no_credentials: bool = False
+    provider: str = ""
+    model: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         from dataclasses import asdict
@@ -499,7 +559,8 @@ def _summarize_top(items: list[FeedItem], profile: dict[str, Any], topic: str | 
 
     Cache hits do not consume the per-run item cap: they cost nothing. The cap
     counts *attempts*, including failed ones, because a failed call still costs
-    quota.
+    quota. Each attempt is exactly one wire request, so with the default cap of
+    5 a run makes at most 5 requests and a day at most 40.
 
     Every skip is written to the enrichment log with its reason. A failure on
     one item never propagates — the item keeps its deterministic ranker reason
@@ -521,14 +582,14 @@ def _summarize_top(items: list[FeedItem], profile: dict[str, Any], topic: str | 
             _log_enrichment(enrichment_fingerprint(item), item, "disabled")
         return items
 
-    from agent.config import AgentConfig
-
-    config = AgentConfig.load()
+    config = feed_llm_config()
     if not config.api_key and config.provider != "ollama":
         # Ollama local needs no key; cloud models need a key.
         stats.no_credentials = True
         return items
 
+    stats.provider = config.provider
+    stats.model = config.model
     stats.budget_enforceable = _budget_enforceable(config.model)
     spent = _spend_today() if stats.budget_enforceable else 0.0
     stats.spend_usd_at_start = spent
@@ -568,35 +629,30 @@ def _summarize_top(items: list[FeedItem], profile: dict[str, Any], topic: str | 
 
         attempts += 1
         try:
-            stats.llm_calls += 1  # counted before the call: a failure still costs quota
-            summary = (_llm_summary(item, profile, topic=topic, config=config) or "").strip()
-            if not summary:
-                raise EnrichmentEmpty("provider returned an empty summary")
-            item.summary = summary
+            # Exactly one wire request per attempted item. Counted before the
+            # call, because a failure still costs quota.
+            stats.llm_calls += 1
+            summary, reason = _llm_enrich(item, profile, config)
 
-            # A reason failure is survivable on its own: the ranker already put
-            # a deterministic reason on the item, so we keep that rather than
-            # blanking it.
-            reason = ""
-            try:
-                stats.llm_calls += 1
-                reason = (_llm_reason(item, topic=topic, config=config) or "").strip()
-            except Exception as exc:  # noqa: BLE001 — one item must not fail the run
-                _log_enrichment(fingerprint, item, "error",
-                                detail=f"reason: {type(exc).__name__}: {exc}"[:300])
-            if reason:
-                item.reason = reason
+            # Only assign after full validation — a partially-valid response
+            # must not leave half its fields written to the item.
+            item.summary = summary
+            item.reason = reason
 
             cache[fingerprint] = {
                 "ts": _now().isoformat(),
-                "summary": item.summary,
+                "schema_version": ENRICHMENT_SCHEMA_VERSION,
+                "summary": summary,
                 "reason": reason,
                 "model": config.model,
+                "provider": config.provider,
             }
             cache_dirty = True
             stats.enriched += 1
             _log_enrichment(fingerprint, item, "enriched")
         except Exception as exc:  # noqa: BLE001 — one item must not fail the run
+            # Nothing is written to the item and nothing is cached, so the
+            # deterministic ranker reason survives and a later run may retry.
             stats.failed += 1
             _log_enrichment(fingerprint, item, "error",
                             detail=f"{type(exc).__name__}: {exc}"[:300])
@@ -610,49 +666,199 @@ def _summarize_top(items: list[FeedItem], profile: dict[str, Any], topic: str | 
     return items
 
 
-def _llm_summary(item: FeedItem, profile: dict[str, Any], topic: str | None, config: Any) -> str:
-    prompt = (
-        f"Summarize this article in 1-2 sentences for a {profile.get('tone', 'practical developer audience')}. "
-        f"Be specific, not hypey.\n\nTitle: {item.title}\nSource: {item.source}\nURL: {item.url}"
+@dataclass(frozen=True)
+class FeedLLMConfig:
+    """Provider settings for feed enrichment only — never the agent loop."""
+    provider: str
+    model: str
+    api_key: str
+    base_url: str | None
+    max_tokens: int
+    temperature: float
+    timeout: int
+    json_mode: bool
+
+
+# Base URL per provider when nothing is configured. `None` lets llm_ops fall
+# back to OPENAI_BASE_URL / api.openai.com.
+_PROVIDER_BASE_URLS = {
+    "openai": None,
+    "ollama": "http://localhost:11434/v1",
+    "nvidia": "https://integrate.api.nvidia.com/v1",
+}
+
+
+def feed_llm_config() -> FeedLLMConfig:
+    """Resolve the feed-enrichment provider.
+
+    Precedence, same as every other feed bound:
+        environment  >  config/feed.yaml `llm:` block  >  default
+
+    Credentials are never read from this file or from YAML by preference: the
+    API key comes from the environment via SMKit's existing secret loading
+    (`config/secrets.env` -> `load_env()` -> `_provider_api_key`).
+    """
+    from agent.config import _provider_api_key
+
+    cfg = _load_feed_config().get("llm") or {}
+    provider = str(_coalesce(
+        os.environ.get("FEED_LLM_PROVIDER"),
+        cfg.get("provider"),
+        DEFAULT_FEED_LLM_PROVIDER,
+    )).lower()
+    model = str(_coalesce(
+        os.environ.get("FEED_LLM_MODEL"), cfg.get("model"), DEFAULT_FEED_LLM_MODEL,
+    ))
+    base_url = _coalesce(
+        os.environ.get("FEED_LLM_BASE_URL"),
+        cfg.get("base_url"),
+        _PROVIDER_BASE_URLS.get(provider),
     )
-    return _llm_chat(prompt, config)
-
-
-def _llm_reason(item: FeedItem, topic: str | None, config: Any) -> str:
-    interest_list = ", ".join(item.matched_interests) or "general audience"
-    prompt = (
-        f"In one short sentence, explain why this article matters to someone interested in {interest_list}. "
-        f"Title: {item.title}\nSummary: {item.summary}"
+    api_key = _coalesce(
+        os.environ.get("FEED_LLM_API_KEY"),
+        _provider_api_key(provider, {}),
+        "",
     )
-    return _llm_chat(prompt, config)
+    return FeedLLMConfig(
+        provider=provider,
+        model=model,
+        api_key=api_key,
+        base_url=base_url,
+        max_tokens=int(_coalesce(
+            _as_number(os.environ.get("FEED_LLM_MAX_TOKENS"), int),
+            _as_number(cfg.get("max_tokens"), int), DEFAULT_FEED_LLM_MAX_TOKENS)),
+        temperature=float(_coalesce(
+            _as_number(os.environ.get("FEED_LLM_TEMPERATURE"), float),
+            _as_number(cfg.get("temperature"), float), DEFAULT_FEED_LLM_TEMPERATURE)),
+        timeout=int(_coalesce(
+            _as_number(os.environ.get("FEED_LLM_TIMEOUT"), int),
+            _as_number(cfg.get("timeout"), int), DEFAULT_FEED_LLM_TIMEOUT)),
+        json_mode=bool(_coalesce(
+            _as_bool(os.environ.get("FEED_LLM_JSON_MODE")),
+            _as_bool(cfg.get("json_mode")), True)),
+    )
 
 
-def _llm_chat(prompt: str, config: Any) -> str:
-    """Minimal chat call through the configured provider, via the shared client.
+def _enrichment_prompt(item: FeedItem, profile: dict[str, Any]) -> str:
+    tone = profile.get("tone") or "practical developer audience"
+    interests = ", ".join(item.matched_interests) or "software developers generally"
+    return (
+        "Article:\n"
+        f"Title: {item.title}\n"
+        f"Source: {item.source}\n"
+        f"URL: {item.url}\n"
+        f"Matched interests: {interests}\n\n"
+        "Return a JSON object with exactly these two keys:\n"
+        f'  "summary": 1-2 complete sentences describing what this article is '
+        f"about, written for a {tone}. Be specific, not hypey. "
+        f"At most {MAX_SUMMARY_CHARS} characters.\n"
+        f'  "reason": one complete sentence explaining why this matters to a '
+        f"developer interested in {interests}. Say what it changes for them. "
+        f"At most {MAX_REASON_CHARS} characters.\n\n"
+        "Both values must be finished sentences ending in punctuation. "
+        "Do not truncate. Output only the JSON object."
+    )
 
-    Instrumented through agent.llm_ops so the call lands in the usage ledger
-    (Phase 0.5). Payload is byte-identical to the previous hand-rolled request:
-    same model, 256 max_tokens, temperature 0.4, 60s timeout, no json mode.
 
-    NOTE: the previous implementation referenced `requests` without importing
-    it, so every call raised NameError and the caller's bare `except Exception:
-    pass` swallowed it — feed items silently had no LLM summary or reason. This
-    routing fixes that as a side effect.
+def _looks_truncated(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return True
+    if stripped.endswith("…") or stripped.endswith("..."):
+        return True
+    return not stripped.endswith(_SENTENCE_ENDINGS)
+
+
+def _validate_enrichment(payload: Any, item: FeedItem) -> tuple[str, str]:
+    """Turn a parsed response into (summary, reason) or raise a precise error."""
+    if not isinstance(payload, dict):
+        raise EnrichmentMalformed(f"expected a JSON object, got {type(payload).__name__}")
+    missing = [k for k in ("summary", "reason") if k not in payload]
+    if missing:
+        raise EnrichmentMalformed(f"missing key(s): {', '.join(missing)}")
+
+    summary = payload["summary"]
+    reason = payload["reason"]
+    if not isinstance(summary, str) or not isinstance(reason, str):
+        raise EnrichmentMalformed("summary and reason must both be strings")
+
+    summary, reason = summary.strip(), reason.strip()
+    if not summary:
+        raise EnrichmentEmpty("summary was blank")
+    if not reason:
+        raise EnrichmentEmpty("reason was blank")
+
+    if len(summary) > MAX_SUMMARY_CHARS:
+        raise EnrichmentInvalid(f"summary {len(summary)} chars exceeds {MAX_SUMMARY_CHARS}")
+    if len(reason) > MAX_REASON_CHARS:
+        raise EnrichmentInvalid(f"reason {len(reason)} chars exceeds {MAX_REASON_CHARS}")
+    if len(summary) < MIN_SUMMARY_CHARS:
+        raise EnrichmentInvalid(f"summary {len(summary)} chars is below {MIN_SUMMARY_CHARS}")
+
+    if _looks_truncated(summary):
+        raise EnrichmentTruncated("summary does not end in a finished sentence")
+    if _looks_truncated(reason):
+        raise EnrichmentTruncated("reason does not end in a finished sentence")
+
+    # "Explains developer relevance" is only checkable structurally without a
+    # second model: it must be a real sentence, not a stub, and not an echo of
+    # the summary. Deeper semantic grading would need an LLM judge, which would
+    # add a second call per item — exactly what this change removes.
+    if len(reason) < MIN_REASON_CHARS:
+        raise EnrichmentInvalid(f"reason {len(reason)} chars is below {MIN_REASON_CHARS}")
+    if reason.strip(".!? ").lower() in _STUB_REASONS:
+        raise EnrichmentInvalid(f"reason is a stub: {reason!r}")
+    if reason.lower() == summary.lower():
+        raise EnrichmentInvalid("reason merely repeats the summary")
+
+    return summary, reason
+
+
+def _llm_enrich(item: FeedItem, profile: dict[str, Any], cfg: FeedLLMConfig) -> tuple[str, str]:
+    """One instrumented request per item, returning a validated (summary, reason).
+
+    Replaces the previous two free-text calls. Halving the requests is the
+    point, but the structured response is what makes validation possible at
+    all: with free text there was no way to tell a complete answer from one the
+    provider cut off at max_tokens.
     """
     from . import llm_ops
 
     result = llm_ops.chat(
-        [{"role": "user", "content": prompt}],
-        model=config.model,
-        temperature=0.4,
-        max_tokens=256,
-        timeout=60,
-        base_url=(config.base_url or "https://api.openai.com/v1"),
-        api_key=(config.api_key or ""),
-        job_id="feed_llm",
+        [
+            {"role": "system",
+             "content": "You annotate developer news items. Reply with one JSON "
+                        "object and nothing else."},
+            {"role": "user", "content": _enrichment_prompt(item, profile)},
+        ],
+        model=cfg.model,
+        temperature=cfg.temperature,
+        max_tokens=cfg.max_tokens,
+        json_mode=cfg.json_mode,
+        timeout=cfg.timeout,
+        base_url=cfg.base_url,
+        api_key=cfg.api_key,
+        job_id=ENRICHMENT_JOB_ID,
     )
-    result.raise_for_status()
-    return result.text
+    if not result.ok:
+        raise EnrichmentError(f"{result.error_class or 'error'}: {result.error}")
+
+    # A completion stopped at the token ceiling is unusable even when it parses:
+    # this is exactly how the previous model produced confident-looking
+    # half-sentences.
+    finish = ((result.raw.get("choices") or [{}])[0] or {}).get("finish_reason")
+    if finish == "length":
+        raise EnrichmentTruncated("finish_reason=length (hit max_tokens)")
+
+    text = (result.text or "").strip()
+    if not text:
+        raise EnrichmentEmpty("provider returned no content")
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise EnrichmentMalformed(f"invalid JSON: {exc}") from exc
+
+    return _validate_enrichment(payload, item)
 
 
 # ── Output / persistence ────────────────────────────────────────────────────

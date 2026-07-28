@@ -73,32 +73,56 @@ day would run the identical format sequence.
 alive, and **a running dashboard holds the imported module in memory** — a fix to
 `feed.py` does not take effect until that process restarts.
 
-Each enriched item costs **two** LLM calls (`_llm_summary` + `_llm_reason`), and
 `build_feed(include_seen=True)` deliberately re-surfaces the same top stories every
-run. That combination is how a background job silently becomes the biggest line on
-the bill, so enrichment is bounded:
+run. That is how a background job silently becomes the biggest line on the bill, so
+enrichment is bounded and cached.
+
+**Feed enrichment runs its own model, deliberately not `AgentConfig`.** The agent loop
+uses `kimi-k2.7-code:cloud` — a *reasoning* model whose reasoning tokens are drawn from
+the same completion budget as its content. At 256 `max_tokens` it returned
+`finish_reason=length` with truncated or empty content on **6 of 10** live attempts.
+Feed enrichment is a small structured-extraction job and wants a small non-reasoning
+model. Never point feed enrichment at a reasoning model; raise nothing to compensate.
+
+**One request per item.** `_llm_enrich` makes a single `response_format=json_object`
+call returning `{"summary": ..., "reason": ...}`. The structured response is what makes
+validation possible at all — with free text there was no way to tell a complete answer
+from one the provider cut off.
 
 | Setting | Default | Effect |
 |---|---|---|
 | `FEED_LLM_ENRICHMENT_ENABLED` | `true` | Kill switch. `false` → **zero** provider calls. |
-| `FEED_LLM_MAX_ITEMS_PER_RUN` | `5` | Items that may hit the provider per run → **≤10 calls/run, ≤80/day**. |
+| `FEED_LLM_MAX_ITEMS_PER_RUN` | `5` | Items that may hit the provider per run → **≤5 requests/run, ≤40/day**. |
 | `FEED_LLM_DAILY_BUDGET_USD` | `0.50` | Stops the run once today's recorded `feed_llm` spend reaches it. |
+| `FEED_LLM_PROVIDER` | `openai` | Feed-only provider. |
+| `FEED_LLM_MODEL` | `gpt-4o-mini` | Feed-only model. Priced, so the budget actually binds. |
+| `FEED_LLM_BASE_URL` / `FEED_LLM_API_KEY` | provider default / `config/secrets.env` | Credentials come from the environment via `load_env()`; never hardcoded. |
+| `FEED_LLM_MAX_TOKENS` / `FEED_LLM_TEMPERATURE` / `FEED_LLM_TIMEOUT` / `FEED_LLM_JSON_MODE` | `400` / `0.4` / `60` / `true` | Turn `JSON_MODE` off for providers without `response_format`. |
 
-Resolution order is **env var > `config/feed.yaml` `llm:` block > default**; env wins
-so a runaway job can be stopped without a commit.
+Resolution order for **every** setting above is **env var > `config/feed.yaml` `llm:`
+block > default**; env wins so a runaway job can be stopped without a commit.
+
+A response is rejected — never stored, never cached — when it fails to parse, is
+missing a key, has a blank field, arrives with `finish_reason=length`, ends
+mid-sentence, exceeds the length caps, or whose `reason` is a stub or an echo of the
+summary. Each raises a distinct `EnrichmentError` subclass so the decision log records
+what actually went wrong.
 
 - **The cache, not the seen store, is what prevents re-summarizing.** `content/feed/enrichment_cache.json`
-  is keyed by a sha256 of the exact prompt inputs (canonical URL + title + source +
-  matched interests). A hit reuses the stored summary and makes no call; cache hits do
-  **not** consume the per-run cap because they cost nothing. Attempts do — including
-  failed ones, since a failure still burns quota.
-- **The budget only binds when the model is priced.** The live config runs ollama
-  `kimi-k2.7-code:cloud`, which has no entry in `llm_ops.PRICING`, so cost is recorded
-  as unknown. Counting unknown as `$0` would let unlimited calls pass a budget check,
-  so `EnrichmentStats.budget_enforceable` reports `false` instead of pretending. The
-  run stays bounded by the item cap. Add the model to `PRICING` to make the budget real.
-- **An empty completion is a failure, not an empty summary.** A 200 with blank content
-  raises `EnrichmentEmpty`; nothing empty is ever cached or written to `item.summary`.
+  is keyed by a sha256 of the exact prompt inputs (schema version + canonical URL +
+  title + source + matched interests). A hit reuses the stored answer and makes no call;
+  cache hits do **not** consume the per-run cap because they cost nothing. Attempts do —
+  including failed ones, since a failure still burns quota. **Bump
+  `ENRICHMENT_SCHEMA_VERSION` whenever the prompt or response schema changes**, or
+  stale answers from a prompt that no longer exists will be served forever.
+- **The budget only binds when the model is priced.** `gpt-4o-mini` is in
+  `llm_ops.PRICING`, so it binds today. If you repoint the feed at an unpriced model
+  (ollama, gemini, alibaba) cost is recorded as unknown; counting unknown as `$0` would
+  let unlimited calls pass a budget check, so `EnrichmentStats.budget_enforceable`
+  reports `false` instead of pretending, and the run stays bounded by the item cap only.
+- **An empty or truncated completion is a failure, not a result.** Nothing blank or
+  cut off is ever written to `item.summary` or cached — it would read as a complete
+  answer once stored and suppress every future retry.
 - **One bad item never ends a run.** Failures are caught per item, the deterministic
   ranker `reason` survives, and every skip is logged to `content/feed/enrichment_log.jsonl`
   with a reason (`unchanged` / `item_limit` / `budget` / `disabled` / `error`).

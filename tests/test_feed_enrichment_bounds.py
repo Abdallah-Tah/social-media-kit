@@ -1,22 +1,25 @@
-"""Phase 0.5 stabilization — bounds on agent/feed.py LLM enrichment.
+"""Bounds and validation for agent/feed.py LLM enrichment.
 
-Context these tests exist to protect: `feed_run` is a *scheduled* job (every 3h,
-`agent/automation.py`), and enrichment makes two calls per item. Before the
-Phase 0.5 fix `_llm_chat` raised NameError on every call and a bare
-`except Exception: pass` swallowed it, so this path made zero requests in
-production. Turning it on is a real increase in request volume, and these tests
-pin the ceilings that keep it bounded.
+`feed_run` is a *scheduled* job (every 3h, agent/automation.py), so anything
+per-item multiplies by 8 runs/day forever. These tests pin the ceilings.
 
-The seam under test is `feed._llm_chat` — the single function that reaches the
-provider. Counting calls there is what makes "zero LLM requests" a claim about
-the wire, not about a mock two layers up.
+The seam is `llm_ops.requests.post` — the actual HTTP boundary. Counting there
+is what makes "exactly one wire request per item" a claim about the wire rather
+than about a mock two layers up, and it exercises llm_ops's real payload
+construction, ledger write, and finish_reason handling on the way through.
+
+History worth keeping in view: enrichment made TWO free-text calls per item
+against kimi-k2.7-code:cloud at 256 max_tokens. That model is a reasoning model
+whose reasoning shares the completion budget, so 6 of 10 live attempts came back
+finish_reason=length with truncated or empty content. Hence the dedicated
+non-reasoning model, the single structured request, and the truncation checks.
 """
 import json
 import os
 import sys
-from types import SimpleNamespace
 
 import pytest
+import requests as REQUESTS
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
 sys.path.insert(0, ROOT)
@@ -24,24 +27,49 @@ sys.path.insert(0, ROOT)
 from agent import feed as FEED  # noqa: E402
 from agent import llm_ops as LLM  # noqa: E402
 
+GOOD_SUMMARY = "Python Build Standalone ships self-contained CPython builds for Linux and macOS."
+GOOD_REASON = "It removes the system-Python dependency when shipping CLI tools."
 
-class CountingLLM:
-    """Stands in for feed._llm_chat and records every call."""
 
-    def __init__(self, reply="GENERATED", fail_on=None, empty=False):
+def body(summary=GOOD_SUMMARY, reason=GOOD_REASON):
+    return json.dumps({"summary": summary, "reason": reason})
+
+
+class FakeResponse:
+    def __init__(self, content="", ok=True, status=200, finish_reason="stop", usage=True):
+        self._content, self.ok, self.status_code = content, ok, status
+        self.text = content
+        self._finish, self._usage = finish_reason, usage
+
+    def json(self):
+        out = {"choices": [{"message": {"content": self._content},
+                            "finish_reason": self._finish}]}
+        if self._usage:
+            out["usage"] = {"prompt_tokens": 120, "completion_tokens": 80}
+        return out
+
+
+class Wire:
+    """Records every HTTP call. `script` may hold responses or exceptions."""
+
+    def __init__(self, *script):
         self.calls = []
-        self._reply, self._fail_on, self._empty = reply, fail_on or set(), empty
+        self._script = list(script) or [FakeResponse(body())]
 
-    def __call__(self, prompt, config):
-        self.calls.append(prompt)
-        for needle in self._fail_on:
-            if needle in prompt:
-                raise RuntimeError(f"provider exploded on {needle!r}")
-        return "" if self._empty else self._reply
+    def __call__(self, url, **kwargs):
+        self.calls.append({"url": url, **kwargs})
+        item = self._script[min(len(self.calls) - 1, len(self._script) - 1)]
+        if isinstance(item, BaseException):
+            raise item
+        return item
 
     @property
     def count(self):
         return len(self.calls)
+
+    @property
+    def payload(self):
+        return self.calls[-1]["json"]
 
 
 def make_items(n=6, summary=""):
@@ -58,185 +86,262 @@ def make_items(n=6, summary=""):
     ]
 
 
-PRICED_CONFIG = SimpleNamespace(
-    api_key="k", provider="openai", model="gpt-4o", base_url=None,
-)
-UNPRICED_CONFIG = SimpleNamespace(
-    api_key="k", provider="ollama", model="kimi-k2.7-code:cloud",
-    base_url="http://localhost:11434/v1",
-)
-
-
 @pytest.fixture(autouse=True)
 def isolate(tmp_path, monkeypatch):
-    """Redirect every file the enrichment pass touches, and clear env bounds."""
     monkeypatch.setattr(FEED, "FEED_DIR", tmp_path)
     monkeypatch.setattr(FEED, "ENRICHMENT_CACHE_PATH", tmp_path / "enrichment_cache.json")
     monkeypatch.setattr(FEED, "ENRICHMENT_LOG_PATH", tmp_path / "enrichment_log.jsonl")
     monkeypatch.setattr(LLM, "USAGE_LEDGER", tmp_path / "llm_usage.jsonl")
-    # config/feed.yaml must not leak real settings into these assertions.
     monkeypatch.setattr(FEED, "_load_feed_config", lambda: {})
     for var in ("FEED_LLM_ENRICHMENT_ENABLED", "FEED_LLM_MAX_ITEMS_PER_RUN",
-                "FEED_LLM_DAILY_BUDGET_USD"):
+                "FEED_LLM_DAILY_BUDGET_USD", "FEED_LLM_PROVIDER", "FEED_LLM_MODEL",
+                "FEED_LLM_BASE_URL", "FEED_LLM_MAX_TOKENS", "FEED_LLM_JSON_MODE",
+                "OPENAI_BASE_URL"):
         monkeypatch.delenv(var, raising=False)
+    # Credentials come from the environment, never hardcoded in the module.
+    monkeypatch.setenv("FEED_LLM_API_KEY", "test-key")
     yield
 
 
-@pytest.fixture
-def use_config(monkeypatch):
-    def _apply(cfg=PRICED_CONFIG):
-        monkeypatch.setattr("agent.config.AgentConfig.load", staticmethod(lambda: cfg))
-    return _apply
+def wire(monkeypatch, *script):
+    w = Wire(*script)
+    monkeypatch.setattr(LLM, "requests", type("R", (), {"post": staticmethod(w)}))
+    return w
 
 
-def log_actions(tmp_path):
+def actions(tmp_path):
     path = tmp_path / "enrichment_log.jsonl"
     if not path.exists():
         return []
     return [json.loads(ln)["action"] for ln in path.read_text().splitlines() if ln.strip()]
 
 
-# ── 1. the happy path actually populates both fields ────────────────────────
+def details(tmp_path):
+    path = tmp_path / "enrichment_log.jsonl"
+    return [json.loads(ln).get("detail") or "" for ln in path.read_text().splitlines()
+            if ln.strip()]
 
-def test_successful_llm_response_populates_summary_and_reason(monkeypatch, use_config):
-    """The Phase 0.5 fix must stay fixed: NameError here meant empty summaries."""
-    use_config()
-    llm = CountingLLM(reply="A real summary.")
-    monkeypatch.setattr(FEED, "_llm_chat", llm)
+
+# ── the dedicated feed model ────────────────────────────────────────────────
+
+def test_feed_uses_its_own_model_not_the_agent_loop_model(monkeypatch, tmp_path):
+    """The agent loop runs kimi; feed enrichment must not inherit it."""
+    w = wire(monkeypatch)
+    FEED._summarize_top(make_items(1), {})
+
+    assert w.payload["model"] == "gpt-4o-mini"
+    assert w.calls[0]["url"] == "https://api.openai.com/v1/chat/completions"
+    assert w.calls[0]["headers"]["Authorization"] == "Bearer test-key"
+    assert FEED.last_enrichment_stats().model == "gpt-4o-mini"
+    assert FEED.last_enrichment_stats().provider == "openai"
+
+
+def test_config_precedence_env_then_yaml_then_default(monkeypatch):
+    monkeypatch.setattr(FEED, "_load_feed_config",
+                        lambda: {"llm": {"provider": "ollama", "model": "yaml-model",
+                                         "max_tokens": 999}})
+    monkeypatch.setenv("FEED_LLM_MODEL", "env-model")
+
+    cfg = FEED.feed_llm_config()
+
+    assert cfg.model == "env-model"      # env wins
+    assert cfg.provider == "ollama"      # yaml applies where env is absent
+    assert cfg.max_tokens == 999
+    assert FEED.DEFAULT_FEED_LLM_MODEL == "gpt-4o-mini"   # documented default
+    assert FEED.DEFAULT_FEED_LLM_PROVIDER == "openai"
+
+
+def test_json_object_mode_is_requested(monkeypatch):
+    w = wire(monkeypatch)
+    FEED._summarize_top(make_items(1), {})
+    assert w.payload["response_format"] == {"type": "json_object"}
+
+
+def test_json_mode_can_be_disabled_for_providers_that_lack_it(monkeypatch):
+    monkeypatch.setenv("FEED_LLM_JSON_MODE", "false")
+    w = wire(monkeypatch)
+    FEED._summarize_top(make_items(1), {})
+    assert "response_format" not in w.payload
+
+
+# ── one request, both fields ────────────────────────────────────────────────
+
+def test_one_request_produces_both_summary_and_reason(monkeypatch):
+    w = wire(monkeypatch)
 
     items = FEED._summarize_top(make_items(1), {"tone": "practical"})
 
-    assert items[0].summary == "A real summary."
-    assert items[0].reason == "A real summary."  # same stub answers both prompts
-    assert llm.count == 2  # summary + reason
+    assert w.count == 1, "summary and reason must come from a single request"
+    assert items[0].summary == GOOD_SUMMARY
+    assert items[0].reason == GOOD_REASON
     stats = FEED.last_enrichment_stats()
-    assert stats.enriched == 1 and stats.failed == 0
+    assert stats.enriched == 1 and stats.llm_calls == 1
 
 
-# ── 2. failure preserves the deterministic fallback ─────────────────────────
+def test_exactly_one_wire_request_per_attempted_item(monkeypatch):
+    monkeypatch.setenv("FEED_LLM_MAX_ITEMS_PER_RUN", "3")
+    w = wire(monkeypatch)
 
-def test_llm_failure_preserves_deterministic_fallback(monkeypatch, use_config):
-    use_config()
-    monkeypatch.setattr(FEED, "_llm_chat", CountingLLM(fail_on={"Summarize"}))
+    FEED._summarize_top(make_items(6), {})
+
+    assert w.count == 3, "3 attempted items -> 3 requests, never 6"
+    assert FEED.last_enrichment_stats().llm_calls == 3
+
+
+def test_a_valid_structured_response_is_stored_in_the_cache(monkeypatch, tmp_path):
+    wire(monkeypatch)
+    FEED._summarize_top(make_items(1), {})
+
+    cache = json.loads((tmp_path / "enrichment_cache.json").read_text())
+    entry = next(iter(cache.values()))
+    assert entry["summary"] == GOOD_SUMMARY
+    assert entry["reason"] == GOOD_REASON
+    assert entry["model"] == "gpt-4o-mini"
+    assert entry["schema_version"] == FEED.ENRICHMENT_SCHEMA_VERSION
+
+
+def test_the_fingerprint_is_versioned_so_the_v1_cache_cannot_be_served(monkeypatch):
+    """The prompt and response schema changed; old entries must not match."""
+    assert FEED.ENRICHMENT_SCHEMA_VERSION == 2
+    item = make_items(1)[0]
+    fp_v2 = FEED.enrichment_fingerprint(item)
+    monkeypatch.setattr(FEED, "ENRICHMENT_SCHEMA_VERSION", 1)
+    assert FEED.enrichment_fingerprint(item) != fp_v2
+
+
+# ── validation failures, all degrade safely ─────────────────────────────────
+
+BAD_RESPONSES = [
+    pytest.param(FakeResponse("not json at all"), "EnrichmentMalformed", id="malformed-json"),
+    pytest.param(FakeResponse('["a","b"]'), "EnrichmentMalformed", id="json-array"),
+    pytest.param(FakeResponse('{"summary":"x"}'), "EnrichmentMalformed", id="missing-reason"),
+    pytest.param(FakeResponse(body(summary="")), "EnrichmentEmpty", id="blank-summary"),
+    pytest.param(FakeResponse(body(reason="")), "EnrichmentEmpty", id="blank-reason"),
+    pytest.param(FakeResponse(body(), finish_reason="length"), "EnrichmentTruncated",
+                 id="finish-reason-length"),
+    pytest.param(FakeResponse(body(summary="This sentence just stops mid")),
+                 "EnrichmentTruncated", id="unfinished-summary"),
+    pytest.param(FakeResponse(body(reason="Because it")), "EnrichmentTruncated",
+                 id="unfinished-reason"),
+    pytest.param(FakeResponse(body(summary="A" * 401 + ".")), "EnrichmentInvalid",
+                 id="summary-too-long"),
+    pytest.param(FakeResponse(body(reason="Important.")), "EnrichmentInvalid",
+                 id="stub-reason"),
+    pytest.param(FakeResponse(body(reason=GOOD_SUMMARY)), "EnrichmentInvalid",
+                 id="reason-echoes-summary"),
+    pytest.param(FakeResponse("", ok=False, status=500), "EnrichmentError", id="http-500"),
+    pytest.param(REQUESTS.ConnectionError("no route to host"), "EnrichmentError",
+                 id="network-error"),
+]
+
+
+@pytest.mark.parametrize("response,expected_error", BAD_RESPONSES)
+def test_bad_responses_preserve_deterministic_content(monkeypatch, tmp_path,
+                                                      response, expected_error):
+    """No fabricated summary, ranker reason intact, nothing cached, reason logged."""
+    wire(monkeypatch, response)
 
     items = FEED._summarize_top(make_items(1), {})
 
-    assert items[0].summary == ""                                  # no fake summary
-    assert items[0].reason == "deterministic ranker reason 0"      # ranker survives
-    assert FEED.last_enrichment_stats().failed == 1
-    assert "error" in log_actions(FEED.ENRICHMENT_LOG_PATH.parent)
-
-
-def test_an_empty_completion_is_a_failure_not_a_successful_summary(monkeypatch, use_config):
-    """A 200 with blank content must not cache as a valid summary."""
-    use_config()
-    monkeypatch.setattr(FEED, "_llm_chat", CountingLLM(empty=True))
-
-    items = FEED._summarize_top(make_items(1), {})
-
-    assert items[0].summary == ""
+    assert items[0].summary == "", "a failed attempt must not write a summary"
     assert items[0].reason == "deterministic ranker reason 0"
-    assert FEED.last_enrichment_stats().enriched == 0
-    assert FEED.last_enrichment_stats().failed == 1
-    assert not FEED.ENRICHMENT_CACHE_PATH.exists()  # nothing cached
+    stats = FEED.last_enrichment_stats()
+    assert stats.enriched == 0 and stats.failed == 1
+    assert not FEED.ENRICHMENT_CACHE_PATH.exists(), "failures must never be cached"
+    assert "error" in actions(tmp_path)
+    assert expected_error in " ".join(details(tmp_path))
 
 
-def test_a_reason_failure_still_keeps_the_summary(monkeypatch, use_config):
-    """Losing the second call must not throw away the first call's result."""
-    use_config()
-    monkeypatch.setattr(FEED, "_llm_chat", CountingLLM(reply="S", fail_on={"why this article matters"}))
+def test_a_failed_item_is_retried_on_the_next_run(monkeypatch):
+    """Nothing was cached, so the next run gets another chance."""
+    w = wire(monkeypatch, FakeResponse("not json"), FakeResponse(body()))
 
+    FEED._summarize_top(make_items(1), {})
     items = FEED._summarize_top(make_items(1), {})
 
-    assert items[0].summary == "S"
-    assert items[0].reason == "deterministic ranker reason 0"
-    assert FEED.last_enrichment_stats().enriched == 1
+    assert w.count == 2
+    assert items[0].summary == GOOD_SUMMARY
 
 
-# ── 3. unchanged items are not re-summarized ────────────────────────────────
+# ── cache ───────────────────────────────────────────────────────────────────
 
-def test_unchanged_items_do_not_trigger_another_llm_request(monkeypatch, use_config):
+def test_unchanged_items_use_the_cache(monkeypatch, tmp_path):
     """feed_run uses include_seen=True, so the same stories recur every 3h."""
-    use_config()
-    llm = CountingLLM(reply="cached me")
-    monkeypatch.setattr(FEED, "_llm_chat", llm)
+    w = wire(monkeypatch)
 
     FEED._summarize_top(make_items(2), {})
-    assert llm.count == 4  # 2 items x 2 calls
+    assert w.count == 2
 
-    # Second run, same source content -> fingerprints match -> no new requests.
     second = FEED._summarize_top(make_items(2), {})
 
-    assert llm.count == 4, "unchanged items must not be re-summarized"
-    assert second[0].summary == "cached me"
-    assert second[0].reason == "cached me"
+    assert w.count == 2, "unchanged items must not be re-requested"
+    assert second[0].summary == GOOD_SUMMARY
+    assert second[0].reason == GOOD_REASON
     stats = FEED.last_enrichment_stats()
     assert stats.cache_hits == 2 and stats.llm_calls == 0
-    assert log_actions(FEED.ENRICHMENT_LOG_PATH.parent).count("unchanged") == 2
+    assert actions(tmp_path).count("unchanged") == 2
 
 
-def test_changed_source_content_does_invalidate_the_cache(monkeypatch, use_config):
-    """The fingerprint must track the content, or edits would never refresh."""
-    use_config()
-    llm = CountingLLM()
-    monkeypatch.setattr(FEED, "_llm_chat", llm)
+def test_changed_source_content_invalidates_the_cache(monkeypatch):
+    w = wire(monkeypatch)
 
     FEED._summarize_top(make_items(1), {})
     changed = make_items(1)
     changed[0].title = "Story 0 — updated headline"
     FEED._summarize_top(changed, {})
 
-    assert llm.count == 4  # both runs called the provider
+    assert w.count == 2
 
 
-# ── 4. per-run item cap ─────────────────────────────────────────────────────
+# ── per-run cap ─────────────────────────────────────────────────────────────
 
-def test_the_per_run_item_limit_is_enforced(monkeypatch, use_config):
-    use_config()
-    monkeypatch.setenv("FEED_LLM_MAX_ITEMS_PER_RUN", "2")
-    llm = CountingLLM()
-    monkeypatch.setattr(FEED, "_llm_chat", llm)
-
-    FEED._summarize_top(make_items(6), {})
-
-    assert llm.count == 4, "2 items x 2 calls, the other 4 items skipped"
-    stats = FEED.last_enrichment_stats()
-    assert stats.enriched == 2 and stats.skipped_item_limit == 4
-    assert log_actions(FEED.ENRICHMENT_LOG_PATH.parent).count("item_limit") == 4
-
-
-def test_the_default_cap_matches_the_documented_production_default(monkeypatch, use_config):
-    use_config()
-    llm = CountingLLM()
-    monkeypatch.setattr(FEED, "_llm_chat", llm)
+def test_the_default_cap_allows_at_most_five_requests_per_run(monkeypatch):
+    w = wire(monkeypatch)
 
     FEED._summarize_top(make_items(20), {})
 
     assert FEED.DEFAULT_MAX_ITEMS_PER_RUN == 5
-    assert llm.count == 10, "5 items x 2 calls is the documented per-run ceiling"
+    assert FEED.LLM_CALLS_PER_ITEM == 1
+    assert w.count == 5, "5 items x 1 request = the per-run ceiling"
+    assert FEED.last_enrichment_stats().skipped_item_limit == 15
 
 
-def test_a_failed_item_still_counts_against_the_cap(monkeypatch, use_config):
-    """A failure costs provider quota, so it must not buy a free retry slot."""
-    use_config()
+def test_the_scheduled_daily_ceiling_is_forty_requests():
+    """8 runs/day (interval_hours=3) x 5 items x 1 request."""
+    runs_per_day = 24 // 3
+    assert runs_per_day * FEED.DEFAULT_MAX_ITEMS_PER_RUN * FEED.LLM_CALLS_PER_ITEM == 40
+
+
+def test_the_per_run_item_limit_is_enforced(monkeypatch, tmp_path):
     monkeypatch.setenv("FEED_LLM_MAX_ITEMS_PER_RUN", "2")
-    llm = CountingLLM(fail_on={"Summarize"})
-    monkeypatch.setattr(FEED, "_llm_chat", llm)
+    w = wire(monkeypatch)
+
+    FEED._summarize_top(make_items(6), {})
+
+    assert w.count == 2
+    stats = FEED.last_enrichment_stats()
+    assert stats.enriched == 2 and stats.skipped_item_limit == 4
+    assert actions(tmp_path).count("item_limit") == 4
+
+
+def test_a_failed_item_still_counts_against_the_cap(monkeypatch):
+    monkeypatch.setenv("FEED_LLM_MAX_ITEMS_PER_RUN", "2")
+    w = wire(monkeypatch, FakeResponse("not json"))
 
     FEED._summarize_top(make_items(5), {})
 
-    assert llm.count == 2, "two attempts, both failed, cap still spent"
+    assert w.count == 2, "a failure burns quota, so it spends a slot"
     assert FEED.last_enrichment_stats().skipped_item_limit == 3
 
 
-# ── 5. daily budget ─────────────────────────────────────────────────────────
+# ── daily budget ────────────────────────────────────────────────────────────
 
-def write_ledger_row(cost_usd, job_id=FEED.ENRICHMENT_JOB_ID):
+def write_ledger_row(cost_usd, job_id=FEED.ENRICHMENT_JOB_ID, model="gpt-4o-mini"):
     import datetime as dt
 
     row = {
         "ts": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
-        "job_id": job_id, "model": "gpt-4o", "cost_usd": cost_usd,
+        "job_id": job_id, "model": model, "cost_usd": cost_usd,
         "cost_known": True, "ok": True,
     }
     LLM.USAGE_LEDGER.parent.mkdir(parents=True, exist_ok=True)
@@ -244,133 +349,106 @@ def write_ledger_row(cost_usd, job_id=FEED.ENRICHMENT_JOB_ID):
         fh.write(json.dumps(row) + "\n")
 
 
-def test_the_daily_budget_is_enforced(monkeypatch, use_config):
-    use_config(PRICED_CONFIG)  # gpt-4o is in the price table -> budget can bind
+def test_the_daily_budget_is_enforced(monkeypatch, tmp_path):
+    """gpt-4o-mini is priced, so unlike the old kimi model the budget binds."""
     monkeypatch.setenv("FEED_LLM_DAILY_BUDGET_USD", "0.50")
-    write_ledger_row(0.75)  # already over budget for today
-    llm = CountingLLM()
-    monkeypatch.setattr(FEED, "_llm_chat", llm)
+    write_ledger_row(0.75)
+    w = wire(monkeypatch)
 
     FEED._summarize_top(make_items(4), {})
 
-    assert llm.count == 0, "over budget means no provider calls at all"
+    assert w.count == 0, "over budget means no requests at all"
     stats = FEED.last_enrichment_stats()
     assert stats.budget_enforceable is True
     assert stats.skipped_budget == 4 and stats.enriched == 0
-    assert log_actions(FEED.ENRICHMENT_LOG_PATH.parent).count("budget") == 4
+    assert actions(tmp_path).count("budget") == 4
 
 
-def test_spend_under_the_budget_still_enriches(monkeypatch, use_config):
-    use_config(PRICED_CONFIG)
+def test_spend_under_the_budget_still_enriches(monkeypatch):
     monkeypatch.setenv("FEED_LLM_DAILY_BUDGET_USD", "0.50")
     write_ledger_row(0.10)
-    llm = CountingLLM()
-    monkeypatch.setattr(FEED, "_llm_chat", llm)
+    w = wire(monkeypatch)
 
     FEED._summarize_top(make_items(1), {})
 
-    assert llm.count == 2
+    assert w.count == 1
     assert FEED.last_enrichment_stats().skipped_budget == 0
 
 
-def test_another_lanes_spend_does_not_consume_the_feed_budget(monkeypatch, use_config):
-    use_config(PRICED_CONFIG)
+def test_another_lanes_spend_does_not_consume_the_feed_budget(monkeypatch):
     monkeypatch.setenv("FEED_LLM_DAILY_BUDGET_USD", "0.50")
     write_ledger_row(5.00, job_id="news_publish")
-    monkeypatch.setattr(FEED, "_llm_chat", CountingLLM())
+    wire(monkeypatch)
 
     FEED._summarize_top(make_items(1), {})
 
     assert FEED.last_enrichment_stats().skipped_budget == 0
 
 
-def test_an_unpriced_model_reports_the_budget_as_unenforceable(monkeypatch, use_config):
-    """Honesty rule: never let unknown cost silently pass as $0 spent.
-
-    The live config runs ollama `kimi-k2.7-code:cloud`, which has no price entry,
-    so the ledger records cost as unknown. Treating that as $0 would let an
-    unlimited number of calls pass a budget check. The run is still bounded — by
-    the per-run item cap — but the budget must not *claim* to be enforcing.
-    """
-    use_config(UNPRICED_CONFIG)
+def test_an_unpriced_model_reports_the_budget_as_unenforceable(monkeypatch):
+    """Honesty rule: unknown cost must never silently pass as $0 spent."""
+    monkeypatch.setenv("FEED_LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("FEED_LLM_MODEL", "kimi-k2.7-code:cloud")
     monkeypatch.setenv("FEED_LLM_DAILY_BUDGET_USD", "0.00")
-    llm = CountingLLM()
-    monkeypatch.setattr(FEED, "_llm_chat", llm)
+    w = wire(monkeypatch)
 
     FEED._summarize_top(make_items(3), {})
 
     stats = FEED.last_enrichment_stats()
     assert stats.budget_enforceable is False
     assert stats.skipped_budget == 0
-    assert llm.count == 6, "still bounded by the item cap, not by the budget"
+    assert w.count == 3, "still bounded by the item cap, not by the budget"
 
 
-# ── 6. the kill switch ──────────────────────────────────────────────────────
+# ── kill switch ─────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("value", ["0", "false", "no", "off"])
-def test_disabled_enrichment_makes_zero_llm_requests(monkeypatch, use_config, value):
-    use_config()
+def test_disabled_enrichment_makes_zero_requests(monkeypatch, tmp_path, value):
     monkeypatch.setenv("FEED_LLM_ENRICHMENT_ENABLED", value)
-    llm = CountingLLM()
-    monkeypatch.setattr(FEED, "_llm_chat", llm)
+    w = wire(monkeypatch)
 
     items = FEED._summarize_top(make_items(5), {})
 
-    assert llm.count == 0
+    assert w.count == 0
     assert all(i.summary == "" for i in items)
     assert all(i.reason.startswith("deterministic") for i in items)
-    stats = FEED.last_enrichment_stats()
-    assert stats.enabled is False and stats.llm_calls == 0
-    assert log_actions(FEED.ENRICHMENT_LOG_PATH.parent).count("disabled") == 5
+    assert FEED.last_enrichment_stats().enabled is False
+    assert actions(tmp_path).count("disabled") == 5
 
 
-def test_enrichment_defaults_to_enabled(monkeypatch, use_config):
-    """Documented production default — the summaries are the point of the feed."""
-    use_config()
-    monkeypatch.setattr(FEED, "_llm_chat", CountingLLM())
-
+def test_enrichment_defaults_to_enabled(monkeypatch):
+    wire(monkeypatch)
     FEED._summarize_top(make_items(1), {})
-
     assert FEED.DEFAULT_ENRICHMENT_ENABLED is True
     assert FEED.last_enrichment_stats().enabled is True
 
 
-# ── 7. one bad item never ends the run ──────────────────────────────────────
+# ── one bad item never ends the run ─────────────────────────────────────────
 
-def test_a_single_failed_item_does_not_terminate_the_feed_run(monkeypatch, use_config):
-    use_config()
-    monkeypatch.setenv("FEED_LLM_MAX_ITEMS_PER_RUN", "5")
-
-    class FlakyOnStory1(CountingLLM):
-        def __call__(self, prompt, config):
-            self.calls.append(prompt)
-            if "Story 1" in prompt:
-                raise RuntimeError("boom")
-            return "ok summary"
-
-    monkeypatch.setattr(FEED, "_llm_chat", FlakyOnStory1())
+def test_processing_continues_after_a_single_failure(monkeypatch):
+    w = wire(monkeypatch,
+             FakeResponse(body()),
+             FakeResponse("not json"),        # item 1 fails
+             FakeResponse(body()))
 
     items = FEED._summarize_top(make_items(3), {})
 
-    assert items[0].summary == "ok summary"
-    assert items[1].summary == ""                               # the failed one
+    assert w.count == 3
+    assert items[0].summary == GOOD_SUMMARY
+    assert items[1].summary == ""                              # the failed one
     assert items[1].reason == "deterministic ranker reason 1"
-    assert items[2].summary == "ok summary"                     # run continued
+    assert items[2].summary == GOOD_SUMMARY                    # run continued
     stats = FEED.last_enrichment_stats()
     assert stats.enriched == 2 and stats.failed == 1
 
 
-def test_build_feed_survives_an_enrichment_failure(monkeypatch, use_config):
-    """End to end: a provider outage degrades the feed, it does not break it."""
-    use_config()
-    monkeypatch.setattr(FEED, "_llm_chat", CountingLLM(fail_on={"Summarize"}))
+def test_build_feed_survives_a_total_provider_outage(monkeypatch):
+    wire(monkeypatch, REQUESTS.ConnectionError("provider down"))
     monkeypatch.setattr(FEED, "load_seen", lambda: {"urls": {}, "ttl_days": 30})
     monkeypatch.setattr(FEED, "mark_seen", lambda *a, **k: None)
     monkeypatch.setattr(FEED, "load_profile_with_interests",
                         lambda name="default": {"interests": ["python"]})
     monkeypatch.setattr(FEED, "get_feed_sources", lambda profile: ["hackernews"])
-    # Distinct wording: dedupe_items collapses titles with high word overlap,
-    # so "Story 0/1/2" would arrive at the ranker as a single item.
     fetched = [
         FEED.FeedItem(title=t, url=f"https://example.com/{i}", source="hackernews")
         for i, t in enumerate([
@@ -386,13 +464,11 @@ def test_build_feed_survives_an_enrichment_failure(monkeypatch, use_config):
 
     assert len(items) == 3
     assert all(i.summary == "" for i in items), "no fabricated summaries"
-    # rank_items writes its own deterministic reason; the point is that it
-    # survives the provider outage rather than being blanked by a failed call.
-    assert all(i.reason for i in items)
+    assert all(i.reason for i in items), "deterministic reasons survive"
     assert FEED.last_enrichment_stats().failed == 3
 
 
-# ── configuration resolution ────────────────────────────────────────────────
+# ── bounds configuration ────────────────────────────────────────────────────
 
 def test_env_overrides_the_yaml_block(monkeypatch):
     monkeypatch.setattr(FEED, "_load_feed_config",
@@ -402,12 +478,11 @@ def test_env_overrides_the_yaml_block(monkeypatch):
 
     settings = FEED.enrichment_settings()
 
-    assert settings["max_items_per_run"] == 3   # env wins
-    assert settings["enabled"] is False         # yaml still applies where env is absent
+    assert settings["max_items_per_run"] == 3
+    assert settings["enabled"] is False
     assert settings["daily_budget_usd"] == 9.0
 
 
 def test_a_malformed_bound_falls_back_to_the_default(monkeypatch):
     monkeypatch.setenv("FEED_LLM_MAX_ITEMS_PER_RUN", "not-a-number")
-
     assert FEED.enrichment_settings()["max_items_per_run"] == FEED.DEFAULT_MAX_ITEMS_PER_RUN
