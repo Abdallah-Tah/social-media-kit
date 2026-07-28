@@ -21,6 +21,9 @@ def _patch_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(auto, "CONTENT_DIR", tmp_path)
     monkeypatch.setattr(auto, "AUTOMATIONS_FILE", tmp_path / "automations.json")
     monkeypatch.setattr(auto, "LOG_FILE", tmp_path / "automation_log.jsonl")
+    monkeypatch.setenv("SMKIT_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("SMKIT_LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.setattr(auto, "_migrated", False)
     return auto
 
 
@@ -169,3 +172,98 @@ def test_start_scheduler_idempotent(tmp_path, monkeypatch):
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ── state-separation tests ───────────────────────────────────────────────────
+
+class TestStateSeparation:
+    """Runtime state must never dirty the version-controlled definitions file."""
+
+    def test_save_config_splits_definitions_and_runtime(self, tmp_path, monkeypatch):
+        auto = _patch_paths(tmp_path, monkeypatch)
+        config = auto._load_config()
+        config["feed_run"]["last_run"] = "2026-07-28T12:00:00+00:00"
+        config["feed_run"]["last_result"] = "ok"
+        config["feed_run"]["enabled"] = True
+        auto._save_config(config)
+
+        definitions = json.loads((tmp_path / "automations.json").read_text())
+        assert "last_run" not in definitions.get("feed_run", {})
+        assert "last_result" not in definitions.get("feed_run", {})
+        assert definitions["feed_run"]["enabled"] is True
+
+        runtime = json.loads((tmp_path / "state" / "automations_runtime.json").read_text())
+        assert runtime["feed_run"]["last_run"] == "2026-07-28T12:00:00+00:00"
+        assert runtime["feed_run"]["last_result"] == "ok"
+
+    def test_load_config_merges_runtime_into_definitions(self, tmp_path, monkeypatch):
+        auto = _patch_paths(tmp_path, monkeypatch)
+        config = auto._load_config()
+        config["feed_run"]["last_run"] = "2026-07-28T12:00:00+00:00"
+        config["feed_run"]["last_result"] = "ok"
+        auto._save_config(config)
+
+        reloaded = auto._load_config()
+        assert reloaded["feed_run"]["last_run"] == "2026-07-28T12:00:00+00:00"
+        assert reloaded["feed_run"]["last_result"] == "ok"
+        assert reloaded["feed_run"]["enabled"] is False  # default
+
+    def test_migrate_extracts_runtime_from_legacy_file(self, tmp_path, monkeypatch):
+        auto = _patch_paths(tmp_path, monkeypatch)
+        legacy = {
+            "feed_run": {
+                "label": "News Feed Refresh",
+                "enabled": True,
+                "interval_hours": 3,
+                "dry_run": False,
+                "last_run": "2026-07-27T10:00:00+00:00",
+                "last_result": "ok",
+                "last_error": "",
+            }
+        }
+        (tmp_path / "automations.json").write_text(json.dumps(legacy))
+        monkeypatch.setattr(auto, "_migrated", False)
+
+        config = auto._load_config()
+        assert config["feed_run"]["last_run"] == "2026-07-27T10:00:00+00:00"
+        assert config["feed_run"]["enabled"] is True
+
+        definitions = json.loads((tmp_path / "automations.json").read_text())
+        assert "last_run" not in definitions["feed_run"]
+
+    def test_runtime_updates_do_not_dirty_definitions(self, tmp_path, monkeypatch):
+        auto = _patch_paths(tmp_path, monkeypatch)
+        with patch.object(auto, "_execute_job", return_value={"ok": True, "message": "done"}):
+            auto.run_job("feed_run")
+
+        definitions = json.loads((tmp_path / "automations.json").read_text())
+        for job_id, cfg in definitions.items():
+            assert "last_run" not in cfg
+            assert "last_result" not in cfg
+
+    def test_log_written_to_log_dir(self, tmp_path, monkeypatch):
+        auto = _patch_paths(tmp_path, monkeypatch)
+        auto._append_log("feed_run", True, "test entry", False)
+        log_path = tmp_path / "logs" / "automation_log.jsonl"
+        assert log_path.exists()
+        content = log_path.read_text()
+        assert "feed_run" in content
+
+    def test_state_dir_env_override(self, tmp_path, monkeypatch):
+        import agent.automation as auto
+        custom_state = tmp_path / "custom_state"
+        custom_state.mkdir()
+        monkeypatch.setenv("SMKIT_STATE_DIR", str(custom_state))
+        monkeypatch.setattr(auto, "_migrated", False)
+
+        auto._save_runtime({"feed_run": {"last_run": "2026-01-01T00:00:00Z"}})
+        assert (custom_state / "automations_runtime.json").exists()
+
+    def test_log_dir_env_override(self, tmp_path, monkeypatch):
+        import agent.automation as auto
+        custom_logs = tmp_path / "custom_logs"
+        custom_logs.mkdir()
+        monkeypatch.setenv("SMKIT_LOG_DIR", str(custom_logs))
+
+        auto._append_log("feed_run", True, "custom location", False)
+        assert (custom_logs / "automation_log.jsonl").exists()

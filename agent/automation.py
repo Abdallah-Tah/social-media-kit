@@ -7,11 +7,29 @@ The scheduler runs as a daemon thread started by the dashboard server.
 It is resilient to individual job failures (exceptions are logged, not
 re-raised) and idempotent across restarts (next_run derived from
 last_run + interval_hours).
+
+State layout
+------------
+Definitions (version-controlled)::
+
+    content/automations.json          # enabled, interval_hours, dry_run defaults
+
+Runtime state (git-ignored)::
+
+    state/automations_runtime.json    # last_run, last_result, last_error
+
+Logs (git-ignored)::
+
+    logs/automation_log.jsonl         # append-only execution log
+
+Override with ``SMKIT_STATE_DIR`` / ``SMKIT_LOG_DIR`` to place runtime
+files outside the repository in production.
 """
 from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import threading
 import traceback
 from pathlib import Path
@@ -19,7 +37,41 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTENT_DIR = ROOT / "content"
+
+# ── path resolution ──────────────────────────────────────────────────────────
+
+# Version-controlled definitions — static job config only.
 AUTOMATIONS_FILE = CONTENT_DIR / "automations.json"
+
+# Runtime state and logs — resolved from env or repo-local defaults.
+# Tests and production override via SMKIT_STATE_DIR / SMKIT_LOG_DIR.
+
+_RUNTIME_FIELDS = {"last_run", "last_result", "last_error"}
+
+
+def _state_dir() -> Path:
+    override = os.environ.get("SMKIT_STATE_DIR")
+    if override:
+        return Path(override)
+    return ROOT / "state"
+
+
+def _log_dir() -> Path:
+    override = os.environ.get("SMKIT_LOG_DIR")
+    if override:
+        return Path(override)
+    return ROOT / "logs"
+
+
+def _runtime_file() -> Path:
+    return _state_dir() / "automations_runtime.json"
+
+
+def _log_file() -> Path:
+    return _log_dir() / "automation_log.jsonl"
+
+
+# Legacy paths — used by migration only.
 LOG_FILE = CONTENT_DIR / "automation_log.jsonl"
 
 JOB_DEFAULTS: dict[str, dict[str, Any]] = {
@@ -62,14 +114,69 @@ JOB_DEFAULTS: dict[str, dict[str, Any]] = {
 
 _lock = threading.Lock()
 _scheduler_thread: threading.Thread | None = None
+_migrated = False
 
 
 def _now_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
 
 
+def _migrate_once() -> None:
+    """Move runtime fields out of the tracked definitions file and relocate
+    the legacy log file.  Idempotent — runs at most once per process."""
+    global _migrated
+    if _migrated:
+        return
+    _migrated = True
+
+    # 1. Extract runtime fields from content/automations.json if present.
+    if AUTOMATIONS_FILE.exists():
+        try:
+            saved = json.loads(AUTOMATIONS_FILE.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            saved = {}
+        runtime: dict[str, dict[str, Any]] = {}
+        changed = False
+        for job_id, cfg in list(saved.items()):
+            extracted = {k: cfg.pop(k) for k in list(cfg.keys()) if k in _RUNTIME_FIELDS}
+            if extracted:
+                runtime[job_id] = extracted
+                changed = True
+        if changed:
+            AUTOMATIONS_FILE.write_text(json.dumps(saved, indent=2), encoding="utf-8")
+            rt = _runtime_file()
+            rt.parent.mkdir(parents=True, exist_ok=True)
+            rt.write_text(json.dumps(runtime, indent=2), encoding="utf-8")
+
+    # 2. Move legacy log file into logs/.
+    legacy_log = CONTENT_DIR / "automation_log.jsonl"
+    new_log = _log_file()
+    if legacy_log.exists() and not new_log.exists():
+        new_log.parent.mkdir(parents=True, exist_ok=True)
+        legacy_log.rename(new_log)
+
+
+def _load_runtime() -> dict[str, dict[str, Any]]:
+    """Load runtime state (last_run, last_result, last_error)."""
+    rt = _runtime_file()
+    if rt.exists():
+        try:
+            return json.loads(rt.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def _save_runtime(runtime: dict[str, dict[str, Any]]) -> None:
+    """Persist runtime state to the state directory."""
+    state_dir = _state_dir()
+    state_dir.mkdir(parents=True, exist_ok=True)
+    _runtime_file().write_text(json.dumps(runtime, indent=2), encoding="utf-8")
+
+
 def _load_config() -> dict[str, dict[str, Any]]:
-    """Load persisted automation config, merging with defaults."""
+    """Load automation config: definitions from tracked file, runtime from state dir."""
+    _migrate_once()
     if AUTOMATIONS_FILE.exists():
         try:
             saved = json.loads(AUTOMATIONS_FILE.read_text(encoding="utf-8"))
@@ -78,19 +185,36 @@ def _load_config() -> dict[str, dict[str, Any]]:
     else:
         saved = {}
 
+    runtime = _load_runtime()
+
     config: dict[str, dict[str, Any]] = {}
     for job_id, defaults in JOB_DEFAULTS.items():
         config[job_id] = dict(defaults)
         if job_id in saved:
-            for k in ("enabled", "interval_hours", "dry_run", "last_run", "last_result", "last_error"):
+            for k in ("enabled", "interval_hours", "dry_run"):
                 if k in saved[job_id]:
                     config[job_id][k] = saved[job_id][k]
+        if job_id in runtime:
+            for k in _RUNTIME_FIELDS:
+                if k in runtime[job_id]:
+                    config[job_id][k] = runtime[job_id][k]
     return config
 
 
 def _save_config(config: dict[str, dict[str, Any]]) -> None:
+    """Split config into definitions (tracked) and runtime state (ignored)."""
+    definitions: dict[str, dict[str, Any]] = {}
+    runtime: dict[str, dict[str, Any]] = {}
+    for job_id, cfg in config.items():
+        defs = {k: v for k, v in cfg.items() if k not in _RUNTIME_FIELDS}
+        definitions[job_id] = defs
+        rt = {k: v for k, v in cfg.items() if k in _RUNTIME_FIELDS}
+        if rt:
+            runtime[job_id] = rt
+
     CONTENT_DIR.mkdir(parents=True, exist_ok=True)
-    AUTOMATIONS_FILE.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    AUTOMATIONS_FILE.write_text(json.dumps(definitions, indent=2), encoding="utf-8")
+    _save_runtime(runtime)
 
 
 def _append_log(job_id: str, ok: bool, message: str, dry_run: bool) -> None:
@@ -101,8 +225,9 @@ def _append_log(job_id: str, ok: bool, message: str, dry_run: bool) -> None:
         "message": message,
         "dry_run": dry_run,
     }
-    CONTENT_DIR.mkdir(parents=True, exist_ok=True)
-    with LOG_FILE.open("a", encoding="utf-8") as f:
+    log_dir = _log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    with _log_file().open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
 
 
@@ -317,10 +442,11 @@ def start_scheduler() -> None:
 
 def list_logs(limit: int = 100) -> list[dict[str, Any]]:
     """Return the most recent log entries, newest first."""
-    if not LOG_FILE.exists():
+    log_path = _log_file()
+    if not log_path.exists():
         return []
     try:
-        lines = LOG_FILE.read_text(encoding="utf-8").splitlines()
+        lines = log_path.read_text(encoding="utf-8").splitlines()
     except OSError:
         return []
     out = []

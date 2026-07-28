@@ -5,7 +5,7 @@
     "interval_hours": 3,
     "enabled": true,
     "dry_run": false,
-    "last_run": "2026-07-28T00:53:43.315622+00:00",
+    "last_run": "2026-07-28T13:22:17.937839+00:00",
     "last_result": "ok",
     "last_error": ""
   },
@@ -14,10 +14,7 @@
     "description": "Fetch and score fresh stories from all configured sources.",
     "interval_hours": 6,
     "enabled": false,
-    "dry_run": false,
-    "last_run": "2026-07-12T23:38:52.108177+00:00",
-    "last_result": "ok",
-    "last_error": ""
+    "dry_run": false
   },
   "publish_due": {
     "label": "Publish Scheduled Posts",
@@ -31,10 +28,7 @@
     "description": "Pull latest performance data from connected platforms.",
     "interval_hours": 24,
     "enabled": false,
-    "dry_run": false,
-    "last_run": "2026-07-12T23:39:07.703677+00:00",
-    "last_result": "ok",
-    "last_error": ""
+    "dry_run": false
   },
   "auto_draft": {
     "label": "Auto-Generate Drafts",

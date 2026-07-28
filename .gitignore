@@ -68,6 +68,11 @@ content/llm_usage.jsonl
 content/content_decisions.jsonl
 content/feed/enrichment_log.jsonl
 
+# Automation runtime state — git-ignored; definitions live in content/automations.json.
+state/
+logs/automation_log.jsonl
+content/automation_log.jsonl
+
 # Private backup bundles (git bundle create ...). Never push these.
 *.bundle
 
