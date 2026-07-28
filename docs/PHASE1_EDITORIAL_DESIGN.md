@@ -423,6 +423,45 @@ code revert.
 
 ---
 
+## 7a. Known limitation — relationship detection depends on excerpt richness
+
+Recorded deliberately rather than fixed now. Fuller excerpt fetching and ingestion
+changes are **out of scope**; the current behaviour is the safe fallback and the gap
+is to be *measured* during historical replay and shadow mode before anything changes.
+
+Stage 2.6 classifies source relationships from `SourceRef.excerpt`. Feed items today
+carry short summaries, so in production the syndication and restatement paths will
+fire less often than in tests and more sources will land in `relationship_unknown`.
+That errs in the safe direction — an unknown source keeps the benefit of the doubt
+and is not excluded from corroboration — but it does mean corroboration stays
+somewhat generous until excerpts get richer.
+
+### Observability requirements (to build later, not now)
+
+No dashboard panels are to be implemented yet. The requirement on Stage 3 and the
+replay records is only that they **retain enough raw information to derive** these:
+
+| Metric | Derived from |
+|---|---|
+| `relationship_unknown_rate` | `relationship_unknown_count` / `source_count` |
+| `relationship_unknown_rate_by_domain` | `relationship_unknown_by_domain` |
+| `relationship_unknown_rate_by_source_kind` | `relationship_unknown_by_source_kind` |
+| `relationship_unknown_rate_by_lane` | above, grouped by the record's `slot` |
+| `excerpt_presence_rate` | `excerpt_present_count` / `source_count` |
+| `excerpt_length_distribution` | `excerpt_length_buckets` |
+| source-confidence impact of unknowns | `source_confidence_score`, `corroboration_score` alongside the counts |
+
+`saturation.relationship_observability(candidate, relationships, source_confidence)`
+emits exactly these, and `SaturationResult.observability` carries them through when
+passed in. **Raw counts only, never rates** — a rate is a property of a run, and
+computing it per candidate would give a denominator of 1.
+
+The same block also retains what the saturation metrics need:
+`saturation_rejection_rate` and `saturation_rejections_by_rule` from `rule_statuses`
+and `rejecting_rules`; `most_saturated_entities` / `most_saturated_themes` from
+`entity` and `theme`; `material_exception_rate` from `material_exception_applied`;
+`exact_topic_repeat_rate` from `exact_topic_repeat`.
+
 ## 8. Open questions for review
 
 1. **Timezone vs cron.** Slots are declared in `America/New_York`; the host

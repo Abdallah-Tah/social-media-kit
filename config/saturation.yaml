@@ -1,0 +1,141 @@
+# Topic-saturation prevention (Phase 1, Stage 3) — declarative policy.
+#
+# Saturation answers a different question from source confidence: not "is this
+# well evidenced?" but "have we already said this?". The two are kept apart on
+# purpose — a well-evidenced story can still be the fifth OpenAI post this week.
+#
+# Rules are explicit and individually reported. There is deliberately no single
+# opaque saturation score: an editor needs to know WHICH rule fired and on what
+# numbers, not that "saturation = 0.62".
+#
+# History is derived from ContentDecision records and confirmed publication
+# history. This file is policy only; it is never a topic store.
+
+version: 1
+
+# Editorial days are defined in this zone. Left null to inherit the slot
+# configuration (America/New_York), so the two can never disagree.
+timezone: null
+
+windows:
+  rolling_days: 14
+  recent_items: 12
+
+# ── Rules ──────────────────────────────────────────────────────────────────
+rules:
+
+  # R1 — Exact-topic duplicate. Cannot be disabled: without it the whole engine
+  # permits republishing the identical development forever.
+  R1_exact_topic:
+    enabled: true
+    cooldown_days: 14
+
+  # R2 — Same-day reuse of one canonical topic.
+  R2_same_day_reuse:
+    enabled: true
+    # Slots permitted to run a same-day continuation at all.
+    allow_continuation_slots:
+      - practical_takeaway
+    # Every one of these must hold for a continuation to pass.
+    require_all_of:
+      - links_to_earlier_item
+      - materially_distinct_objective
+
+  # R3 — One entity dominating the mix.
+  R3_entity_share:
+    enabled: true
+    last_12_ceiling: 0.33
+    rolling_14d_ceiling: 0.30
+    # Below this many published items the share is statistically meaningless:
+    # two posts out of three is 0.67 and means nothing.
+    min_items_before_applying: 6
+
+  # R4 — The same entity and development type, repeatedly.
+  R4_entity_development:
+    enabled: true
+    count_ceiling_14d: 3
+    share_ceiling_last_12: 0.25
+
+  # R5 — A broader theme dominating. Skipped entirely when the theme is unknown;
+  # a theme is never invented from title similarity.
+  R5_theme_share:
+    enabled: true
+    ceiling_14d: 0.40
+    min_items_before_applying: 6
+
+  # R6 — Re-running one entity through different formats. Changing news ->
+  # takeaway must not by itself buy another slot.
+  R6_artifact_repetition:
+    enabled: true
+    window_days: 7
+    max_artifacts_per_entity: 2
+
+  # R7 — Evidence-update exception. Allows reconsideration; never publishes.
+  R7_evidence_update:
+    enabled: true
+    evidence_types:
+      - new_independent_evidence
+      - corrected_facts
+      - benchmark_reproduction
+      - contradictory_results
+      - official_availability
+      - changed_pricing
+      - changed_license
+      - security_disclosure
+      - substantial_documentation
+
+# ── Material developments ──────────────────────────────────────────────────
+# A material development prevents rejection based SOLELY on entity or theme
+# recency (R3, R5, R6). It never bypasses R1 exact-topic duplication, and it
+# never publishes anything — later gates still apply.
+#
+# funding_or_company_news is deliberately absent: most funding news is not
+# material to developers. An acquisition or shutdown that genuinely is reaches
+# the same outcome through the R7 evidence-update path, which requires the
+# evidence to be recorded.
+material_development_types:
+  - model_release
+  - product_release
+  - api_release
+  - repository_release
+  - pricing_change
+  - security_issue
+  - licensing_change
+  - benchmark
+  - deployment_availability
+  - compatibility_change
+  - documentation_update
+  - research_paper
+
+# ── Themes ─────────────────────────────────────────────────────────────────
+# Entity -> broader theme. Only an explicit mapping (or an upstream
+# metadata["theme"]) is trusted. Anything else is theme_unknown and R5 is
+# skipped rather than guessed.
+theme_map:
+  openai: ai_models
+  anthropic: ai_models
+  google: ai_models
+  mistral: ai_models
+  huggingface: ai_models
+  postgresql: databases
+  laravel: web_frameworks
+  rust: languages
+  python: languages
+  nodejs: languages
+  docker: infrastructure
+  hashicorp: infrastructure
+
+# ── History interpretation ─────────────────────────────────────────────────
+history:
+  # Only these count as successful publications.
+  counted_stages: [publish]
+  counted_decisions: [accepted]
+  # Modes that are diagnostics only. Reported separately, never counted.
+  excluded_modes: [shadow, simulated, replay, dry_run]
+  excluded_statuses: [failed, draft, deleted, retracted]
+  # Preference order for the key that identifies one published post, so a retry
+  # of the same post is not counted twice.
+  deduplication_keys:
+    - publication_id
+    - post_url
+    - slug
