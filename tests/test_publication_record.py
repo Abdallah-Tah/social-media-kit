@@ -492,12 +492,26 @@ def test_stage_three_five_changes_nothing_while_the_flag_is_false():
 
 
 def test_no_production_code_path_calls_record_publication():
-    """It exists for Stage 6 and shadow runs; nothing live may invoke it yet."""
+    """It exists for Stage 6 and shadow runs; nothing live may invoke it yet.
+
+    Looks for an actual CALL — `record_publication(` — rather than any mention,
+    so re-exporting the name from agent/editorial/__init__.py does not read as
+    a caller. An import is not an invocation.
+    """
     import subprocess
 
     result = subprocess.run(
-        ["grep", "-rn", "record_publication", "--include=*.py", "scripts/", "agent/"],
+        ["grep", "-rn", r"record_publication(", "--include=*.py",
+         "scripts/", "agent/"],
         cwd=ROOT, capture_output=True, text=True)
     callers = [ln for ln in result.stdout.splitlines()
-               if "publication_record.py" not in ln]
+               if "agent/editorial/publication_record.py" not in ln]
     assert callers == [], f"unexpected caller(s): {callers}"
+
+
+def test_the_export_is_not_mistaken_for_a_caller():
+    """Guards the test above from being trivially satisfied by a bad filter."""
+    import agent.editorial as E
+
+    assert "record_publication" in E.__all__
+    assert callable(E.record_publication)
