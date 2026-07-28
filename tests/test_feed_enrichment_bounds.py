@@ -337,10 +337,11 @@ def test_a_failed_item_still_counts_against_the_cap(monkeypatch):
 # ── daily budget ────────────────────────────────────────────────────────────
 
 def write_ledger_row(cost_usd, job_id=FEED.ENRICHMENT_JOB_ID, model="gpt-4o-mini"):
-    import datetime as dt
+    import time
 
+    # Stamped exactly as llm_ops._record does: LOCAL time with an offset.
     row = {
-        "ts": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "job_id": job_id, "model": model, "cost_usd": cost_usd,
         "cost_known": True, "ok": True,
     }
@@ -362,6 +363,33 @@ def test_the_daily_budget_is_enforced(monkeypatch, tmp_path):
     assert stats.budget_enforceable is True
     assert stats.skipped_budget == 4 and stats.enriched == 0
     assert actions(tmp_path).count("budget") == 4
+
+
+def test_spend_is_read_on_the_same_clock_the_ledger_is_written_with(monkeypatch):
+    """Regression: a UTC 'today' against locally-stamped rows read $0.
+
+    Caught in live verification at 20:40 EDT — the UTC date was already the next
+    day, so the budget window matched nothing and stopped binding for the last
+    four hours of every day. Reproduced by pushing the local zone west so local
+    and UTC dates differ.
+    """
+    import time
+
+    monkeypatch.setenv("TZ", "Pacific/Honolulu")  # UTC-10, no DST
+    time.tzset()
+    try:
+        monkeypatch.setenv("FEED_LLM_DAILY_BUDGET_USD", "0.50")
+        write_ledger_row(0.75)
+        w = wire(monkeypatch)
+
+        FEED._summarize_top(make_items(2), {})
+
+        assert FEED._spend_today() == 0.75, "today's spend must be visible"
+        assert w.count == 0, "over budget, regardless of local/UTC date skew"
+        assert FEED.last_enrichment_stats().skipped_budget == 2
+    finally:
+        monkeypatch.delenv("TZ", raising=False)
+        time.tzset()
 
 
 def test_spend_under_the_budget_still_enriches(monkeypatch):
