@@ -1,0 +1,157 @@
+# Source-relationship and syndication detection (Phase 1, Stage 2.6).
+#
+# Stage 2 corroboration honours is_syndicated / is_press_release_mirror /
+# adds_independent_evidence, but raw feed records never supply them. This file
+# is the deterministic policy that derives them.
+#
+# The governing rule everywhere below: a positive classification requires
+# positive evidence. Where the data cannot support a call, the relationship is
+# `relationship_unknown` and the source keeps the benefit of the doubt rather
+# than being silently excluded from corroboration.
+
+version: 1
+
+# ── Organization identity ──────────────────────────────────────────────────
+# Groups collapse several identities into one organization. Members may be a
+# registrable domain or a "host/path" prefix, which is how a GitHub org and a
+# corporate domain are declared to be the same publisher.
+#
+# Ownership is NEVER inferred from domain similarity — vendor.com and
+# vendor-news.com are different organizations unless declared here.
+organization_groups:
+  example_vendor:
+    display: Example Vendor
+    members:
+      - vendor.com
+      - github.com/vendor
+
+organization_aliases:
+  openai:      {display: OpenAI,       domains: [openai.com]}
+  anthropic:   {display: Anthropic,    domains: [anthropic.com]}
+  google:      {display: Google,       domains: [google.com, googleblog.com, deepmind.com]}
+  microsoft:   {display: Microsoft,    domains: [microsoft.com, azure.com, github.blog]}
+  postgresql:  {display: PostgreSQL,   domains: [postgresql.org]}
+  laravel:     {display: Laravel,      domains: [laravel.com]}
+
+# ── Known distribution networks ────────────────────────────────────────────
+# Membership is deterministic evidence on its own: these domains exist to
+# redistribute other people's announcements.
+press_release_domains:
+  - prnewswire.com
+  - businesswire.com
+  - globenewswire.com
+  - prweb.com
+  - einpresswire.com
+  - accesswire.com
+  - newswire.com
+  - prlog.org
+
+syndication_domains:
+  - news.yahoo.com
+  - finance.yahoo.com
+  - msn.com
+  - news.google.com
+  - flipboard.com
+  - biztoc.com
+  - newsbreak.com
+
+# Metadata keys that explicitly declare syndication upstream.
+syndication_metadata_keys:
+  - syndicated_from
+  - original_source
+  - originally_published_at
+  - canonical_source
+  - rights_holder
+
+# ── Similarity thresholds ──────────────────────────────────────────────────
+# Body similarity is Jaccard over 4-token shingles; short text falls back to
+# token overlap. Both are deterministic and need no network.
+similarity:
+  # At or above this, two bodies are the same article.
+  syndication_min_body: 0.85
+  # At or above this, a secondary source is substantially restating the origin.
+  repetition_min_body: 0.60
+  # Title similarity is recorded but NEVER sufficient on its own: two outlets
+  # running the same wire headline have agreed about nothing.
+  title_only_is_never_sufficient: true
+  title_similarity_report_threshold: 0.90
+  # Below this much text there is not enough to compare; stay unknown.
+  min_comparable_tokens: 8
+
+publication_ordering:
+  # A copy must appear at least this long after its origin to count as "later".
+  tolerance_minutes: 5
+
+# ── Evidence detection ─────────────────────────────────────────────────────
+# Positive markers for evidence the primary source does not already contain.
+# Matching is case-insensitive regex over the source excerpt.
+evidence:
+  min_markers: 1
+  markers:
+    independent_benchmark:
+      - '\bwe (?:ran|benchmarked|measured|timed|tested)\b'
+      - '\bour (?:own )?benchmarks?\b'
+      - '\bin our (?:tests?|benchmarks?|measurements?)\b'
+      - '\bwe clocked\b'
+    reproduced_result:
+      - '\bwe (?:were able to )?reproduced?\b'
+      - '\breproduction (?:of|attempt)\b'
+      - '\bindependently (?:verified|confirmed|replicated)\b'
+    source_code_inspection:
+      - '\breading the (?:source|code|diff)\b'
+      - '\bin the source (?:code|tree)\b'
+      - '\bthe (?:commit|diff|pull request) shows\b'
+      - '\bwe inspected the\b'
+    security_analysis:
+      - '\bproof[- ]of[- ]concept\b'
+      - '\bwe (?:analy[sz]ed|disassembled|reverse[- ]engineered)\b'
+      - '\bour (?:security )?analysis (?:shows|found)\b'
+    deployment_test:
+      - '\bwe deployed\b'
+      - '\bwe (?:ran|shipped) (?:it|this) in production\b'
+      - '\bin our production\b'
+    original_interview:
+      - '\btold us\b'
+      - '\bin an interview with\b'
+      - '\bspoke to\b'
+      - '\bconfirmed to (?:us|this publication)\b'
+    regulatory_filing:
+      - '\bSEC filing\b'
+      - '\b10-[KQ]\b'
+      - '\bthe filing (?:shows|states)\b'
+      - '\bcourt (?:filing|documents?)\b'
+    independent_data:
+      - '\bour (?:data|telemetry|survey|analysis)\b'
+      - '\bwe (?:collected|gathered|surveyed)\b'
+      - '\baccording to our\b'
+    conflicting_evidence:
+      - '\bcould not reproduce\b'
+      - '\bcontradicts?\b'
+      - '\bdisputes?\b'
+      - '\bat odds with\b'
+
+  # Present in almost every article and worth nothing as evidence. Listed so
+  # the rule "commentary is not evidence" is explicit rather than emergent.
+  commentary_markers:
+    - '\bin my opinion\b'
+    - '\bi think\b'
+    - '\bit(?:''s| is) (?:exciting|interesting|impressive)\b'
+    - '\bwhat this means for\b'
+    - '\btime will tell\b'
+    - '\bworth watching\b'
+
+# ── Confidence per classification ──────────────────────────────────────────
+# Reported on the relationship result so a downstream reader can see how firm
+# each call is. These do not scale any score; Stage 2 treats a classification
+# as binary.
+confidence:
+  duplicate_canonical_url: 1.0
+  same_article_multiple_feeds: 1.0
+  same_organization: 0.95
+  first_party_repetition: 0.95
+  press_release_mirror: 0.9
+  syndicated_copy: 0.9
+  repeats_vendor_statement_without_evidence: 0.75
+  adds_independent_evidence: 0.8
+  independent_reporting: 0.7
+  relationship_unknown: 0.0

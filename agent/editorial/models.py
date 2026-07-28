@@ -253,6 +253,23 @@ class SourceRef:
     def publication_time(self) -> str:
         return self.published_at
 
+    @property
+    def source_id(self) -> str:
+        """Stable identity for one source, derived from its canonical URL."""
+        return "src_" + digest(self.canonical_url or self.url.lower(), length=12)
+
+    @property
+    def content_fingerprint(self) -> str:
+        """Hash of the comparable content: excerpt if present, else the title.
+
+        Used to recognise the same article arriving through different feeds and
+        to detect syndicated copies. Empty when there is nothing to compare, so
+        callers can tell "identical" apart from "nothing to go on".
+        """
+        body = (self.excerpt or "").strip() or (self.title or "").strip()
+        normalized = normalize_title(body)
+        return digest(normalized, length=32) if normalized else ""
+
     def organization(self) -> str:
         """Explicit organization_id, then publisher, then registrable domain."""
         return ((self.organization_id or "").strip().lower()

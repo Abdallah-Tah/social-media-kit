@@ -37,6 +37,16 @@ from .slots import (
     SlotConfigError,
     load_slots,
 )
+from .source_relationships import (
+    RelationshipConfig,
+    RelationshipConfigError,
+    SourceRelationship,
+    analyze_candidate,
+    apply_relationships,
+    detect_relationships,
+    load_relationship_config,
+    resolve_organization,
+)
 from .source_confidence import (
     Candidate,
     Claim,
@@ -59,6 +69,14 @@ __all__ = [
     "NormalizationConfig",
     "NormalizationConfigError",
     "NormalizationError",
+    "RelationshipConfig",
+    "RelationshipConfigError",
+    "SourceRelationship",
+    "analyze_candidate",
+    "apply_relationships",
+    "detect_relationships",
+    "load_relationship_config",
+    "resolve_organization",
     "load_normalization_config",
     "normalize_and_score",
     "normalize_candidate",
