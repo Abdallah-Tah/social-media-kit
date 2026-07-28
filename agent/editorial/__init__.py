@@ -11,6 +11,9 @@ Stage 2.6 — source relationships.
 Stage 3 — deterministic saturation prevention.
 Stage 3.5 — publication metadata contract.
 Stage 4 — deterministic admission and backup-candidate selection.
+Stage 5 — deterministic editorial-quality scoring.
+Stage 6 — deterministic publication readiness verdict.
+Stage 7A — deterministic artifact builders (brief, trend, report).
 
 Nothing here runs in production while EDITORIAL_SLOTS_ENABLED is false, and the
 editorial formats are structurally isolated from the live rotation registries
@@ -138,6 +141,23 @@ from .readiness import (
     load_readiness_config,
     record_readiness_decision,
 )
+from .artifacts import (
+    Artifact,
+    ArtifactOverlapError,
+    BriefCandidate,
+    BriefClaim,
+    BriefSource,
+    DailyBriefInput,
+    QualityBreakdown,
+    SourceConfidenceBreakdown,
+    WeeklyReportInput,
+    WeeklyTrendInput,
+    build_intelligence_brief,
+    build_weekly_intelligence_report,
+    build_weekly_trend_analysis,
+    save_artifact,
+    validate_artifact_distinctness,
+)
 
 __all__ = [
     "DEVELOPMENT_TYPES",
@@ -244,4 +264,20 @@ __all__ = [
     "evaluate_and_record_readiness",
     "load_readiness_config",
     "record_readiness_decision",
+    # Stage 7A — deterministic artifact builders
+    "Artifact",
+    "ArtifactOverlapError",
+    "BriefCandidate",
+    "BriefClaim",
+    "BriefSource",
+    "DailyBriefInput",
+    "QualityBreakdown",
+    "SourceConfidenceBreakdown",
+    "WeeklyReportInput",
+    "WeeklyTrendInput",
+    "build_intelligence_brief",
+    "build_weekly_intelligence_report",
+    "build_weekly_trend_analysis",
+    "save_artifact",
+    "validate_artifact_distinctness",
 ]
