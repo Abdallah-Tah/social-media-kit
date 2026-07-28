@@ -463,7 +463,8 @@ def test_practical_value_required_blocks_when_missing(slot, sat_config, history)
 
 
 def test_practical_value_present_passes(slot, sat_config, history):
-    cand = _candidate(development="api_release")  # inherently practical
+    cand = _candidate(development="api_release",
+                      metadata={"has_api_change": True})  # concrete signal
     policy = build_slot_policy(slot)
     evaluation = evaluate_candidate(
         cand, rank=1, policy=policy,
@@ -474,20 +475,21 @@ def test_practical_value_present_passes(slot, sat_config, history):
 
 
 def test_assess_practical_value_uses_structured_signals_only():
-    """No LLM, no network — only development type, claim type, metadata, artifact."""
-    # Development type signal.
-    assert assess_practical_value(_candidate(development="security_issue"))
-    # Claim type signal.
-    claim = Claim(text="benchmark", claim_type="benchmark")
-    assert assess_practical_value(_candidate(development="general_news",
-                                             claims=(claim,)))
-    # Metadata signal.
+    """No LLM, no network — only concrete metadata signal keys pass the gate."""
+    # Metadata signal key.
     assert assess_practical_value(_candidate(
-        development="general_news",
-        metadata={"has_code_change": True}))
-    # Artifact signal.
-    cand = _candidate(development="general_news", artifact="takeaway_checklist")
-    assert assess_practical_value(cand)
+        development="security_issue", metadata={"has_security_action": True}))
+    assert assess_practical_value(_candidate(
+        development="general_news", metadata={"has_code_change": True}))
+    # Development type alone → false.
+    assert not assess_practical_value(_candidate(development="security_issue"))
+    # Claim type alone → false.
+    claim = Claim(text="benchmark", claim_type="benchmark")
+    assert not assess_practical_value(_candidate(
+        development="general_news", claims=(claim,)))
+    # Artifact type alone → false.
+    assert not assess_practical_value(_candidate(
+        development="general_news", artifact="takeaway_checklist"))
     # No signal → false.
     assert not assess_practical_value(_candidate(development="general_news",
                                                  artifact="tutorial"))
@@ -544,8 +546,10 @@ def test_missing_required_claim_evidence_rejects(slot, sat_config, history):
 
 def test_highest_ranked_candidate_admitted(slot, sat_config, history):
     cands = [
-        _candidate(url="https://a.com/1", opp_score=90),
-        _candidate(url="https://b.com/2", opp_score=80),
+        _candidate(url="https://a.com/1", opp_score=90,
+                   metadata={"has_code_change": True}),
+        _candidate(url="https://b.com/2", opp_score=80,
+                   metadata={"has_api_change": True}),
     ]
     result = admit_to_slot(
         slot, cands,
@@ -564,7 +568,8 @@ def test_highest_ranked_fails_backup_selected(slot, sat_config, history):
     weak = _src(kind="secondary", exact=False)
     cands = [
         _candidate(url="https://weak.com/1", opp_score=90, sources=(weak,)),
-        _candidate(url="https://strong.com/2", opp_score=80),
+        _candidate(url="https://strong.com/2", opp_score=80,
+                   metadata={"has_code_change": True}),
     ]
     result = admit_to_slot(
         slot, cands,
@@ -750,6 +755,209 @@ def test_r1_never_downgraded(slot, sat_config):
     assert not evaluation.r4_material_downgrade
 
 
+# ── R4 material novelty signals (corrected condition 5) ─────────────────────
+
+def test_r4_downgrade_different_artifact_without_novelty_signal_rejected(slot, sat_config):
+    """Different artifact type with unchanged facts does NOT receive the downgrade."""
+    history = _make_history("openai", "model_release", n=4, total=12)
+    cand = _candidate(
+        org="openai", development="model_release",
+        topic="openai:model_release:same_facts",
+        metadata={
+            "evidence_references": ["https://openai.com/blog"],
+            "prior_artifact_type": "analysis",  # different artifact
+            # NO novelty signal key set
+        },
+    )
+    policy = build_slot_policy(_slot(admission={
+        "source_confidence_min": 50,
+        "editorial_quality_min": 0,
+        "saturation_policy": "warning_permitted",
+    }))
+    material_types = frozenset(DEVELOPMENT_TYPES)
+    evaluation = evaluate_candidate(
+        cand, rank=1, policy=policy,
+        saturation_config=sat_config, history=history,
+        scoring_config=_scoring_config(),
+        material_types=material_types,
+        now=NOW,
+    )
+    assert not evaluation.r4_material_downgrade
+
+
+def test_r4_downgrade_same_artifact_with_new_pricing_may_downgrade(slot, sat_config):
+    """Same artifact type with a genuinely new pricing change MAY receive the downgrade."""
+    history = _make_history("openai", "pricing_change", n=4, total=12)
+    cand = _candidate(
+        org="openai", development="pricing_change",
+        topic="openai:pricing_change:v2",
+        metadata={
+            "evidence_references": ["https://openai.com/pricing"],
+            "new_pricing": True,
+        },
+    )
+    policy = build_slot_policy(_slot(admission={
+        "source_confidence_min": 50,
+        "editorial_quality_min": 0,
+        "saturation_policy": "warning_permitted",
+    }))
+    material_types = frozenset(DEVELOPMENT_TYPES)
+    evaluation = evaluate_candidate(
+        cand, rank=1, policy=policy,
+        saturation_config=sat_config, history=history,
+        scoring_config=_scoring_config(),
+        material_types=material_types,
+        now=NOW,
+    )
+    # If R4 fires, the novelty signal should allow downgrade.
+    if any(r.rule_id == "R4" and r.status == STATUS_REJECT
+           for r in (evaluation.saturation_result.rules if evaluation.saturation_result else ())):
+        assert evaluation.r4_material_downgrade
+
+
+def test_r4_downgrade_same_artifact_with_new_security_disclosure(slot, sat_config):
+    """Same artifact type with a new security advisory MAY receive the downgrade."""
+    history = _make_history("openai", "security_issue", n=4, total=12)
+    cand = _candidate(
+        org="openai", development="security_issue",
+        topic="openai:security_issue:cve_new",
+        metadata={
+            "evidence_references": ["https://openai.com/security/advisory"],
+            "new_security_disclosure": True,
+        },
+    )
+    policy = build_slot_policy(_slot(admission={
+        "source_confidence_min": 50,
+        "editorial_quality_min": 0,
+        "saturation_policy": "warning_permitted",
+    }))
+    material_types = frozenset(DEVELOPMENT_TYPES)
+    evaluation = evaluate_candidate(
+        cand, rank=1, policy=policy,
+        saturation_config=sat_config, history=history,
+        scoring_config=_scoring_config(),
+        material_types=material_types,
+        now=NOW,
+    )
+    if any(r.rule_id == "R4" and r.status == STATUS_REJECT
+           for r in (evaluation.saturation_result.rules if evaluation.saturation_result else ())):
+        assert evaluation.r4_material_downgrade
+
+
+def test_r4_downgrade_new_topic_without_novelty_signal_rejected(slot, sat_config):
+    """New canonical topic without a new novelty signal does NOT receive the downgrade."""
+    history = _make_history("openai", "model_release", n=4, total=12)
+    cand = _candidate(
+        org="openai", development="model_release",
+        topic="openai:model_release:completely_new",
+        metadata={
+            "evidence_references": ["https://openai.com/blog"],
+            # NO novelty signal — just a different topic with same type of coverage
+        },
+    )
+    policy = build_slot_policy(_slot(admission={
+        "source_confidence_min": 50,
+        "editorial_quality_min": 0,
+        "saturation_policy": "warning_permitted",
+    }))
+    material_types = frozenset(DEVELOPMENT_TYPES)
+    evaluation = evaluate_candidate(
+        cand, rank=1, policy=policy,
+        saturation_config=sat_config, history=history,
+        scoring_config=_scoring_config(),
+        material_types=material_types,
+        now=NOW,
+    )
+    assert not evaluation.r4_material_downgrade
+
+
+# ── Practical value: tightened gate (CORRECTION 2) ──────────────────────────
+
+def test_model_release_without_practical_evidence_fails(slot, sat_config, history):
+    """model_release development type alone does NOT pass practical value."""
+    cand = _candidate(development="model_release")  # no signal key
+    policy = build_slot_policy(slot)
+    evaluation = evaluate_candidate(
+        cand, rank=1, policy=policy,
+        saturation_config=sat_config, history=history,
+        scoring_config=_scoring_config(), now=NOW,
+    )
+    assert RC_PRACTICAL_VALUE_MISSING in evaluation.reason_codes
+
+
+def test_api_release_without_documentation_or_availability_evidence_fails(
+        slot, sat_config, history):
+    """api_release development type alone does NOT pass practical value."""
+    cand = _candidate(development="api_release")  # no signal key
+    policy = build_slot_policy(slot)
+    evaluation = evaluate_candidate(
+        cand, rank=1, policy=policy,
+        saturation_config=sat_config, history=history,
+        scoring_config=_scoring_config(), now=NOW,
+    )
+    assert RC_PRACTICAL_VALUE_MISSING in evaluation.reason_codes
+
+
+def test_pricing_change_with_sourced_pricing_impact_passes(slot, sat_config, history):
+    """pricing_change with has_pricing_impact signal passes practical value."""
+    cand = _candidate(
+        development="pricing_change",
+        metadata={"has_pricing_impact": True},
+    )
+    policy = build_slot_policy(slot)
+    evaluation = evaluate_candidate(
+        cand, rank=1, policy=policy,
+        saturation_config=sat_config, history=history,
+        scoring_config=_scoring_config(), now=NOW,
+    )
+    assert RC_PRACTICAL_VALUE_MISSING not in evaluation.reason_codes
+
+
+def test_security_issue_with_explicit_remediation_action_passes(slot, sat_config, history):
+    """security_issue with has_security_action signal passes practical value."""
+    cand = _candidate(
+        development="security_issue",
+        metadata={"has_security_action": True},
+    )
+    policy = build_slot_policy(slot)
+    evaluation = evaluate_candidate(
+        cand, rank=1, policy=policy,
+        saturation_config=sat_config, history=history,
+        scoring_config=_scoring_config(), now=NOW,
+    )
+    assert RC_PRACTICAL_VALUE_MISSING not in evaluation.reason_codes
+
+
+def test_repository_release_with_concrete_code_change_passes(slot, sat_config, history):
+    """repository_release with has_code_change signal passes practical value."""
+    cand = _candidate(
+        development="repository_release",
+        metadata={"has_code_change": True},
+    )
+    policy = build_slot_policy(slot)
+    evaluation = evaluate_candidate(
+        cand, rank=1, policy=policy,
+        saturation_config=sat_config, history=history,
+        scoring_config=_scoring_config(), now=NOW,
+    )
+    assert RC_PRACTICAL_VALUE_MISSING not in evaluation.reason_codes
+
+
+def test_repository_release_with_compatibility_impact_passes(slot, sat_config, history):
+    """repository_release with has_compatibility_impact signal passes practical value."""
+    cand = _candidate(
+        development="repository_release",
+        metadata={"has_compatibility_impact": True},
+    )
+    policy = build_slot_policy(slot)
+    evaluation = evaluate_candidate(
+        cand, rank=1, policy=policy,
+        saturation_config=sat_config, history=history,
+        scoring_config=_scoring_config(), now=NOW,
+    )
+    assert RC_PRACTICAL_VALUE_MISSING not in evaluation.reason_codes
+
+
 # ── Reason codes ─────────────────────────────────────────────────────────────
 
 def test_all_reason_codes_are_defined():
@@ -839,7 +1047,7 @@ def test_no_llm_or_network_calls(slot, sat_config, history, monkeypatch):
     monkeypatch.setattr(LLM, "requests", type("R", (), {"post": staticmethod(explode)}))
     monkeypatch.setattr(urllib.request, "urlopen", explode)
 
-    cand = _candidate()
+    cand = _candidate(metadata={"has_code_change": True})
     result = admit_to_slot(
         slot, [cand],
         history=history,

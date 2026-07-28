@@ -119,6 +119,11 @@ from .source_confidence import (
     registrable_domain,
     score_source_confidence,
 )
+from .quality import (
+    DraftInput,
+    QualityResult,
+    evaluate_quality,
+)
 
 __all__ = [
     "DEVELOPMENT_TYPES",
@@ -208,4 +213,8 @@ __all__ = [
     "evaluate_and_record",
     "evaluate_candidate",
     "record_shadow_decision",
+    # Stage 5 — quality scoring
+    "DraftInput",
+    "QualityResult",
+    "evaluate_quality",
 ]

@@ -1,0 +1,176 @@
+# Phase 1 Stage 5 — Deterministic editorial-quality scoring
+#
+# Evaluates a generated draft AFTER topic admission and BEFORE publication
+# readiness. Separate from source confidence, opportunity score, saturation,
+# and topic admission. Deterministic 0-100 score with explainable components.
+#
+# This config defines:
+# - Component weights (must total 100)
+# - Artifact-specific policies (word ranges, required sections)
+# - Hard-failure rules (cannot be disabled globally)
+# - Pass/warning/fail thresholds
+#
+# Validation: all problems reported at once, not first-failure.
+
+schema_version: 1
+
+# ── Component weights (must total 100) ──
+weights:
+  format_conformance: 25
+  specificity_evidence: 20
+  practical_value: 20
+  structure_readability: 15
+  language_originality: 20
+
+# ── Pass/warning/fail thresholds ──
+thresholds:
+  pass: 80
+  warning: 60
+  fail: 60  # anything below warning is fail
+
+# Pass threshold must exceed warning threshold.
+# (Validated at load time.)
+
+# ── Hard-failure rules ──
+# These fire regardless of numeric score. Cannot be disabled globally.
+hard_failures:
+  - missing_required_primary_sources
+  - fabricated_numeric_claim
+  - malformed_or_incomplete_output
+  - blank_required_section
+  - prompt_leakage
+  - contradicts_confirmed_facts
+  - vendor_claim_as_verified
+  - copied_passage_beyond_similarity_allowance
+  - unsupported_security_legal_claim
+
+# ── Similarity allowance ──
+# Exact copied passage beyond this threshold (0.0-1.0) triggers hard failure.
+similarity_allowance:
+  max_exact_copy_ratio: 0.15  # 15% exact match to any single source
+
+# ── Artifact-specific policies ──
+artifacts:
+  intelligence_brief:
+    word_range:
+      min: 350
+      max: 650
+    required_sections:
+      - "## Summary"
+      - "## What Developers Should Watch"
+      - "## Sources"
+    optional_sections:
+      - "## Background"
+    requires_code_block: false
+    requires_practical_section: false
+
+  practical_takeaway:
+    word_range:
+      min: 500
+      max: 900
+    required_sections:
+      - "## What You Need to Know"
+      - "## Action Items"
+      - "## Sources"
+    optional_sections:
+      - "## Migration Steps"
+      - "## Compatibility Notes"
+    requires_code_block: true
+    requires_practical_section: true
+
+  technical_analysis:
+    word_range:
+      min: 800
+      max: 1500
+    required_sections:
+      - "## Overview"
+      - "## Technical Details"
+      - "## Analysis"
+      - "## Sources"
+    optional_sections:
+      - "## Performance Impact"
+      - "## Migration Path"
+    requires_code_block: true
+    requires_practical_section: false
+
+  tutorial:
+    word_range:
+      min: 1000
+      max: 2500
+    required_sections:
+      - "## Prerequisites"
+      - "## Step 1"
+      - "## Conclusion"
+      - "## Sources"
+    optional_sections:
+      - "## Troubleshooting"
+      - "## Next Steps"
+    requires_code_block: true
+    requires_practical_section: false
+
+  weekly_report:
+    word_range:
+      min: 300
+      max: 2000  # flexible, based on structured data
+    required_sections:
+      - "## Summary"
+      - "## Sources"
+    optional_sections:
+      - "## Key Metrics"
+      - "## Trends"
+    requires_code_block: false
+    requires_practical_section: false
+
+  migration_note:
+    word_range:
+      min: 400
+      max: 1200
+    required_sections:
+      - "## What Changed"
+      - "## Migration Steps"
+      - "## Sources"
+    optional_sections:
+      - "## Breaking Changes"
+      - "## Deprecation Timeline"
+    requires_code_block: true
+    requires_practical_section: true
+
+  compatibility_brief:
+    word_range:
+      min: 300
+      max: 800
+    required_sections:
+      - "## Compatibility Impact"
+      - "## Affected Versions"
+      - "## Sources"
+    optional_sections:
+      - "## Workarounds"
+    requires_code_block: false
+    requires_practical_section: true
+
+# ── Format references ──
+# These must exist in content_formats.py. Validated at load time.
+format_references:
+  - tutorial
+  - news
+
+# ── Validation rules ──
+validation:
+  # Weights must total 100.
+  weights_total: 100
+  # Component values must be 0-100.
+  component_range:
+    min: 0
+    max: 100
+  # Thresholds must be 0-100.
+  threshold_range:
+    min: 0
+    max: 100
+  # Pass threshold must exceed warning threshold.
+  pass_exceeds_warning: true
+  # Word ranges must be sensible (min < max, both positive).
+  word_range_sensible: true
+  # Hard-failure rules cannot be disabled globally.
+  hard_failures_immutable: true
+  # High prose quality cannot override evidence failures.
+  prose_cannot_override_evidence: true

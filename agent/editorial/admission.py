@@ -179,14 +179,36 @@ PRACTICAL_CLAIM_TYPES = frozenset({
 PRACTICAL_VALUE_SIGNAL_KEYS = frozenset({
     "has_code_change",
     "has_api_change",
+    "has_repository_reference",
+    "has_documentation_reference",
     "has_deployment_impact",
     "has_compatibility_impact",
-    "has_security_action",
     "has_migration_requirement",
-    "has_pricing_implication",
-    "has_developer_tooling_impact",
-    "has_reproducible_benchmark",
+    "has_security_action",
+    "has_pricing_impact",
+    "has_reproducible_test",
     "has_architecture_implication",
+    "has_developer_decision",
+    "has_tooling_impact",
+})
+
+MATERIAL_NOVELTY_SIGNAL_KEYS = frozenset({
+    "new_release_version",
+    "new_event_timestamp",
+    "changed_availability",
+    "new_pricing",
+    "new_license",
+    "new_security_disclosure",
+    "new_api_capability",
+    "new_api_removal",
+    "new_compatibility_breaking_change",
+    "new_independent_benchmark",
+    "new_reproducible_evidence",
+    "corrected_contradictory_evidence",
+    "new_technical_documentation",
+    "new_deployment_region",
+    "new_platform_support",
+    "new_regulatory_action",
 })
 
 # Artifact types that are inherently practical.
@@ -200,22 +222,14 @@ PRACTICAL_ARTIFACT_TYPES = frozenset({
 def assess_practical_value(candidate: Candidate) -> bool:
     """Deterministic structured signals — no LLM, no network.
 
-    A candidate has practical developer value when ANY of these hold:
-    - development type is inherently actionable
-    - at least one claim is developer-impact type
-    - metadata carries a practical-value signal key set to truthy
-    - artifact type is inherently practical
+    A candidate has practical developer value when at least one concrete
+    structured signal key is present and truthy. Development type, claim
+    type, and artifact type may support the result but NONE independently
+    passes the gate without a concrete signal key.
     """
-    if candidate.development_type in PRACTICAL_DEVELOPMENT_TYPES:
-        return True
-    if any(c.claim_type in PRACTICAL_CLAIM_TYPES for c in candidate.claims):
-        return True
     metadata = candidate.metadata or {}
-    if any(metadata.get(k) for k in PRACTICAL_VALUE_SIGNAL_KEYS):
-        return True
-    if candidate.artifact_type in PRACTICAL_ARTIFACT_TYPES:
-        return True
-    return False
+    # Require at least one concrete structured signal key.
+    return any(metadata.get(k) for k in PRACTICAL_VALUE_SIGNAL_KEYS)
 
 
 # ── Slot policy ─────────────────────────────────────────────────────────────
@@ -529,13 +543,13 @@ def _r4_material_downgrade_eligible(
     """Check whether R4 reject can be downgraded to warning at admission time.
 
     All five conditions must hold:
-    1. canonical_topic_id differs from prior publications
-    2. candidate represents a material development
-    3. concrete evidence references are present
-    4. not merely a reformatted version of previous coverage
-    5. exact-topic R1 is clear (never weakened)
+    1. R1 exact-topic duplicate is clear
+    2. canonical_topic_id differs from prior publications (R1 clear implies this)
+    3. candidate represents a material development
+    4. concrete evidence references are present
+    5. at least one material novelty signal exists
     """
-    # Condition 5: R1 must be clear. If R1 fires (reject or warning), no downgrade.
+    # Condition 1: R1 must be clear. If R1 fires (reject or warning), no downgrade.
     r1_rules = [r for r in saturation_result.rules if r.rule_id == "R1"]
     r1_status = r1_rules[0].status if r1_rules else STATUS_CLEAR
     if r1_status != STATUS_CLEAR:
@@ -546,20 +560,17 @@ def _r4_material_downgrade_eligible(
     if not r4_rules or r4_rules[0].status != STATUS_REJECT:
         return False, "R4 is not rejected"
 
-    # Condition 2: material development type.
+    # Condition 3: material development type.
     if candidate.development_type not in material_types:
         return False, "development type is not material"
 
-    # Condition 1: canonical_topic_id differs from prior publications.
-    # We check this by verifying the candidate's topic ID is present (non-empty)
-    # and that R1 is clear (which already means the topic is NOT in the cooldown).
+    # Condition 2: canonical_topic_id differs from prior publications.
+    # R1 being clear already means this topic is not in the cooldown window,
+    # which means it differs from prior publications.
     if not candidate.canonical_topic_id:
         return False, "no canonical topic id"
-    # R1 being clear already means this topic is not in the cooldown window,
-    # which means it differs from prior publications. So conditions 1 and 5
-    # are jointly satisfied by R1=clear.
 
-    # Condition 3: concrete evidence references.
+    # Condition 4: concrete evidence references.
     has_evidence = bool(candidate.metadata.get("evidence_references"))
     if not has_evidence:
         # Also check if the candidate has a primary source with exact coverage.
@@ -569,13 +580,20 @@ def _r4_material_downgrade_eligible(
     if not has_evidence:
         return False, "no concrete evidence references"
 
-    # Condition 4: not merely a reformatted version.
-    # Check by requiring a different artifact type than recent R4-covered ones,
-    # or by having new evidence that distinguishes it.
-    prior_artifact = candidate.metadata.get("prior_artifact_type")
-    if prior_artifact and candidate.artifact_type == prior_artifact:
-        # Same format, same topic — just a reformatted version.
-        return False, "appears to be a reformatted version of previous coverage"
+    # Condition 5: at least one material novelty signal exists.
+    # Artifact type difference alone does NOT qualify — it is recorded as
+    # metadata but cannot satisfy this condition by itself.
+    metadata = candidate.metadata or {}
+    has_novelty = any(metadata.get(k) for k in MATERIAL_NOVELTY_SIGNAL_KEYS)
+    if not has_novelty:
+        return False, "no material novelty signal — artifact type difference alone is insufficient"
+
+    # Record artifact type difference as metadata (for observability) but
+    # do not use it as a qualifying condition.
+    prior_artifact = metadata.get("prior_artifact_type")
+    if prior_artifact and candidate.artifact_type != prior_artifact:
+        # Already present in metadata; just note it for the record.
+        pass
 
     return True, "R4 material-development downgrade applied"
 
