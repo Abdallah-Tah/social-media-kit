@@ -18,6 +18,18 @@ from .flags import (
     editorial_timezone,
     editorial_zoneinfo,
 )
+from .candidate_adapter import (
+    NormalizationConfig,
+    NormalizationConfigError,
+    load_normalization_config,
+    normalize_and_score,
+    normalize_candidate,
+    normalize_many,
+)
+from .models import (
+    DEVELOPMENT_TYPES,
+    NormalizationError,
+)
 from .slots import (
     ContentType,
     Slot,
@@ -39,10 +51,18 @@ from .source_confidence import (
 )
 
 __all__ = [
+    "DEVELOPMENT_TYPES",
     "Candidate",
     "Claim",
     "Component",
     "ContentType",
+    "NormalizationConfig",
+    "NormalizationConfigError",
+    "NormalizationError",
+    "load_normalization_config",
+    "normalize_and_score",
+    "normalize_candidate",
+    "normalize_many",
     "ScoringConfig",
     "ScoringConfigError",
     "Slot",

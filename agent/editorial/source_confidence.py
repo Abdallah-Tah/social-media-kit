@@ -25,7 +25,6 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
-from urllib.parse import urlparse
 
 KIT = Path(__file__).resolve().parents[2]
 if str(KIT / "scripts") not in sys.path:
@@ -45,43 +44,26 @@ COMPONENTS = (
 )
 TOTAL_POINTS = 100
 
-# Source kinds that count as primary evidence.
-PRIMARY_KINDS = frozenset({
-    "official_announcement",
-    "official_documentation",
-    "release_notes",
-    "repository",
-    "repository_release",
-    "research_paper",
-    "standards_publication",
-    "government_publication",
-    "security_advisory",
-})
+# The model is shared with the adapter and lives in models.py. It is imported
+# rather than redefined so the scorer and candidate_adapter cannot drift apart.
+# The dependency is one-way: this module never imports the adapter.
+from .models import (  # noqa: E402
+    FIRST_PARTY_KINDS,
+    PRIMARY_KINDS,
+    Candidate,
+    Claim,
+    SourceRef,
+    canonical as _canonical_url,
+    parse_timestamp,
+    registrable_domain,
+)
 
-# The subset of primary kinds that are, by definition, the subject's OWN
-# material. These are evidence, never a second opinion, so they can never count
-# toward independent corroboration — otherwise a vendor's docs plus a vendor's
-# changelog would read as two independent organizations agreeing.
-#
-# The remaining primary kinds are deliberately excluded from this set: a paper,
-# a standards publication, a government filing, or an advisory from a body other
-# than the affected vendor CAN be genuine independent corroboration. Whether a
-# security advisory is first-party is decided by `subject_org`, not by its kind.
-FIRST_PARTY_KINDS = frozenset({
-    "official_announcement",
-    "official_documentation",
-    "release_notes",
-    "repository",
-    "repository_release",
-})
-
-# Multi-label public suffixes we care about, so bbc.co.uk and news.bbc.co.uk
-# collapse to one organization instead of reading as two.
-_TWO_LABEL_SUFFIXES = frozenset({
-    "co.uk", "org.uk", "ac.uk", "gov.uk", "co.jp", "or.jp", "ne.jp",
-    "com.au", "net.au", "org.au", "co.nz", "com.br", "co.in", "co.za",
-    "com.cn", "com.sg", "com.hk", "co.kr",
-})
+WARN_MISSING_EVENT_TIME = "missing_event_time"
+WARN_FUTURE_TIMESTAMP = "future_timestamp"
+WARN_CONFLICTING_TIMESTAMPS = "conflicting_source_timestamps"
+WARN_UNPARSEABLE_TIMESTAMP = "unparseable_timestamp"
+WARN_UNVERIFIED_VENDOR_CLAIM = "unverified_vendor_claim"
+WARN_NO_MATERIAL_CLAIMS = "no_material_claims"
 
 # Why a source was not counted toward independent corroboration.
 EXCLUSION_SYNDICATED = "syndicated_copy"
@@ -90,13 +72,6 @@ EXCLUSION_SAME_ORG = "same_organization"
 EXCLUSION_DUPLICATE_URL = "duplicate_canonical_url"
 EXCLUSION_FIRST_PARTY = "first_party_subject"
 EXCLUSION_NO_EVIDENCE = "repeats_vendor_statement_without_evidence"
-
-WARN_MISSING_EVENT_TIME = "missing_event_time"
-WARN_FUTURE_TIMESTAMP = "future_timestamp"
-WARN_CONFLICTING_TIMESTAMPS = "conflicting_source_timestamps"
-WARN_UNPARSEABLE_TIMESTAMP = "unparseable_timestamp"
-WARN_UNVERIFIED_VENDOR_CLAIM = "unverified_vendor_claim"
-WARN_NO_MATERIAL_CLAIMS = "no_material_claims"
 
 
 class ScoringConfigError(ValueError):
@@ -111,54 +86,6 @@ class ScoringConfigError(ValueError):
         location = f" in {path}" if path else ""
         joined = "\n  - ".join(self.problems)
         super().__init__(f"{len(self.problems)} problem(s){location}:\n  - {joined}")
-
-
-# ── Input model ─────────────────────────────────────────────────────────────
-
-@dataclass(frozen=True)
-class SourceRef:
-    """One piece of evidence behind a candidate."""
-    url: str
-    kind: str = "secondary"
-    title: str = ""
-    published_at: str = ""
-    publisher: str = ""            # explicit org identity; beats domain guessing
-    covers_exact_development: bool = False
-    links_to_primary: bool = False
-    syndicated_from: str | None = None
-    is_press_release: bool = False
-    adds_independent_evidence: bool = True
-    excerpt: str = ""
-
-    @property
-    def is_primary(self) -> bool:
-        return self.kind in PRIMARY_KINDS
-
-
-@dataclass(frozen=True)
-class Claim:
-    """A statement the candidate makes, and where it came from."""
-    text: str
-    material: bool = True
-    source_url: str | None = None
-    excerpt: str | None = None
-    vendor_claim: bool = False     # e.g. a vendor's own benchmark number
-
-
-@dataclass(frozen=True)
-class Candidate:
-    """Everything the scorer is allowed to look at. No I/O happens from here."""
-    title: str = ""
-    url: str = ""
-    source: str = ""
-    event_time: str = ""           # actual event / publication time
-    discovered_at: str = ""        # ingestion time — never used for recency
-    content_kind: str = "news"     # selects the recency profile
-    artifact: str | None = None    # overrides content_kind via artifact_profiles
-    subject_org: str = ""          # the vendor/org the story is about
-    sources: tuple[SourceRef, ...] = ()
-    claims: tuple[Claim, ...] = ()
-    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 # ── Output model ────────────────────────────────────────────────────────────
@@ -388,49 +315,13 @@ def load_scoring_config(path: Path | str | None = None) -> ScoringConfig:
 
 # ── Domain identity ─────────────────────────────────────────────────────────
 
-def registrable_domain(url: str) -> str:
-    """Collapse subdomains so one organization reads as one organization.
-
-    news.bbc.co.uk and bbc.co.uk are the same publisher; treating them as two
-    independent sources is exactly how corroboration gets inflated.
-    """
-    host = (urlparse(url or "").netloc or "").lower().split(":")[0]
-    host = host.removeprefix("www.")
-    if not host:
-        return ""
-    labels = host.split(".")
-    if len(labels) <= 2:
-        return host
-    if ".".join(labels[-2:]) in _TWO_LABEL_SUFFIXES:
-        return ".".join(labels[-3:])
-    return ".".join(labels[-2:])
-
-
 def _org_identity(ref: SourceRef) -> str:
-    """Explicit publisher wins; otherwise the registrable domain."""
-    return (ref.publisher or "").strip().lower() or registrable_domain(ref.url)
+    """Explicit organization_id, then publisher, then registrable domain."""
+    return ref.organization()
 
 
 def _canonical(url: str) -> str:
-    from agent.feed import canonical_url
-
-    return canonical_url(url or "").rstrip("/").lower()
-
-
-# ── Timestamps ──────────────────────────────────────────────────────────────
-
-def parse_timestamp(raw: Any) -> dt.datetime | None:
-    """Parse to an aware UTC datetime, or None. Naive input is assumed UTC."""
-    if not raw:
-        return None
-    text = str(raw).strip().replace("Z", "+00:00")
-    try:
-        parsed = dt.datetime.fromisoformat(text)
-    except (TypeError, ValueError):
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=dt.timezone.utc)
-    return parsed.astimezone(dt.timezone.utc)
+    return _canonical_url(url)
 
 
 # ── Components ──────────────────────────────────────────────────────────────

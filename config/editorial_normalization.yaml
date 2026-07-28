@@ -1,0 +1,162 @@
+# Editorial normalization (Phase 1, Stage 2.5) — declarative policy.
+#
+# Converts existing SMKit intelligence records (feed items, clusters, repo
+# records, paper records, vendor announcements, opportunity outputs) into the
+# shared editorial Candidate model. Deterministic: no LLM, no network.
+#
+# agent/editorial/candidate_adapter.py holds structure only; every mapping,
+# alias, and tolerance that an editor might want to tune lives here.
+
+version: 1
+
+# ── Development type ───────────────────────────────────────────────────────
+# Rules are evaluated IN ORDER and the first match wins, so ordering is the
+# precedence. A rule matches when every declared condition matches.
+# Conditions: source_kinds, domains, url_patterns, title_patterns,
+# metadata_equals, min_title_words. Patterns are case-insensitive regex.
+default_development_type: unknown
+
+development_type_rules:
+  - type: repository_release
+    source_kinds: [repository_release]
+  - type: repository_release
+    url_patterns: ['^https?://(www\.)?github\.com/[^/]+/[^/]+/releases']
+
+  - type: research_paper
+    source_kinds: [research_paper]
+  - type: research_paper
+    domains: [arxiv.org, openreview.net, biorxiv.org, acm.org, ieee.org]
+
+  - type: security_issue
+    source_kinds: [security_advisory]
+  - type: security_issue
+    domains: [cve.org, nvd.nist.gov, cisa.gov, ghsa.io]
+  - type: security_issue
+    title_patterns: ['\bCVE-\d{4}-\d+\b', '\bvulnerabilit', '\bzero[- ]day\b', '\bsecurity advisory\b', '\bexploit(ed|able)?\b']
+
+  - type: licensing_change
+    title_patterns: ['\brelicens', '\blicen[sc]e change\b', '\bchanges? (its )?licen[sc]e\b', '\bBUSL\b', '\bBSL\b', '\bAGPL\b', '\bre-?licensing\b', '\bopen[- ]sourc(es|ed|ing)\b']
+
+  - type: pricing_change
+    title_patterns: ['\bpricing\b', '\bprice (cut|drop|increase|change)', '\bnow costs?\b', '\bcheaper\b', '\bfree tier\b', '\bper million tokens\b']
+
+  - type: benchmark
+    title_patterns: ['\bbenchmark', '\bMMLU\b', '\bSWE-?bench\b', '\bHumanEval\b', '\boutperforms?\b', '\bscores? \d+(\.\d+)?%']
+
+  - type: model_release
+    title_patterns: ['\b(gpt|claude|gemini|llama|mistral|qwen|kimi|grok|phi|deepseek)[- ]?\d', '\b(model|llm)\b.{0,40}\b(release[ds]?|launch|announc|introduc|available)']
+
+  - type: api_release
+    title_patterns: ['\bAPI\b.{0,40}\b(launch|release[ds]?|available|general availability|GA)\b', '\bnew (public )?API\b', '\bendpoints?\b']
+
+  - type: compatibility_change
+    title_patterns: ['\bbreaking change', '\bdeprecat', '\bno longer supports?\b', '\bdrops? support\b', '\bincompatib', '\bmigration required\b']
+
+  - type: deployment_availability
+    title_patterns: ['\bgenerally available\b', '\bnow available in\b', '\brolling out\b', '\bnew region\b', '\bpreview available\b']
+
+  - type: documentation_update
+    source_kinds: [official_documentation]
+
+  - type: funding_or_company_news
+    title_patterns: ['\braises? \$', '\bseries [A-F]\b', '\bacquir(e|es|ed|ing)\b', '\bIPO\b', '\blayoffs?\b', '\bfunding round\b', '\bvaluation\b']
+
+  - type: product_release
+    source_kinds: [release_notes, official_announcement]
+  - type: product_release
+    title_patterns: ['\bv?\d+(\.\d+)+\b.{0,30}\b(release[ds]?|ships?|out now|available)\b', '\breleases? v?\d', '\bships? \d']
+
+  # Catch-all for a real headline that matched nothing specific. A record
+  # without a usable headline stays `unknown` rather than being guessed at.
+  - type: general_news
+    min_title_words: 3
+
+# ── Subject organization ───────────────────────────────────────────────────
+# A bare word match is never enough on its own: only a CONFIGURED alias can
+# resolve an organization from title text, and it resolves at medium confidence.
+subject_org:
+  min_confidence: 0.5
+  confidence:
+    explicit_metadata: 1.0
+    repository_owner: 0.9
+    first_party_source_domain: 0.9
+    configured_alias_domain: 0.8
+    configured_alias_name: 0.6
+    cluster_metadata: 0.5
+
+organization_aliases:
+  openai:      {display: OpenAI,      domains: [openai.com],       names: [openai]}
+  anthropic:   {display: Anthropic,   domains: [anthropic.com],    names: [anthropic]}
+  google:      {display: Google,      domains: [google.com, googleblog.com, deepmind.com], names: [google, deepmind]}
+  meta:        {display: Meta,        domains: [meta.com, fb.com], names: [meta ai]}
+  microsoft:   {display: Microsoft,   domains: [microsoft.com, azure.com], names: [microsoft, azure]}
+  postgresql:  {display: PostgreSQL,  domains: [postgresql.org],   names: [postgres, postgresql]}
+  laravel:     {display: Laravel,     domains: [laravel.com],      names: [laravel]}
+  python:      {display: Python,      domains: [python.org],       names: [cpython]}
+  rust:        {display: Rust,        domains: [rust-lang.org],    names: [rust-lang]}
+  nodejs:      {display: Node.js,     domains: [nodejs.org],       names: [node js, nodejs]}
+  docker:      {display: Docker,      domains: [docker.com],       names: [docker]}
+  hashicorp:   {display: HashiCorp,   domains: [hashicorp.com],    names: [hashicorp, terraform]}
+  mistral:     {display: Mistral AI,  domains: [mistral.ai],       names: [mistral]}
+  huggingface: {display: Hugging Face, domains: [huggingface.co],  names: [hugging face]}
+
+# ── Canonical topic identity ───────────────────────────────────────────────
+# canonical_topic_id = "<entity>:<development_type>:<release_key>"
+# Never collapse every development from one company into a single topic, so the
+# release key is required and falls back through explicit version -> model name
+# -> version in the title -> month bucket -> title slug.
+topic:
+  # Types whose "release" is a period rather than a version number.
+  month_bucket_types:
+    - pricing_change
+    - licensing_change
+    - funding_or_company_news
+    - security_issue
+    - general_news
+    - unknown
+  title_slug_max_words: 6
+  model_name_pattern: '\b(gpt|claude|gemini|llama|mistral|qwen|kimi|grok|phi|deepseek)[- ]?(\d+(?:\.\d+)*(?:-?[a-z]+)?)'
+  version_pattern: '\bv?(\d+(?:\.\d+){0,2})\b'
+
+# ── Timestamps ─────────────────────────────────────────────────────────────
+timestamps:
+  conflict_tolerance_hours: 24
+  future_tolerance_minutes: 5
+  # Metadata keys checked, in order, for an explicit event/release time.
+  explicit_event_keys:
+    - released_at
+    - release_date
+    - event_time
+    - published_at
+    - created_at
+
+# ── Claim extraction (deterministic, no LLM) ───────────────────────────────
+# Where a claim cannot be extracted reliably, a warning is recorded instead of
+# an invented claim.
+claims:
+  max_claims: 12
+  # Numeric/benchmark patterns pulled from titles and descriptions.
+  benchmark_patterns:
+    - '\b\d+(?:\.\d+)?%\b'
+    - '\b\d+(?:\.\d+)?x (?:faster|slower|cheaper)\b'
+    - '\bscores? \d+(?:\.\d+)?\b'
+  pricing_patterns:
+    - '\$\d+(?:\.\d+)?'
+    - '\b\d+(?:\.\d+)? ?(?:cents?|USD)\b'
+  # Claim type per development type, for the headline event fact.
+  event_claim_types:
+    model_release: capability
+    product_release: version_fact
+    api_release: availability
+    repository_release: version_fact
+    research_paper: event_fact
+    benchmark: benchmark
+    pricing_change: pricing
+    security_issue: security
+    licensing_change: licensing
+    documentation_update: event_fact
+    deployment_availability: availability
+    compatibility_change: capability
+    funding_or_company_news: event_fact
+    general_news: event_fact
+    unknown: unclassified
