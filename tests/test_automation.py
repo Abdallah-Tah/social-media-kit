@@ -228,8 +228,9 @@ class TestStateSeparation:
         assert config["feed_run"]["last_run"] == "2026-07-27T10:00:00+00:00"
         assert config["feed_run"]["enabled"] is True
 
-        definitions = json.loads((tmp_path / "automations.json").read_text())
-        assert "last_run" not in definitions["feed_run"]
+        # Migration must NOT rewrite the tracked definitions file.
+        on_disk = json.loads((tmp_path / "automations.json").read_text())
+        assert "last_run" in on_disk["feed_run"]  # original preserved
 
     def test_runtime_updates_do_not_dirty_definitions(self, tmp_path, monkeypatch):
         auto = _patch_paths(tmp_path, monkeypatch)

@@ -122,29 +122,32 @@ def _now_iso() -> str:
 
 
 def _migrate_once() -> None:
-    """Move runtime fields out of the tracked definitions file and relocate
-    the legacy log file.  Idempotent — runs at most once per process."""
+    """Seed the runtime state file from legacy definitions and relocate the
+    old log file.  Idempotent — runs at most once per process.
+
+    The migration is *read-only* for the tracked definitions file: it copies
+    runtime fields into the state directory without rewriting the definitions.
+    The next ``_save_config()`` call writes clean definitions naturally.
+    """
     global _migrated
     if _migrated:
         return
     _migrated = True
 
-    # 1. Extract runtime fields from content/automations.json if present.
-    if AUTOMATIONS_FILE.exists():
+    # 1. Seed runtime state from content/automations.json if the runtime
+    #    file does not yet exist.  Never rewrite the definitions file.
+    rt = _runtime_file()
+    if AUTOMATIONS_FILE.exists() and not rt.exists():
         try:
             saved = json.loads(AUTOMATIONS_FILE.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             saved = {}
         runtime: dict[str, dict[str, Any]] = {}
-        changed = False
-        for job_id, cfg in list(saved.items()):
-            extracted = {k: cfg.pop(k) for k in list(cfg.keys()) if k in _RUNTIME_FIELDS}
+        for job_id, cfg in saved.items():
+            extracted = {k: cfg[k] for k in cfg if k in _RUNTIME_FIELDS}
             if extracted:
                 runtime[job_id] = extracted
-                changed = True
-        if changed:
-            AUTOMATIONS_FILE.write_text(json.dumps(saved, indent=2), encoding="utf-8")
-            rt = _runtime_file()
+        if runtime:
             rt.parent.mkdir(parents=True, exist_ok=True)
             rt.write_text(json.dumps(runtime, indent=2), encoding="utf-8")
 

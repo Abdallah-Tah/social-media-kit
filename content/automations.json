@@ -4,10 +4,7 @@
     "description": "Fetch fresh Google News, Hacker News, and Reddit stories into the feed.",
     "interval_hours": 3,
     "enabled": true,
-    "dry_run": false,
-    "last_run": "2026-07-28T13:22:17.937839+00:00",
-    "last_result": "ok",
-    "last_error": ""
+    "dry_run": false
   },
   "intelligence_run": {
     "label": "Intelligence Run",
