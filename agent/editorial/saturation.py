@@ -284,6 +284,16 @@ class PublicationRecord:
     slot: str = ""
     title: str = ""
     legacy: bool = False
+    # Stage 3.5 contract fields. `identity_*` are carried for observability and
+    # deliberately NOT acted on: every entity is still treated as equally
+    # certain. Acting on confidence is an editorial choice to make against a
+    # measured distribution from replay, not to guess at now.
+    source_fingerprint: str = ""
+    primary_source_url: str = ""
+    corroborating_domains: tuple[str, ...] = ()
+    identity_source: str = ""
+    identity_confidence: float | None = None
+    schema_version: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -298,6 +308,12 @@ class PublicationRecord:
             "slot": self.slot,
             "title": self.title,
             "legacy": self.legacy,
+            "source_fingerprint": self.source_fingerprint,
+            "primary_source_url": self.primary_source_url,
+            "corroborating_domains": list(self.corroborating_domains),
+            "identity_source": self.identity_source,
+            "identity_confidence": self.identity_confidence,
+            "schema_version": self.schema_version,
         }
 
     @classmethod
@@ -317,6 +333,12 @@ class PublicationRecord:
             slot=data.get("slot", ""),
             title=data.get("title", ""),
             legacy=bool(data.get("legacy", False)),
+            source_fingerprint=data.get("source_fingerprint", ""),
+            primary_source_url=data.get("primary_source_url", ""),
+            corroborating_domains=tuple(data.get("corroborating_domains") or ()),
+            identity_source=data.get("identity_source", ""),
+            identity_confidence=data.get("identity_confidence"),
+            schema_version=int(data.get("schema_version") or 0),
         )
 
 
@@ -442,10 +464,15 @@ def build_history(rows: Iterable[dict[str, Any]],
                 entity = entity or parts[0]
                 development = development or parts[1]
 
+        # Stored values win. `theme` and `editorial_day` are frozen at
+        # publication by the Stage 3.5 contract precisely so that editing
+        # theme_map or the editorial timezone cannot retroactively rewrite what
+        # a past publication was. Read-time derivation is the legacy fallback.
         record = PublicationRecord(
             publication_id=identity,
             published_at=stamp,
-            editorial_day=_editorial_day(stamp, config.timezone),
+            editorial_day=(str(meta.get("editorial_day") or "")
+                           or _editorial_day(stamp, config.timezone)),
             canonical_topic_id=topic,
             entity=entity.lower(),
             development_type=development,
@@ -454,6 +481,12 @@ def build_history(rows: Iterable[dict[str, Any]],
             slot=str(meta.get("slot") or ""),
             title=str(row.get("title") or ""),
             legacy=not (topic and entity and development),
+            source_fingerprint=str(meta.get("source_fingerprint") or ""),
+            primary_source_url=str(meta.get("primary_source_url") or ""),
+            corroborating_domains=tuple(meta.get("corroborating_domains") or ()),
+            identity_source=str(meta.get("identity_source") or ""),
+            identity_confidence=meta.get("identity_confidence"),
+            schema_version=int(meta.get("schema_version") or 0),
         )
         if identity in seen:
             diagnostics["duplicate_publication_record"] += 1

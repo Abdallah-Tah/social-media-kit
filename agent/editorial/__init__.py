@@ -37,6 +37,14 @@ from .slots import (
     SlotConfigError,
     load_slots,
 )
+from .publication_record import (
+    PUBLICATION_METADATA_VERSION,
+    PublicationMetadataError,
+    backfill_metadata,
+    build_publication_metadata,
+    record_publication,
+    validate_publication_metadata,
+)
 from .saturation import (
     ContinuationClaim,
     HistoryView,
@@ -82,6 +90,12 @@ __all__ = [
     "NormalizationConfig",
     "NormalizationConfigError",
     "NormalizationError",
+    "PUBLICATION_METADATA_VERSION",
+    "PublicationMetadataError",
+    "backfill_metadata",
+    "build_publication_metadata",
+    "record_publication",
+    "validate_publication_metadata",
     "ContinuationClaim",
     "HistoryView",
     "PublicationRecord",
