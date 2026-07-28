@@ -4,9 +4,13 @@ Sits between the existing feed intelligence (agent/feed_authority.py,
 agent/feed_clustering.py, agent/feed_opportunity.py) and the existing
 publishers. Composes them; does not replace them.
 
-Stage 1 ships the feature flag, the slot configuration loader, and the twelve
-editorial formats. Scoring, saturation, admission, readiness, and the brief
-generators arrive in later stages.
+Stage 1 — feature flag, slot config loader, twelve editorial formats.
+Stage 2 — source-confidence scoring.
+Stage 2.5 — candidate normalization adapter.
+Stage 2.6 — source relationships.
+Stage 3 — deterministic saturation prevention.
+Stage 3.5 — publication metadata contract.
+Stage 4 — deterministic admission and backup-candidate selection.
 
 Nothing here runs in production while EDITORIAL_SLOTS_ENABLED is false, and the
 editorial formats are structurally isolated from the live rotation registries
@@ -57,6 +61,41 @@ from .saturation import (
     load_history,
     load_saturation_config,
     relationship_observability,
+)
+from .admission import (
+    ALL_REASON_CODES,
+    ADMITTED,
+    AdmissionResult,
+    CandidateEvaluation,
+    REASON_EXPLANATIONS,
+    REJECTED,
+    RC_ARTIFACT_NOT_ALLOWED,
+    RC_ARTIFACT_REPETITION,
+    RC_CANDIDATE_LIMIT_REACHED,
+    RC_DEVELOPMENT_TYPE_NOT_ALLOWED,
+    RC_ENTITY_DEVELOPMENT_SATURATED,
+    RC_ENTITY_SATURATED,
+    RC_EXACT_TOPIC_DUPLICATE,
+    RC_INSUFFICIENT_CORROBORATION,
+    RC_INVALID_CANDIDATE,
+    RC_MISSING_REQUIRED_CLAIM_EVIDENCE,
+    RC_NO_CANDIDATE_PASSED,
+    RC_OPPORTUNITY_SCORE_BELOW_THRESHOLD,
+    RC_PRACTICAL_VALUE_MISSING,
+    RC_PRIMARY_SOURCE_REQUIRED,
+    RC_SAME_DAY_REUSE,
+    RC_SOURCE_CONFIDENCE_BELOW_THRESHOLD,
+    RC_THEME_SATURATED,
+    SKIPPED_NO_CANDIDATE,
+    SlotPolicy,
+    SlotPolicyError,
+    WARNING,
+    admit_to_slot,
+    assess_practical_value,
+    build_slot_policy,
+    evaluate_and_record,
+    evaluate_candidate,
+    record_shadow_decision,
 )
 from .source_relationships import (
     RelationshipConfig,
@@ -134,4 +173,39 @@ __all__ = [
     "load_slots",
     "registrable_domain",
     "score_source_confidence",
+    # Stage 4 — admission
+    "ADMITTED",
+    "REJECTED",
+    "WARNING",
+    "INVALID_CANDIDATE",
+    "SKIPPED_NO_CANDIDATE",
+    "ALL_REASON_CODES",
+    "REASON_EXPLANATIONS",
+    "RC_INVALID_CANDIDATE",
+    "RC_SOURCE_CONFIDENCE_BELOW_THRESHOLD",
+    "RC_PRIMARY_SOURCE_REQUIRED",
+    "RC_INSUFFICIENT_CORROBORATION",
+    "RC_OPPORTUNITY_SCORE_BELOW_THRESHOLD",
+    "RC_EXACT_TOPIC_DUPLICATE",
+    "RC_ENTITY_SATURATED",
+    "RC_ENTITY_DEVELOPMENT_SATURATED",
+    "RC_THEME_SATURATED",
+    "RC_SAME_DAY_REUSE",
+    "RC_ARTIFACT_REPETITION",
+    "RC_DEVELOPMENT_TYPE_NOT_ALLOWED",
+    "RC_ARTIFACT_NOT_ALLOWED",
+    "RC_PRACTICAL_VALUE_MISSING",
+    "RC_MISSING_REQUIRED_CLAIM_EVIDENCE",
+    "RC_CANDIDATE_LIMIT_REACHED",
+    "RC_NO_CANDIDATE_PASSED",
+    "AdmissionResult",
+    "CandidateEvaluation",
+    "SlotPolicy",
+    "SlotPolicyError",
+    "admit_to_slot",
+    "assess_practical_value",
+    "build_slot_policy",
+    "evaluate_and_record",
+    "evaluate_candidate",
+    "record_shadow_decision",
 ]
