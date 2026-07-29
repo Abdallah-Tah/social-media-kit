@@ -85,3 +85,6 @@ state/editorial/
 
 # Derived saturation cache — rebuildable from the decision log, machine-local.
 content/feed/.saturation_index.json
+
+# Machine-local agent state (Qwen Code session data).
+.qwen/

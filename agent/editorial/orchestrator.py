@@ -445,6 +445,29 @@ def _run_slot(
 
     evaluations: list[dict[str, Any]] = []
 
+    # ── Artifact slots: generate directly, skip candidate pipeline ─────────
+    if content_type.is_artifact:
+        artifact_dict = None
+        try:
+            artifact_dict = _generate_artifact(
+                content_type, slot_id, editorial_day, (),
+                None, "", {}, None,
+                None, "", (), candidates,
+                None, content_type.artifact,
+            )
+        except Exception:
+            pass
+        return SlotResult(
+            slot_id=slot_id,
+            content_type=ct_name,
+            editorial_day=editorial_day,
+            outcome=OUTCOME_READY_IN_SHADOW,
+            format_id=content_type.artifact,
+            artifact_type=content_type.artifact,
+            readiness_status="artifact",
+            artifact=artifact_dict,
+        )
+
     # ── Load slot config for saturation/admission ──────────────────────────
     try:
         slot_config = load_slots()
@@ -555,10 +578,14 @@ def _run_slot(
 
     # ── Format selection ───────────────────────────────────────────────────
     try:
-        import content_formats as CF
         if content_type.is_artifact:
             format_id = content_type.artifact
+        elif content_type.formats:
+            # Pick from the slot's content type format pool, not the global
+            # editorial registry. Use the first format deterministically.
+            format_id = content_type.formats[0]
         else:
+            import content_formats as CF
             format_id = CF.pick_format("editorial")
     except Exception as exc:
         return SlotResult(
@@ -642,6 +669,7 @@ def _run_slot(
         slot_policy = {
             "slot_id": slot_id,
             "source_confidence_min": slot.source_confidence_min(),
+            "source_confidence_threshold": slot.source_confidence_min(),
             "editorial_quality_min": slot.editorial_quality_min(),
         }
         readiness_input = RDY.ReadinessInput(
@@ -655,6 +683,11 @@ def _run_slot(
             artifact_type=format_id,
             format_id=format_id,
             editorial_day=editorial_day,
+            generation_metadata={
+                "admitted_artifact_type": format_id,
+                "admitted_format_id": format_id,
+                "generated_at": now.isoformat(),
+            },
         )
         readiness_decision = RDY.evaluate_readiness(readiness_input, now=now)
     except Exception as exc:
