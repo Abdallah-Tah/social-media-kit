@@ -20,6 +20,10 @@ from agent.editorial.evidence_retrieval import (
     load_evidence_retrieval_config,
     retrieve_evidence_for_candidates,
 )
+from agent.editorial.evidence_extraction import (
+    load_extraction_config,
+    extract_structured_evidence,
+)
 from agent.editorial.replay import WeeklyReplayInput, run_weekly_replay
 from agent.editorial.orchestrator import (
     OUTCOME_READY_IN_SHADOW,
@@ -263,9 +267,52 @@ def main():
 
         print("  Running AFTER-EVIDENCE replay (enriched + evidence)...")
         after_evidence = run_replay(evidence_by_day, history)
+        
+        # ── Structured evidence extraction (Stage 7C.8) ─────────────────────
+        extraction_config = load_extraction_config()
+        if extraction_config.enabled:
+            print("\n  Extracting structured evidence (Stage 7C.8)...")
+            extraction_by_day = {}
+            total_extraction = 0
+            extraction_metrics = {
+                "candidates_extracted": 0,
+                "claims_accepted": 0,
+                "claims_rejected": 0,
+                "cache_hits": 0,
+                "llm_calls": 0,
+                "total_tokens": 0,
+                "total_cost_usd": 0.0,
+                "total_latency_ms": 0,
+            }
+            for d in DATES:
+                evidence_records = list(evidence_by_day[d])
+                extraction_records, metrics = extract_structured_evidence(evidence_records, extraction_config)
+                extraction_by_day[d] = tuple(extraction_records)
+                total_extraction += len(extraction_records)
+                # Aggregate metrics
+                for key in extraction_metrics:
+                    if key in metrics:
+                        extraction_metrics[key] += metrics[key]
+            print(f"  Total candidates with extraction: {total_extraction}")
+            print(f"  Extraction metrics:")
+            print(f"    Candidates extracted: {extraction_metrics['candidates_extracted']}")
+            print(f"    Claims accepted: {extraction_metrics['claims_accepted']}")
+            print(f"    Claims rejected: {extraction_metrics['claims_rejected']}")
+            print(f"    Cache hits: {extraction_metrics['cache_hits']}")
+            print(f"    LLM calls: {extraction_metrics['llm_calls']}")
+            print(f"    Total tokens: {extraction_metrics['total_tokens']}")
+            print(f"    Total cost: ${extraction_metrics['total_cost_usd']:.4f}")
+            print(f"    Total latency: {extraction_metrics['total_latency_ms']}ms")
+            
+            print("  Running AFTER-EXTRACTION replay (enriched + evidence + extraction)...")
+            after_extraction = run_replay(extraction_by_day, history)
+        else:
+            print("\n  Structured extraction disabled (EDITORIAL_EVIDENCE_EXTRACTION_ENABLED=false)")
+            after_extraction = after_evidence
     else:
         print("\n  Evidence retrieval disabled (EVIDENCE_RETRIEVAL_ENABLED=false)")
         after_evidence = after
+        after_extraction = after
 
     # ── Comparison ─────────────────────────────────────────────────────────
     print_comparison(before, after)
@@ -275,6 +322,12 @@ def main():
         print("  EVIDENCE RETRIEVAL IMPACT (Stage 7C.7)")
         print("=" * 78)
         print_comparison(after, after_evidence)
+        
+        if extraction_config.enabled:
+            print(f"\n{'='*78}")
+            print("  STRUCTURED EXTRACTION IMPACT (Stage 7C.8)")
+            print("=" * 78)
+            print_comparison(after_evidence, after_extraction)
 
     # ── Per-slot detail (after) ────────────────────────────────────────────
     print(f"\n{'='*78}")
