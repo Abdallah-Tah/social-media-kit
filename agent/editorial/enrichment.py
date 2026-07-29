@@ -28,10 +28,14 @@ from .models import (
     VERIFIED_INDEPENDENT,
     VERIFIED_VENDOR,
     VERIFIED_UNKNOWN,
+    SourceRef,
     registrable_domain,
 )
 
 ENRICHMENT_VERSION = 1
+
+# Relationships that count as independent corroboration (Stage 2.6 validated).
+_INDEPENDENT_RELATIONSHIPS = frozenset({"independent_reporting", "adds_independent_evidence"})
 
 # ── Status constants ─────────────────────────────────────────────────────────
 
@@ -661,6 +665,12 @@ def _extract_excerpts(title: str, summary: str, metadata: dict[str, Any]) -> lis
 
 # ── Corroboration detection ──────────────────────────────────────────────────
 
+_PRESS_RELEASE_SOURCES = frozenset({
+    "press_release", "pr_newswire", "business_wire", "globenewswire",
+    "prweb", "einpresswire", "accesswire",
+})
+
+
 def _detect_corroboration(
     item: dict[str, Any],
     related_items: Sequence[dict[str, Any]],
@@ -672,8 +682,9 @@ def _detect_corroboration(
     Stage 2.6 relationship detector before counting as independent
     corroboration.
 
-    Excludes: syndicated copies, press-release mirrors, same-owner domains,
-    duplicate canonical URLs.
+    Same-domain sources are pre-filtered (identity dedup). Press-release
+    and syndication signals are captured for source_relationships.py to
+    classify, not pre-excluded here.
     """
     item_url = str(item.get("url", ""))
     item_domain = registrable_domain(item_url)
@@ -699,10 +710,16 @@ def _detect_corroboration(
         if similarity < 0.3:
             continue
 
-        # Exclude syndicated copies and press-release mirrors.
+        # Capture signals for source_relationships.py classification.
         rel_source = str(related.get("source", "")).lower()
-        if rel_source in ("press_release", "pr_newswire", "business_wire"):
-            continue
+        rel_meta = related.get("metadata") or {}
+        excerpt = str(related.get("summary", "") or related.get("description", "") or "").strip()
+        is_press_release = bool(rel_source in _PRESS_RELEASE_SOURCES or rel_meta.get("is_press_release"))
+        syndicated_from = (
+            str(rel_meta.get("syndicated_from", "")).strip()
+            or str(rel_meta.get("original_source", "")).strip()
+            or None
+        )
 
         seen_domains.add(rel_domain)
         # Title overlap identifies a RELATED source candidate only.
@@ -713,13 +730,82 @@ def _detect_corroboration(
             "title": str(related.get("title", "")),
             "publisher": rel_domain,
             "covers_exact_development": similarity > 0.5,
-            "adds_independent_evidence": False,  # Must be validated by Stage 2.6
-            "relationship_candidate": True,  # Flag for Stage 2.6 review
+            "adds_independent_evidence": False,  # Set only after Stage 2.6 validation
+            "relationship_candidate": True,
+            "relationship": "relationship_unknown",
+            "independent_corroboration": False,
+            "evidence_kinds": [],
             "is_primary": False,
+            "is_press_release": is_press_release,
+            "syndicated_from": syndicated_from,
+            "excerpt": excerpt,
+            "feed_source": rel_source,
             "similarity": round(similarity, 2),
         })
 
     return corroborating
+
+
+def _validate_corroboration(
+    primary_source: dict[str, Any] | None,
+    candidates: list[dict[str, Any]],
+    subject_org: str,
+    item_summary: str = "",
+    item_source: str = "",
+) -> None:
+    """Validate related-source candidates via source_relationships.py.
+
+    Builds SourceRefs for the primary source and candidates, runs
+    detect_relationships, and updates each candidate with its classified
+    relationship, adds_independent_evidence flag, and independent_corroboration
+    flag. Only sources classified as independent_reporting or
+    adds_independent_evidence count as corroboration.
+
+    Fails closed: if validation raises, candidates remain unvalidated
+    (not counted as independent).
+    """
+    if not candidates:
+        return
+
+    from .source_relationships import detect_relationships
+
+    refs: list[SourceRef] = []
+    if primary_source:
+        refs.append(SourceRef(
+            url=str(primary_source.get("url", "")),
+            kind=str(primary_source.get("kind", "secondary")),
+            title=str(primary_source.get("title", "")),
+            publisher=str(primary_source.get("publisher", "")),
+            excerpt=item_summary,
+            feed_source=item_source,
+            covers_exact_development=bool(primary_source.get("covers_exact_development")),
+        ))
+
+    offset = len(refs)
+    for c in candidates:
+        refs.append(SourceRef(
+            url=str(c.get("url", "")),
+            kind=str(c.get("kind", "secondary")),
+            title=str(c.get("title", "")),
+            publisher=str(c.get("publisher", "")),
+            excerpt=str(c.get("excerpt", "")),
+            feed_source=str(c.get("feed_source", "")),
+            is_press_release=bool(c.get("is_press_release")),
+            syndicated_from=c.get("syndicated_from"),
+            covers_exact_development=bool(c.get("covers_exact_development")),
+        ))
+
+    try:
+        results = detect_relationships(refs, subject_org=subject_org)
+    except Exception:
+        # Fail closed: candidates stay unvalidated (not counted).
+        return
+
+    for c, result in zip(candidates, results[offset:]):
+        c["relationship"] = result.relationship
+        c["evidence_kinds"] = list(result.evidence_kinds)
+        c["adds_independent_evidence"] = bool(result.adds_independent_evidence)
+        c["independent_corroboration"] = result.relationship in _INDEPENDENT_RELATIONSHIPS
 
 
 # ── Main enrichment function ─────────────────────────────────────────────────
@@ -771,6 +857,9 @@ def enrich_candidate(
 
     # 5. Corroboration.
     corroborating = _detect_corroboration(item, related_items)
+    # Validate related-source candidates via source_relationships.py.
+    _validate_corroboration(primary_source, corroborating, subject_org,
+                            item_summary=summary, item_source=source)
 
     # 6. Build sources list.
     sources: list[dict[str, Any]] = []
@@ -778,6 +867,7 @@ def enrich_candidate(
         sources.append(primary_source)
     sources.extend(corroborating)
     # Add the original URL as a source if it's not already the primary.
+    # The item's own URL is not independent evidence of itself.
     if url and (not primary_source or primary_source.get("url") != url):
         sources.append({
             "url": url,
@@ -785,7 +875,7 @@ def enrich_candidate(
             "title": title,
             "publisher": registrable_domain(url),
             "covers_exact_development": False,
-            "adds_independent_evidence": bool(corroborating),
+            "adds_independent_evidence": False,
             "is_primary": False,
             "feed_source": source,
         })

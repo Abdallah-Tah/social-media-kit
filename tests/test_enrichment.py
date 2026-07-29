@@ -113,7 +113,13 @@ class TestPrimarySourceResolution:
 # ── corroboration ────────────────────────────────────────────────────────────
 
 class TestCorroboration:
-    def test_same_day_related_becomes_relationship_candidate(self):
+    def test_title_overlap_alone_is_insufficient(self):
+        """Title overlap creates a related-source candidate, not corroboration.
+
+        Without an excerpt containing evidence markers, source_relationships.py
+        classifies the source as relationship_unknown, which does not count as
+        independent corroboration.
+        """
         item = {
             "title": "OpenAI releases GPT-5 with native tool use",
             "url": "https://openai.com/blog/gpt-5",
@@ -122,8 +128,9 @@ class TestCorroboration:
         related = [
             {
                 "title": "GPT-5 review: native tool use changes everything",
-                "url": "https://techcrunch.com/2026/07/20/gpt-5-review",
+                "url": "https://theverge.com/2026/07/20/gpt-5-review",
                 "source": "google_news",
+                # No summary/excerpt — source_relationships cannot validate it.
             },
         ]
         result = enrich_candidate(item, related_items=related)
@@ -134,27 +141,71 @@ class TestCorroboration:
         assert len(related_sources) >= 1
         for s in related_sources:
             assert s["adds_independent_evidence"] is False
+            assert s["independent_corroboration"] is False
+            assert s["relationship"] == "relationship_unknown"
 
     def test_syndicated_copy_excluded(self):
+        """Syndicated copies are classified by source_relationships.py and excluded.
+
+        A source on a known syndication domain (msn.com) is classified as
+        syndicated_copy and does not count as independent corroboration.
+        """
         item = {
-            "title": "OpenAI releases GPT-5",
+            "title": "OpenAI releases GPT-5 with native tool use",
             "url": "https://openai.com/blog/gpt-5",
             "source": "hackernews",
+            "summary": "OpenAI announced GPT-5 today with native tool use.",
+        }
+        related = [
+            {
+                "title": "OpenAI releases GPT-5 with native tool use",
+                "url": "https://msn.com/openai-gpt-5",
+                "source": "google_news",
+                "summary": "OpenAI releases GPT-5 with native tool use today.",
+            },
+        ]
+        result = enrich_candidate(item, related_items=related)
+        syndicated = [s for s in result.sources
+                      if "msn.com" in s.get("url", "")]
+        assert len(syndicated) == 1
+        assert syndicated[0]["relationship"] == "syndicated_copy"
+        assert syndicated[0]["adds_independent_evidence"] is False
+        assert syndicated[0]["independent_corroboration"] is False
+
+    def test_press_release_mirror_excluded(self):
+        """Press-release mirrors are classified by source_relationships.py and excluded.
+
+        A source on a known press-release domain (prnewswire.com) is classified
+        as press_release_mirror and does not count as independent corroboration.
+        """
+        item = {
+            "title": "OpenAI releases GPT-5 with native tool use",
+            "url": "https://openai.com/blog/gpt-5",
+            "source": "hackernews",
+            "summary": "OpenAI announced GPT-5 today with native tool use.",
         }
         related = [
             {
                 "title": "OpenAI releases GPT-5",
                 "url": "https://prnewswire.com/releases/openai-gpt-5",
                 "source": "press_release",
+                "summary": "OpenAI releases GPT-5 with native tool use.",
             },
         ]
         result = enrich_candidate(item, related_items=related)
-        corroborating = [s for s in result.sources
-                         if s.get("adds_independent_evidence")
-                         and "prnewswire" in s.get("url", "")]
-        assert len(corroborating) == 0
+        press_release = [s for s in result.sources
+                         if "prnewswire" in s.get("url", "")]
+        assert len(press_release) == 1
+        assert press_release[0]["relationship"] == "press_release_mirror"
+        assert press_release[0]["adds_independent_evidence"] is False
+        assert press_release[0]["independent_corroboration"] is False
 
-    def test_same_domain_not_counted_twice(self):
+    def test_same_owner_domains_excluded(self):
+        """Same-owner domains are excluded from independent corroboration.
+
+        A source on the same registrable domain as the primary (openai.com)
+        is the subject's own material and cannot be independent corroboration.
+        """
         item = {
             "title": "OpenAI releases GPT-5",
             "url": "https://openai.com/blog/gpt-5",
@@ -173,6 +224,37 @@ class TestCorroboration:
                           if "openai.com" in s.get("url", "")
                           and s.get("adds_independent_evidence")]
         assert len(openai_sources) == 0
+
+    def test_independent_benchmark_evidence_counted(self):
+        """Independent benchmark or technical evidence is counted as corroboration.
+
+        A source from a different organization with an excerpt containing
+        evidence markers (e.g., "we benchmarked", "in our tests") is classified
+        by source_relationships.py as adds_independent_evidence and counts as
+        independent corroboration.
+        """
+        item = {
+            "title": "OpenAI releases GPT-5 with native tool use",
+            "url": "https://openai.com/blog/gpt-5",
+            "source": "hackernews",
+            "summary": "OpenAI announced GPT-5 today with native tool use.",
+        }
+        related = [
+            {
+                "title": "GPT-5 review: native tool use changes everything",
+                "url": "https://techcrunch.com/2026/07/20/gpt-5-benchmark",
+                "source": "google_news",
+                "summary": "We benchmarked GPT-5 against Claude in our own tests and measured a 2x speedup on coding tasks.",
+            },
+        ]
+        result = enrich_candidate(item, related_items=related)
+        benchmark_sources = [s for s in result.sources
+                             if "techcrunch.com" in s.get("url", "")]
+        assert len(benchmark_sources) == 1
+        assert benchmark_sources[0]["relationship"] == "adds_independent_evidence"
+        assert benchmark_sources[0]["adds_independent_evidence"] is True
+        assert benchmark_sources[0]["independent_corroboration"] is True
+        assert "independent_benchmark" in benchmark_sources[0]["evidence_kinds"]
 
 
 # ── practical signals ────────────────────────────────────────────────────────
