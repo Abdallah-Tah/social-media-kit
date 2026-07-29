@@ -13,6 +13,7 @@ from agent.editorial.evidence_extraction import (
     candidate_fingerprint,
     evidence_fingerprint,
 )
+from agent.editorial.models import Candidate
 from agent import llm_ops
 
 
@@ -239,7 +240,11 @@ class TestExtractStructuredEvidence:
         assert metrics["candidates_extracted"] == 1
         assert metrics["claims_accepted"] == 2
         assert metrics["llm_calls"] == 1
-        assert "structured_extraction" in candidates[0]["metadata"]
+        assert metrics["candidates_merged"] == 1
+        # Verify the Candidate object has merged claims
+        assert len(candidates[0].claims) >= 2
+        # Verify sources were merged
+        assert len(candidates[0].sources) >= 2
 
     @patch("agent.editorial.evidence_extraction.llm_ops.chat")
     def test_malformed_json_fails_safely(self, mock_chat, config, sample_candidate):
@@ -256,7 +261,9 @@ class TestExtractStructuredEvidence:
         
         assert metrics["candidates_extracted"] == 0
         assert "Malformed JSON" in metrics["validation_failures"][0]
-        assert "structured_extraction" not in candidates[0].get("metadata", {})
+        # Verify the Candidate object was still created (without extraction)
+        assert len(candidates) == 1
+        assert isinstance(candidates[0], Candidate)
 
     @patch("agent.editorial.evidence_extraction.llm_ops.chat")
     def test_cache_hit_avoids_llm_call(self, mock_chat, config, sample_candidate, valid_extraction):
@@ -313,9 +320,11 @@ class TestExtractStructuredEvidence:
             
             candidates, metrics = extract_structured_evidence([sample_candidate], config)
             
-            # Original candidate should be preserved
-            assert candidates[0]["metadata"]["fetched_evidence"] == original_metadata["fetched_evidence"]
-            assert "structured_extraction" not in candidates[0]["metadata"]
+            # Original candidate should be preserved (as a Candidate object)
+            assert len(candidates) == 1
+            assert isinstance(candidates[0], Candidate)
+            # Verify metadata was preserved
+            assert candidates[0].metadata.get("fetched_evidence") == original_metadata["fetched_evidence"]
 
 
 class TestFingerprints:

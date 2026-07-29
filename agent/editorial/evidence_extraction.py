@@ -27,6 +27,8 @@ from pathlib import Path
 from typing import Any
 
 from agent import llm_ops
+from .evidence_merge import merge_extraction_into_candidate
+from .models import Candidate
 
 KIT = Path(__file__).resolve().parents[2]
 EXTRACTION_CACHE_PATH = KIT / "content" / "feed" / "evidence_extraction_cache.json"
@@ -227,16 +229,21 @@ def validate_extraction(
 def extract_structured_evidence(
     candidates: list[dict[str, Any]],
     config: ExtractionConfig | None = None,
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+) -> tuple[list[Candidate], dict[str, Any]]:
     """Extract structured evidence from fetched evidence using LLM.
     
-    Returns (updated_candidates, metrics).
+    Converts dict candidates to Candidate objects, extracts evidence,
+    validates, merges into new immutable Candidates, and returns merged Candidates.
+    
+    Returns (merged_candidates, metrics).
     """
     if config is None:
         config = load_extraction_config()
     
     if not config.enabled:
-        return candidates, {"enabled": False}
+        # Convert to Candidate objects without extraction
+        from .candidate_adapter import normalize_candidate
+        return [normalize_candidate(c) for c in candidates], {"enabled": False}
     
     # Load cache
     cache: dict[str, Any] = {}
@@ -261,15 +268,36 @@ def extract_structured_evidence(
         "total_cost_usd": 0.0,
         "total_latency_ms": 0,
         "validation_failures": [],
+        "candidates_merged": 0,
     }
     
-    for candidate in top_candidates:
-        fetched_evidence = candidate.get("metadata", {}).get("fetched_evidence", [])
+    merged_candidates: list[Candidate] = []
+    
+    # Convert remaining candidates without extraction
+    from .candidate_adapter import normalize_candidate
+    for candidate_dict in remaining:
+        try:
+            merged_candidates.append(normalize_candidate(candidate_dict))
+        except Exception:
+            pass  # Skip invalid candidates
+    
+    # Process top candidates with extraction
+    for candidate_dict in top_candidates:
+        fetched_evidence = candidate_dict.get("metadata", {}).get("fetched_evidence", [])
+        
+        # Convert to Candidate object
+        try:
+            candidate = normalize_candidate(candidate_dict)
+        except Exception as e:
+            metrics["validation_failures"].append(f"Failed to adapt candidate: {e}")
+            continue
+        
         if not fetched_evidence:
+            merged_candidates.append(candidate)
             continue
         
         # Check cache
-        cand_fp = candidate_fingerprint(candidate)
+        cand_fp = candidate_fingerprint(candidate_dict)
         evidence_fp = evidence_fingerprint(fetched_evidence)
         cache_key = f"{cand_fp}_{evidence_fp}_v{EXTRACTION_SCHEMA_VERSION}_{config.model}"
         
@@ -278,7 +306,7 @@ def extract_structured_evidence(
             metrics["cache_hits"] += 1
         else:
             # Build prompt and call LLM
-            messages = build_extraction_prompt(candidate, config)
+            messages = build_extraction_prompt(candidate_dict, config)
             result = llm_ops.chat(
                 messages,
                 model=config.model,
@@ -295,6 +323,7 @@ def extract_structured_evidence(
             
             if not result.ok:
                 metrics["validation_failures"].append(f"LLM call failed: {result.error}")
+                merged_candidates.append(candidate)
                 continue
             
             # Parse JSON
@@ -302,6 +331,7 @@ def extract_structured_evidence(
                 extraction = result.json()
             except Exception:
                 metrics["validation_failures"].append("Malformed JSON from LLM")
+                merged_candidates.append(candidate)
                 continue
             
             # Validate extraction
@@ -313,10 +343,16 @@ def extract_structured_evidence(
             # Cache extraction
             cache[cache_key] = extraction
         
-        # Merge extraction into candidate
-        candidate.setdefault("metadata", {})["structured_extraction"] = extraction
-        metrics["candidates_extracted"] += 1
-        metrics["claims_accepted"] += len(extraction.get("claims", []))
+        # Merge extraction into Candidate
+        try:
+            merged_candidate = merge_extraction_into_candidate(candidate, extraction, fetched_evidence)
+            merged_candidates.append(merged_candidate)
+            metrics["candidates_extracted"] += 1
+            metrics["candidates_merged"] += 1
+            metrics["claims_accepted"] += len(extraction.get("claims", []))
+        except Exception as e:
+            metrics["validation_failures"].append(f"Merge failed: {e}")
+            merged_candidates.append(candidate)  # Preserve original on merge failure
     
     # Save cache
     try:
@@ -325,5 +361,4 @@ def extract_structured_evidence(
     except Exception:
         pass
     
-    # Return updated candidates
-    return top_candidates + list(remaining), metrics
+    return merged_candidates, metrics

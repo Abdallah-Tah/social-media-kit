@@ -283,10 +283,13 @@ def main():
                 "total_tokens": 0,
                 "total_cost_usd": 0.0,
                 "total_latency_ms": 0,
+                "candidates_merged": 0,
             }
             for d in DATES:
                 evidence_records = list(evidence_by_day[d])
-                extraction_records, metrics = extract_structured_evidence(evidence_records, extraction_config)
+                extraction_candidates, metrics = extract_structured_evidence(evidence_records, extraction_config)
+                # Convert merged Candidate objects back to dicts for replay pipeline
+                extraction_records = [c.to_dict() for c in extraction_candidates]
                 extraction_by_day[d] = tuple(extraction_records)
                 total_extraction += len(extraction_records)
                 # Aggregate metrics
@@ -296,6 +299,7 @@ def main():
             print(f"  Total candidates with extraction: {total_extraction}")
             print(f"  Extraction metrics:")
             print(f"    Candidates extracted: {extraction_metrics['candidates_extracted']}")
+            print(f"    Candidates merged: {extraction_metrics['candidates_merged']}")
             print(f"    Claims accepted: {extraction_metrics['claims_accepted']}")
             print(f"    Claims rejected: {extraction_metrics['claims_rejected']}")
             print(f"    Cache hits: {extraction_metrics['cache_hits']}")
