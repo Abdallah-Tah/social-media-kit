@@ -514,7 +514,17 @@ def _run_slot(
     sc_results: dict[str, Any] = {}
     for c in normalized:
         try:
-            sc_results[c.candidate_id] = SC.score_source_confidence(c, now=now)
+            sc_result = SC.score_source_confidence(c, now=now)
+            sc_results[c.candidate_id] = sc_result
+            # Persist full source-confidence breakdown for observability
+            evaluations.append({
+                "stage": "source_confidence",
+                "candidate_id": c.candidate_id,
+                "status": "scored",
+                "total_score": sc_result.score,
+                "components": sc_result.to_dict()["components"],
+                "warnings": list(sc_result.warnings),
+            })
         except Exception as exc:
             evaluations.append({
                 "stage": "source_confidence",

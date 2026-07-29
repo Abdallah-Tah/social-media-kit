@@ -102,6 +102,9 @@ def run_replay(candidates_by_day: dict, history: list[dict]) -> dict:
     total_evaluated = 0
     admitted = 0
     formats = Counter()
+    
+    # Source-confidence observability
+    sc_details = []  # List of (candidate_id, total_score, components, warnings, rejection_reasons)
 
     for day in result.days:
         for sr in day.slot_results:
@@ -112,13 +115,34 @@ def run_replay(candidates_by_day: dict, history: list[dict]) -> dict:
                 eq_scores.append(sr.editorial_quality)
             if sr.format_id:
                 formats[sr.format_id] += 1
+            
+            # Extract source-confidence component details
+            candidate_sc_details = {}
+            candidate_rejection_reasons = []
             for ev in sr.evaluations:
+                if ev.get("stage") == "source_confidence" and ev.get("status") == "scored":
+                    candidate_sc_details[ev["candidate_id"]] = {
+                        "total_score": ev.get("total_score"),
+                        "components": ev.get("components", {}),
+                        "warnings": ev.get("warnings", []),
+                    }
                 if ev.get("stage") == "admission":
                     total_evaluated += 1
                     if ev.get("status") == "admitted":
                         admitted += 1
-                    for r in ev.get("rejection_reasons", []):
+                    candidate_rejection_reasons = ev.get("rejection_reasons", [])
+                    for r in candidate_rejection_reasons:
                         rejection_reasons[r] += 1
+            
+            # Store source-confidence details with rejection reasons
+            for cand_id, details in candidate_sc_details.items():
+                sc_details.append({
+                    "candidate_id": cand_id,
+                    "total_score": details["total_score"],
+                    "components": details["components"],
+                    "warnings": details["warnings"],
+                    "rejection_reasons": candidate_rejection_reasons,
+                })
 
     return {
         "outcome_counts": dict(outcome_counts),
@@ -135,6 +159,7 @@ def run_replay(candidates_by_day: dict, history: list[dict]) -> dict:
              sr.readiness_status, sr.format_id)
             for d in result.days for sr in d.slot_results
         ],
+        "sc_details": sc_details,  # Full source-confidence breakdowns
     }
 
 
@@ -207,6 +232,68 @@ def print_comparison(before: dict, after: dict):
         b = before["formats"].get(fmt, 0)
         a = after["formats"].get(fmt, 0)
         print(f"    {fmt:<38} {b:>10} {a:>10}")
+
+
+def print_top_candidates(replay_result: dict, candidates_by_day: dict, top_n: int = 10):
+    """Print the top N strongest candidates with full component breakdowns."""
+    sc_details = replay_result.get("sc_details", [])
+    if not sc_details:
+        print("\n  No source-confidence details available.")
+        return
+    
+    # Sort by total score (descending)
+    sorted_candidates = sorted(sc_details, key=lambda x: x.get("total_score", 0), reverse=True)
+    top_candidates = sorted_candidates[:top_n]
+    
+    print(f"\n{'='*78}")
+    print(f"  TOP {top_n} STRONGEST CANDIDATES (by source-confidence score)")
+    print("=" * 78)
+    
+    # Build a lookup for candidate metadata
+    candidate_lookup = {}
+    for day, candidates in candidates_by_day.items():
+        for cand in candidates:
+            cand_id = cand.get("candidate_id", "")
+            if cand_id:
+                candidate_lookup[cand_id] = cand
+    
+    for i, details in enumerate(top_candidates, 1):
+        cand_id = details.get("candidate_id", "")
+        total_score = details.get("total_score", 0)
+        components = details.get("components", {})
+        warnings = details.get("warnings", [])
+        rejection_reasons = details.get("rejection_reasons", [])
+        
+        # Get candidate metadata
+        cand = candidate_lookup.get(cand_id, {})
+        title = cand.get("title", "Unknown")[:60]
+        dev_type = cand.get("development_type", "unknown")
+        subject_org = cand.get("subject_org", "")
+        
+        print(f"\n  {i}. {title}")
+        print(f"     Candidate ID: {cand_id}")
+        print(f"     Development Type: {dev_type}")
+        print(f"     Subject Org: {subject_org or '(unresolved)'}")
+        print(f"     Total Score: {total_score}")
+        
+        # Component breakdown
+        print(f"     Components:")
+        for comp_name in ["primary_source", "corroboration", "domain_authority", "recency", "claim_traceability"]:
+            comp = components.get(comp_name, {})
+            score = comp.get("score", 0)
+            max_score = comp.get("max", 0)
+            reason = comp.get("reason", "")
+            print(f"       - {comp_name:<25} {score:>3}/{max_score:<3} {reason}")
+        
+        # Warnings
+        if warnings:
+            print(f"     Warnings: {', '.join(warnings)}")
+        
+        # Rejection reasons
+        if rejection_reasons:
+            print(f"     Rejection Reasons: {', '.join(rejection_reasons)}")
+        else:
+            print(f"     Rejection Reasons: (none - admitted)")
 
 
 def main():
@@ -332,6 +419,9 @@ def main():
             print("  STRUCTURED EXTRACTION IMPACT (Stage 7C.8)")
             print("=" * 78)
             print_comparison(after_evidence, after_extraction)
+            
+            # Report top 10 strongest candidates with full component breakdowns
+            print_top_candidates(after_extraction, extraction_by_day, top_n=10)
 
     # ── Per-slot detail (after) ────────────────────────────────────────────
     print(f"\n{'='*78}")
