@@ -175,6 +175,12 @@ from .orchestrator import (
     SlotResult,
     run_pipeline,
 )
+from .replay import (
+    DayReplayResult,
+    WeeklyReplayInput,
+    WeeklyReplayResult,
+    run_weekly_replay,
+)
 
 __all__ = [
     "DEVELOPMENT_TYPES",
@@ -313,4 +319,9 @@ __all__ = [
     "PipelineResult",
     "SlotResult",
     "run_pipeline",
+    # Stage 7C — historical replay
+    "DayReplayResult",
+    "WeeklyReplayInput",
+    "WeeklyReplayResult",
+    "run_weekly_replay",
 ]
