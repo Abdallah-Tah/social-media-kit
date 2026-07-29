@@ -665,10 +665,15 @@ def _detect_corroboration(
     item: dict[str, Any],
     related_items: Sequence[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Identify corroborating sources from same-day related items.
+    """Identify related-source candidates from same-day related items.
 
-    Counts independent organizations, not URLs. Excludes syndicated copies,
-    press-release mirrors, same-owner domains, and duplicate canonical URLs.
+    Title overlap identifies RELATED sources only. It does NOT set
+    adds_independent_evidence=True. Every related source must pass the
+    Stage 2.6 relationship detector before counting as independent
+    corroboration.
+
+    Excludes: syndicated copies, press-release mirrors, same-owner domains,
+    duplicate canonical URLs.
     """
     item_url = str(item.get("url", ""))
     item_domain = registrable_domain(item_url)
@@ -700,13 +705,16 @@ def _detect_corroboration(
             continue
 
         seen_domains.add(rel_domain)
+        # Title overlap identifies a RELATED source candidate only.
+        # adds_independent_evidence is False until Stage 2.6 validates it.
         corroborating.append({
             "url": rel_url,
             "kind": "secondary",
             "title": str(related.get("title", "")),
             "publisher": rel_domain,
             "covers_exact_development": similarity > 0.5,
-            "adds_independent_evidence": True,
+            "adds_independent_evidence": False,  # Must be validated by Stage 2.6
+            "relationship_candidate": True,  # Flag for Stage 2.6 review
             "is_primary": False,
             "similarity": round(similarity, 2),
         })
@@ -809,8 +817,11 @@ def enrich_candidate(
         confidence += 10
     if claims:
         confidence += 15
-    if corroborating:
-        confidence += 15
+    # Related-source candidates add partial credit (not full corroboration).
+    # Full corroboration credit requires Stage 2.6 validation.
+    relationship_candidates = [s for s in sources if s.get("relationship_candidate")]
+    if relationship_candidates:
+        confidence += 5  # Partial credit for related sources found
     if excerpts:
         confidence += 10
     if event_time:

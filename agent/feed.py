@@ -93,6 +93,15 @@ DEFAULT_ENRICHMENT_ENABLED = True
 DEFAULT_MAX_ITEMS_PER_RUN = 5
 DEFAULT_DAILY_BUDGET_USD = 0.50
 
+# ── Editorial enrichment bounds (Stage 7C.6) ─────────────────────────────────
+# Deterministic enrichment that adds structured evidence to feed items.
+# No LLM, no network. Bounded to prevent unbounded work per feed run.
+EDITORIAL_ENRICHMENT_CACHE_PATH = FEED_DIR / "editorial_enrichment_cache.json"
+EDITORIAL_ENRICHMENT_VERSION = 1
+DEFAULT_EDITORIAL_ENRICHMENT_ENABLED = True
+DEFAULT_EDITORIAL_ENRICHMENT_MAX_ITEMS = 20
+DEFAULT_EDITORIAL_ENRICHMENT_CACHE_TTL_DAYS = 30
+
 # ── Dedicated feed-enrichment model ─────────────────────────────────────────
 # Deliberately NOT AgentConfig. The agent loop runs kimi-k2.7-code:cloud, a
 # reasoning model whose reasoning tokens are drawn from the same completion
@@ -482,6 +491,132 @@ def _log_enrichment(fingerprint: str, item: FeedItem, action: str,
             fh.write(json.dumps(row) + "\n")
     except OSError:
         pass
+
+
+# ── Editorial enrichment (Stage 7C.6) ────────────────────────────────────────
+
+def editorial_enrichment_settings() -> dict[str, Any]:
+    """Resolve editorial enrichment bounds: env > config/feed.yaml > default."""
+    cfg = _load_feed_config().get("editorial_enrichment") or {}
+    return {
+        "enabled": _coalesce(
+            _as_bool(os.environ.get("EDITORIAL_ENRICHMENT_ENABLED")),
+            _as_bool(cfg.get("enabled")),
+            DEFAULT_EDITORIAL_ENRICHMENT_ENABLED,
+        ),
+        "max_items_per_run": max(0, int(_coalesce(
+            _as_number(os.environ.get("EDITORIAL_ENRICHMENT_MAX_ITEMS_PER_RUN"), int),
+            _as_number(cfg.get("max_items_per_run"), int),
+            DEFAULT_EDITORIAL_ENRICHMENT_MAX_ITEMS,
+        ))),
+        "cache_ttl_days": max(1, int(_coalesce(
+            _as_number(os.environ.get("EDITORIAL_ENRICHMENT_CACHE_TTL_DAYS"), int),
+            _as_number(cfg.get("cache_ttl_days"), int),
+            DEFAULT_EDITORIAL_ENRICHMENT_CACHE_TTL_DAYS,
+        ))),
+    }
+
+
+def editorial_enrichment_fingerprint(item: FeedItem) -> str:
+    """Fingerprint for editorial enrichment caching.
+
+    Based on canonical URL, title, summary, source, and enrichment version.
+    Changed source metadata invalidates the cache.
+    """
+    basis = "\n".join([
+        f"editorial_v{EDITORIAL_ENRICHMENT_VERSION}",
+        canonical_url(item.url),
+        (item.title or "").strip(),
+        (item.summary or "").strip(),
+        (item.source or "").strip(),
+    ])
+    return hashlib.sha256(basis.encode("utf-8")).hexdigest()
+
+
+def _load_editorial_enrichment_cache() -> dict[str, Any]:
+    if not EDITORIAL_ENRICHMENT_CACHE_PATH.exists():
+        return {}
+    try:
+        data = json.loads(EDITORIAL_ENRICHMENT_CACHE_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_editorial_enrichment_cache(cache: dict[str, Any], ttl_days: int) -> None:
+    cutoff = (_now() - dt.timedelta(days=ttl_days)).isoformat()
+    pruned = {
+        fp: entry for fp, entry in cache.items()
+        if isinstance(entry, dict) and str(entry.get("ts", "")) >= cutoff
+    }
+    try:
+        FEED_DIR.mkdir(parents=True, exist_ok=True)
+        EDITORIAL_ENRICHMENT_CACHE_PATH.write_text(
+            json.dumps(pruned, indent=2), encoding="utf-8")
+    except OSError:
+        pass  # Caching is an optimization; never break a feed refresh
+
+
+def enrich_feed_items(items: list[FeedItem]) -> list[dict[str, Any]]:
+    """Enrich feed items with deterministic editorial evidence.
+
+    Returns a list of flat dicts (backward-compatible with FeedItem.to_dict())
+    with an added ``editorial_enrichment`` key. Old readers that don't know
+    about this key simply ignore it.
+
+    Bounded by EDITORIAL_ENRICHMENT_MAX_ITEMS_PER_RUN. Highest-ranked items
+    are enriched first. Cache is used for unchanged records. Failed enrichment
+    is not cached as successful.
+    """
+    from agent.editorial.enrichment import enrich_many
+
+    settings = editorial_enrichment_settings()
+    if not settings["enabled"]:
+        return [item.to_dict() for item in items]
+
+    max_items = settings["max_items_per_run"]
+    ttl_days = settings["cache_ttl_days"]
+    cache = _load_editorial_enrichment_cache()
+
+    results: list[dict[str, Any]] = []
+
+    # Batch-enrich for cross-item corroboration detection.
+    items_to_enrich = items[:max_items]
+    items_to_skip = items[max_items:]
+
+    if items_to_enrich:
+        raw_dicts = [item.to_dict() for item in items_to_enrich]
+        enriched_pairs = enrich_many(raw_dicts)
+
+        for item, (raw_dict, enrichment) in zip(items_to_enrich, enriched_pairs):
+            fp = editorial_enrichment_fingerprint(item)
+            item_dict = item.to_dict()
+
+            # Check cache.
+            cached = cache.get(fp)
+            if cached and cached.get("version") == EDITORIAL_ENRICHMENT_VERSION:
+                enrichment_data = cached.get("enrichment")
+            else:
+                enrichment_data = enrichment.to_dict()
+                # Only cache successful enrichment.
+                if enrichment.status != "failed":
+                    cache[fp] = {
+                        "ts": _now().isoformat(),
+                        "version": EDITORIAL_ENRICHMENT_VERSION,
+                        "enrichment": enrichment_data,
+                    }
+
+            item_dict["editorial_enrichment"] = enrichment_data
+            results.append(item_dict)
+
+    # Items beyond the limit get no enrichment.
+    for item in items_to_skip:
+        item_dict = item.to_dict()
+        item_dict["editorial_enrichment"] = None
+        results.append(item_dict)
+
+    _save_editorial_enrichment_cache(cache, ttl_days)
+    return results
 
 
 # ── Daily spend (reads the Phase 0 ledger; never estimates) ──────────────────
@@ -893,15 +1028,29 @@ def _llm_enrich(item: FeedItem, profile: dict[str, Any], cfg: FeedLLMConfig) -> 
 
 # ── Output / persistence ────────────────────────────────────────────────────
 
-def save_feed(items: list[FeedItem], path: Path | None = None) -> Path:
+def save_feed(items: list[FeedItem], path: Path | None = None,
+              include_editorial_enrichment: bool = True) -> Path:
     if path is None:
         today = _now().strftime("%Y-%m-%d")
         path = FEED_DIR / f"{today}.json"
     FEED_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Build items list with optional editorial enrichment.
+    # Enrichment adds an ``editorial_enrichment`` key to each flat item dict.
+    # Old readers that don't know about this key simply ignore it.
+    if include_editorial_enrichment:
+        try:
+            enriched_items = enrich_feed_items(items)
+        except Exception:
+            # Enrichment failure must never break feed save.
+            enriched_items = [item.to_dict() for item in items]
+    else:
+        enriched_items = [item.to_dict() for item in items]
+
     payload = {
         "generated_at": _now().isoformat(),
         "count": len(items),
-        "items": [item.to_dict() for item in items],
+        "items": enriched_items,
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path

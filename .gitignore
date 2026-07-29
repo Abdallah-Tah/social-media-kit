@@ -67,6 +67,7 @@ content/newsletter_drafts/
 content/llm_usage.jsonl
 content/content_decisions.jsonl
 content/feed/enrichment_log.jsonl
+content/feed/editorial_enrichment_cache.json
 
 # Automation runtime state — git-ignored; definitions live in content/automations.json.
 state/

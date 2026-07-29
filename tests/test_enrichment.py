@@ -113,7 +113,7 @@ class TestPrimarySourceResolution:
 # ── corroboration ────────────────────────────────────────────────────────────
 
 class TestCorroboration:
-    def test_same_day_related_becomes_corroboration(self):
+    def test_same_day_related_becomes_relationship_candidate(self):
         item = {
             "title": "OpenAI releases GPT-5 with native tool use",
             "url": "https://openai.com/blog/gpt-5",
@@ -127,10 +127,13 @@ class TestCorroboration:
             },
         ]
         result = enrich_candidate(item, related_items=related)
-        # Should have at least the primary + corroboration + original URL
+        # Should have the primary + related source candidate + original URL
         assert len(result.sources) >= 2
-        corroborating = [s for s in result.sources if s.get("adds_independent_evidence")]
-        assert len(corroborating) >= 1
+        # Title overlap does NOT set adds_independent_evidence=True
+        related_sources = [s for s in result.sources if s.get("relationship_candidate")]
+        assert len(related_sources) >= 1
+        for s in related_sources:
+            assert s["adds_independent_evidence"] is False
 
     def test_syndicated_copy_excluded(self):
         item = {
