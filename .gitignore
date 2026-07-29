@@ -89,3 +89,7 @@ content/feed/.saturation_index.json
 
 # Machine-local agent state (Qwen Code session data).
 .qwen/
+
+# Runtime state (published content tracking)
+content/format_history.json
+content/linkedin_daily_posts.json
