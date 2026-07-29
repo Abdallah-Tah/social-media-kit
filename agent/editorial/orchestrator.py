@@ -542,12 +542,13 @@ def _run_slot(
         )
 
     # Record admission evaluations
-    for ev in (admission_result.evaluations if hasattr(admission_result, "evaluations") else ()):
+    for ev in (admission_result.evaluated_candidates
+               if hasattr(admission_result, "evaluated_candidates") else ()):
         evaluations.append({
             "stage": "admission",
             "candidate_id": getattr(ev, "candidate_id", ""),
             "status": getattr(ev, "status", ""),
-            "rejection_reasons": list(getattr(ev, "rejection_reasons", ()) or ()),
+            "rejection_reasons": list(getattr(ev, "reason_codes", ()) or ()),
         })
 
     selected_id = admission_result.selected_candidate_id or ""
