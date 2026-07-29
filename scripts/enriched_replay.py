@@ -16,6 +16,10 @@ sys.path.insert(0, str(KIT))
 sys.path.insert(0, str(KIT / "scripts"))
 
 from agent.editorial.enrichment import enrich_many
+from agent.editorial.evidence_retrieval import (
+    load_evidence_retrieval_config,
+    retrieve_evidence_for_candidates,
+)
 from agent.editorial.replay import WeeklyReplayInput, run_weekly_replay
 from agent.editorial.orchestrator import (
     OUTCOME_READY_IN_SHADOW,
@@ -241,8 +245,36 @@ def main():
     print("  Running AFTER replay (enriched)...")
     after = run_replay(enriched_by_day, history)
 
+    # ── Evidence retrieval (Stage 7C.7) ───────────────────────────────────
+    evidence_config = load_evidence_retrieval_config()
+    if evidence_config.enabled:
+        print("\n  Retrieving evidence for top candidates (Stage 7C.7)...")
+        evidence_by_day = {}
+        total_evidence = 0
+        for d in DATES:
+            enriched_records = list(enriched_by_day[d])
+            evidence_records = retrieve_evidence_for_candidates(enriched_records, evidence_config)
+            evidence_by_day[d] = tuple(evidence_records)
+            total_evidence += len(evidence_records)
+        print(f"  Total candidates with evidence retrieval: {total_evidence}")
+        print(f"  Config: max_candidates={evidence_config.max_candidates_per_run}, "
+              f"max_urls={evidence_config.max_urls_per_candidate}, "
+              f"timeout={evidence_config.timeout_seconds}s")
+
+        print("  Running AFTER-EVIDENCE replay (enriched + evidence)...")
+        after_evidence = run_replay(evidence_by_day, history)
+    else:
+        print("\n  Evidence retrieval disabled (EVIDENCE_RETRIEVAL_ENABLED=false)")
+        after_evidence = after
+
     # ── Comparison ─────────────────────────────────────────────────────────
     print_comparison(before, after)
+    
+    if evidence_config.enabled:
+        print(f"\n{'='*78}")
+        print("  EVIDENCE RETRIEVAL IMPACT (Stage 7C.7)")
+        print("=" * 78)
+        print_comparison(after, after_evidence)
 
     # ── Per-slot detail (after) ────────────────────────────────────────────
     print(f"\n{'='*78}")
