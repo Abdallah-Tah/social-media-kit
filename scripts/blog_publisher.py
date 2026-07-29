@@ -136,6 +136,25 @@ def _publish_generic(api_url, api_token, f):
         post = result["data"]
         print(f"✅ Published: Post ID {post.get('id')}, Slug: {post.get('slug')}")
         return post
+    # 405 fallback: Laravel route only allows GET/HEAD on /posts — retry via /projects
+    if resp.status_code == 405:
+        print("⚠️  /posts returned 405 — retrying via /api/v1/projects (compatible route)")
+        resp2 = requests.post(
+            f"{api_url}/projects", json=payload,
+            headers={"Authorization": f"Bearer {api_token}",
+                     "Content-Type": "application/json", "Accept": "application/json"},
+            timeout=30,
+        )
+        try:
+            result2 = resp2.json()
+        except Exception:
+            result2 = {}
+        if resp2.status_code in (200, 201) and "data" in result2:
+            post = result2["data"]
+            print(f"✅ Published via /projects: Post ID {post.get('id')}, Slug: {post.get('slug')}")
+            return post
+        print(f"❌ Blog API /projects error ({resp2.status_code}): {json.dumps(result2, indent=2)[:500]}")
+        return None
     print(f"❌ Blog API error ({resp.status_code}): {json.dumps(result, indent=2)[:500]}")
     return None
 
