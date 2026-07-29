@@ -181,6 +181,15 @@ from .replay import (
     WeeklyReplayResult,
     run_weekly_replay,
 )
+from .enrichment import (
+    EnrichmentResult,
+    STATUS_ENRICHED,
+    STATUS_PARTIALLY_ENRICHED,
+    STATUS_INSUFFICIENT_EVIDENCE,
+    STATUS_FAILED,
+    enrich_candidate,
+    enrich_many,
+)
 
 __all__ = [
     "DEVELOPMENT_TYPES",
@@ -324,4 +333,12 @@ __all__ = [
     "WeeklyReplayInput",
     "WeeklyReplayResult",
     "run_weekly_replay",
+    # Stage 7C.5 — candidate enrichment
+    "EnrichmentResult",
+    "STATUS_ENRICHED",
+    "STATUS_PARTIALLY_ENRICHED",
+    "STATUS_INSUFFICIENT_EVIDENCE",
+    "STATUS_FAILED",
+    "enrich_candidate",
+    "enrich_many",
 ]
