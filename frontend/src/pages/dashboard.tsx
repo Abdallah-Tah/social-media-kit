@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardDescription, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Stage7dShadowCard } from '@/components/Stage7dShadow'
 import type { SocialDraft } from '@/api/models'
 
 function isDue(d: SocialDraft) {
@@ -98,6 +99,9 @@ export default function DashboardPage() {
           <RefreshCw className="h-4 w-4 mr-1" />Refresh
         </Button>
       </div>
+
+      {/* Stage 7D live shadow (read-only) */}
+      <Stage7dShadowCard />
 
       {/* Operational KPIs */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

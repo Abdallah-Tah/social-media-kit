@@ -356,3 +356,78 @@ export interface Snapshot {
   cards: IntelligenceCard[]
   top_brief?: Brief | null
 }
+
+// ── Stage 7D Live Shadow (read-only) ────────────────────────────────────────
+
+export type Stage7dServiceStatus = 'not_started' | 'running' | 'completed' | 'failed'
+export type Stage7dSlotStatus = 'waiting' | 'running' | 'completed' | 'failed'
+
+export interface Stage7dService {
+  status: Stage7dServiceStatus
+  pid: number | null
+  started_at: string | null
+  planned_completion_at: string | null
+  time_remaining_seconds: number | null
+}
+
+export interface Stage7dSafety {
+  shadow_mode: boolean
+  editorial_slots_enabled: boolean
+  publishing_enabled: boolean
+  notifications_enabled: boolean
+  cron_unchanged: boolean
+}
+
+export interface Stage7dNextSlot {
+  slot_id: string
+  scheduled_at: string | null
+}
+
+export interface Stage7dProgress {
+  slots_expected: number
+  slots_completed: number
+  next_slot: Stage7dNextSlot | null
+}
+
+export interface Stage7dSlot {
+  slot_id: string
+  content_type: string
+  scheduled_at: string | null
+  completed_at: string | null
+  status: Stage7dSlotStatus
+  candidates_received: number
+  candidates_enriched: number
+  evidence_urls_fetched: number
+  extraction_successes: number
+  extraction_failures: number
+  top_source_confidence_scores: number[]
+  selected_candidate: string | null
+  selected_format: string | null
+  admission_result: string | null
+  quality_score: number | null
+  readiness_status: string | null
+  shadow_outcome: string | null
+  latency_ms: number | null
+  api_cost_usd: number | null
+  result_path: string | null
+}
+
+export interface Stage7dAggregate {
+  ready_in_shadow: number
+  ready_with_warnings_hold: number
+  requires_manual_review: number
+  quality_rejected: number
+  skipped_no_candidate: number
+  draft_generation_failed: number
+  total_api_cost_usd: number
+}
+
+export interface Stage7dStatus {
+  ok: boolean
+  error?: string
+  service: Stage7dService
+  safety: Stage7dSafety
+  progress: Stage7dProgress
+  slots: Stage7dSlot[]
+  aggregate: Stage7dAggregate
+}

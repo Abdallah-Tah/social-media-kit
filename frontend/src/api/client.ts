@@ -18,6 +18,7 @@ import type {
   Snapshot,
   SnapshotSummary,
   SocialDraft,
+  Stage7dStatus,
 } from './models'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
@@ -37,6 +38,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   getState: () => request<Record<string, unknown>>('/state'),
+
+  getStage7dStatus: () => request<Stage7dStatus>('/editorial/stage7d-status'),
 
   getAnalytics: (days?: number | null, platform?: string | null) => {
     const params = new URLSearchParams()

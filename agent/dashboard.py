@@ -22,6 +22,7 @@ from .config import AgentConfig, ROOT, list_profiles, load_profile
 from .dashboard_automation import register_routes as automation_routes
 from .dashboard_campaigns import register_routes as campaign_routes
 from .dashboard_connections import register_routes as connection_routes
+from .dashboard_editorial import register_routes as editorial_routes
 from .dashboard_feed import register_routes as feed_routes
 from .dashboard_intelligence import register_routes as intelligence_routes
 from .orchestrator import run_agent
@@ -320,6 +321,10 @@ def _make_handler():
                 result = feed_routes(path, query)
                 status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
                 return self._send(status, result)
+            if self._is_editorial_api(path):
+                result = editorial_routes(path, query)
+                status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
+                return self._send(status, result)
 
             # Intelligence, draft, social draft, and scheduler API.
             if self._is_intelligence_module_api(path):
@@ -450,6 +455,9 @@ def _make_handler():
 
         def _is_feed_api(self, path: str) -> bool:
             return path == "/api/feed" or path.startswith("/api/feed/")
+
+        def _is_editorial_api(self, path: str) -> bool:
+            return path == "/api/editorial" or path.startswith("/api/editorial/")
 
         def _upload(self):
             q = parse_qs(urlparse(self.path).query)
