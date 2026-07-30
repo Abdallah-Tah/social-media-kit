@@ -153,18 +153,23 @@ class TestCache:
         assert loaded == cache
 
     def test_cache_pruning(self, config):
+        import datetime as dt
         config = EvidenceRetrievalConfig(cache_ttl_days=1, cache_path=config.cache_path)
+        # Compute timestamps relative to now so the test is not wall-clock dependent.
+        now = dt.datetime.now(dt.timezone.utc)
+        recent = (now - dt.timedelta(hours=1)).isoformat()   # inside the 1-day TTL
+        stale = (now - dt.timedelta(days=2)).isoformat()     # outside the 1-day TTL
         cache = {
             "https://old.com": {
                 "url": "https://old.com",
                 "content": "Old",
-                "fetched_at": "2020-01-01T00:00:00Z",
+                "fetched_at": stale,
                 "status": 200,
             },
             "https://new.com": {
                 "url": "https://new.com",
                 "content": "New",
-                "fetched_at": "2026-07-29T00:00:00Z",
+                "fetched_at": recent,
                 "status": 200,
             }
         }
