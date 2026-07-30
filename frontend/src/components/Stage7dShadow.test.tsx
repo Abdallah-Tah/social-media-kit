@@ -121,9 +121,9 @@ describe('Stage7dShadowCard', () => {
     await waitFor(() => {
       expect(screen.getByText('● running')).toBeInTheDocument()
     })
-    // Slot ids render.
-    expect(screen.getByText('practical_takeaway')).toBeInTheDocument()
-    expect(screen.getByText('intelligence_brief')).toBeInTheDocument()
+    // Slot names appear in both the progress bar and the card header.
+    expect(screen.getAllByText('practical_takeaway').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('intelligence_brief').length).toBeGreaterThan(0)
     // Completed slot shows its shadow outcome.
     expect(screen.getByText('ready_in_shadow')).toBeInTheDocument()
   })
@@ -161,12 +161,13 @@ describe('Stage7dShadowCard', () => {
     vi.mocked(api.getStage7dStatus).mockResolvedValue(degraded)
 
     wrap(<Stage7dShadowCard />)
-    // Wait for the (degraded) data to load; component must not throw.
+    // Wait for the (degraded) data to load — the empty-schedule message only
+    // renders once the data section is present. Component must not throw.
     await waitFor(() => {
-      expect(screen.getByText('not started')).toBeInTheDocument()
+      expect(screen.getByText(/No slot schedule available yet/i)).toBeInTheDocument()
     })
     expect(screen.getByTestId('stage7d-shadow-banner')).toBeInTheDocument()
-    expect(screen.getByText(/No slot schedule available yet/i)).toBeInTheDocument()
+    expect(screen.getByText('not started')).toBeInTheDocument()
   })
 
   it('renders a slot safely when most of its fields are missing', async () => {
@@ -181,7 +182,8 @@ describe('Stage7dShadowCard', () => {
 
     wrap(<Stage7dShadowCard />)
     await waitFor(() => {
-      expect(screen.getByText('midday_authority')).toBeInTheDocument()
+      // Slot name appears in both the progress bar and the card header.
+      expect(screen.getAllByText('midday_authority').length).toBeGreaterThan(0)
     })
     expect(screen.getByText(/Waiting for scheduled time/i)).toBeInTheDocument()
   })

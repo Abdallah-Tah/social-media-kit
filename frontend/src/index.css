@@ -1,6 +1,12 @@
 @import "tailwindcss";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/600.css";
+@import "@fontsource/jetbrains-mono/700.css";
 
 @theme {
+  /* buildwithabdallah brand mono voice (JetBrains Mono w/ technical fallbacks). */
+  --font-bwa-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
   --color-background: hsl(222 47% 6%);
   --color-foreground: hsl(210 40% 96%);
   --color-card: hsl(222 47% 9%);
