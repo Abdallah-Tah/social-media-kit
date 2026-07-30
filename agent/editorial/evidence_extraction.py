@@ -83,9 +83,16 @@ def evidence_fingerprint(fetched_evidence: list[dict[str, Any]]) -> str:
     return hashlib.sha256(basis.encode()).hexdigest()[:16]
 
 
-def build_extraction_prompt(candidate: dict[str, Any], config: ExtractionConfig) -> list[dict[str, str]]:
-    """Build LLM prompt for structured evidence extraction."""
-    fetched_evidence = candidate.get("metadata", {}).get("fetched_evidence", [])
+def build_extraction_prompt(candidate: dict[str, Any], config: ExtractionConfig,
+                            cleaned_evidence: list[dict[str, Any]] | None = None) -> list[dict[str, str]]:
+    """Build LLM prompt for structured evidence extraction.
+
+    If cleaned_evidence is provided (boilerplate-stripped article text), it is
+    used instead of the raw fetched content, so the size limit applies to clean
+    article text rather than raw HTML.
+    """
+    fetched_evidence = (cleaned_evidence if cleaned_evidence is not None
+                        else candidate.get("metadata", {}).get("fetched_evidence", []))
     
     # Build bounded evidence text
     evidence_text = ""
@@ -295,7 +302,15 @@ def extract_structured_evidence(
         if not fetched_evidence:
             merged_candidates.append(candidate)
             continue
-        
+
+        # Clean the fetched evidence (strip page boilerplate) before extraction so
+        # the input budget is spent on article text, not raw HTML chrome.
+        from .content_cleaning import clean_fetched_evidence
+        fallback_text = str(candidate_dict.get("summary", "") or candidate_dict.get("title", "") or "")
+        cleaned_evidence, cleaning_diags = clean_fetched_evidence(
+            fetched_evidence, fallback_text=fallback_text)
+        metrics.setdefault("cleaning_diagnostics", []).extend(cleaning_diags)
+
         # Check cache
         cand_fp = candidate_fingerprint(candidate_dict)
         evidence_fp = evidence_fingerprint(fetched_evidence)
@@ -305,8 +320,8 @@ def extract_structured_evidence(
             extraction = cache[cache_key]
             metrics["cache_hits"] += 1
         else:
-            # Build prompt and call LLM
-            messages = build_extraction_prompt(candidate_dict, config)
+            # Build prompt and call LLM (using cleaned article text)
+            messages = build_extraction_prompt(candidate_dict, config, cleaned_evidence=cleaned_evidence)
             result = llm_ops.chat(
                 messages,
                 model=config.model,
@@ -334,18 +349,18 @@ def extract_structured_evidence(
                 merged_candidates.append(candidate)
                 continue
             
-            # Validate extraction
-            source_urls = [e.get("url", "") for e in fetched_evidence if e.get("url")]
-            extraction, rejections = validate_extraction(extraction, fetched_evidence, source_urls)
+            # Validate extraction (quotes must appear in the cleaned text the model saw)
+            source_urls = [e.get("url", "") for e in cleaned_evidence if e.get("url")]
+            extraction, rejections = validate_extraction(extraction, cleaned_evidence, source_urls)
             metrics["validation_failures"].extend(rejections)
             metrics["claims_rejected"] += len(rejections)
             
             # Cache extraction
             cache[cache_key] = extraction
         
-        # Merge extraction into Candidate
+        # Merge extraction into Candidate (source excerpts come from cleaned text)
         try:
-            merged_candidate = merge_extraction_into_candidate(candidate, extraction, fetched_evidence)
+            merged_candidate = merge_extraction_into_candidate(candidate, extraction, cleaned_evidence)
             merged_candidates.append(merged_candidate)
             metrics["candidates_extracted"] += 1
             metrics["candidates_merged"] += 1
@@ -360,5 +375,15 @@ def extract_structured_evidence(
         config.cache_path.write_text(json.dumps(cache, indent=2))
     except Exception:
         pass
-    
+
+    # Persist cleaning diagnostics (raw vs clean size, method, boilerplate ratio,
+    # usable flag, failure reason) for the latest run.
+    cleaning_diags = metrics.get("cleaning_diagnostics")
+    if cleaning_diags:
+        try:
+            diag_path = config.cache_path.parent / "evidence_cleaning.json"
+            diag_path.write_text(json.dumps(cleaning_diags, indent=2))
+        except Exception:
+            pass
+
     return merged_candidates, metrics

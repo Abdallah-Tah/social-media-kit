@@ -865,6 +865,7 @@ def admit_to_slot(
         relationship_config: RelationshipConfig | None = None,
         material_types: frozenset[str] = frozenset(),
         now: dt.datetime | None = None,
+        sc_results: dict[str, Any] | None = None,
 ) -> AdmissionResult:
     """Pure admission: evaluate ranked candidates against one slot.
 
@@ -888,21 +889,55 @@ def admit_to_slot(
     defaults = slot_config.defaults if slot_config else {}
     policy = build_slot_policy(slot, defaults)
 
-    # Rank candidates: by opportunity_score descending, stable by input order.
+    # Rank candidates by opportunity_score descending, stable by input order.
     indexed = list(enumerate(candidates))
-    indexed.sort(
-        key=lambda pair: (
-            -(pair[1].opportunity_score or 0),
-            pair[0],
-        ))
+
+    # Preliminary source-confidence score per candidate. The orchestrator scores
+    # every candidate before admission and passes the results in sc_results; when
+    # absent (direct calls), confidence contributes 0 to the ordering only.
+    def _sc_score(c: Candidate) -> float:
+        if sc_results is not None:
+            res = sc_results.get(c.candidate_id)
+            if res is not None:
+                return float(getattr(res, "score", 0) or 0)
+        return 0.0
+
+    # Build a bounded combined evaluation pool: the top N candidates by
+    # opportunity score PLUS the top N by preliminary source-confidence score,
+    # deduplicated by candidate id and capped at 2N (N = maximum_candidates_to_evaluate).
+    # This lets a lower-opportunity but higher-confidence candidate reach
+    # evaluation. Ordering only decides evaluation order — every candidate must
+    # still pass all admission gates (evidence, saturation, artifact, value).
+    per_rank = policy.maximum_candidates_to_evaluate
+    combined_cap = per_rank * 2
+
+    by_opportunity = sorted(indexed, key=lambda p: (-(p[1].opportunity_score or 0), p[0]))
+    by_confidence = sorted(
+        indexed, key=lambda p: (-_sc_score(p[1]), -(p[1].opportunity_score or 0), p[0]))
+
+    pool: list[tuple[int, Candidate]] = []
+    seen_ids: set[str] = set()
+    for orig_idx, c in by_opportunity[:per_rank]:
+        if c.candidate_id not in seen_ids:
+            seen_ids.add(c.candidate_id)
+            pool.append((orig_idx, c))
+    for orig_idx, c in by_confidence[:per_rank]:
+        if c.candidate_id not in seen_ids:
+            seen_ids.add(c.candidate_id)
+            pool.append((orig_idx, c))
+
+    # Deterministic evaluation order: opportunity desc, source-confidence desc,
+    # then original stable order; capped at the combined cap.
+    pool.sort(key=lambda p: (-(p[1].opportunity_score or 0), -_sc_score(p[1]), p[0]))
+    pool = pool[:combined_cap]
 
     evaluated: list[CandidateEvaluation] = []
     selected_id = ""
     warnings: list[str] = []
     limit_reached = False
 
-    for rank_0, (orig_idx, candidate) in enumerate(indexed):
-        if rank_0 >= policy.maximum_candidates_to_evaluate:
+    for rank_0, (orig_idx, candidate) in enumerate(pool):
+        if rank_0 >= combined_cap:
             limit_reached = True
             break
 

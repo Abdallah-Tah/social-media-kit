@@ -542,6 +542,7 @@ def _run_slot(
             saturation_config=sat_config,
             slot_config=slot_config,
             now=now,
+            sc_results=sc_results,
         )
     except Exception as exc:
         return SlotResult(
@@ -559,6 +560,8 @@ def _run_slot(
             "candidate_id": getattr(ev, "candidate_id", ""),
             "status": getattr(ev, "status", ""),
             "rejection_reasons": list(getattr(ev, "reason_codes", ()) or ()),
+            "opportunity_score": getattr(ev, "opportunity_score", None),
+            "source_confidence": getattr(ev, "source_confidence", None),
         })
 
     selected_id = admission_result.selected_candidate_id or ""

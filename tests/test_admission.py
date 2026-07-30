@@ -635,6 +635,128 @@ def test_maximum_candidate_limit(slot, sat_config, history):
     assert result.status == SKIPPED_NO_CANDIDATE
 
 
+# ── Combined evaluation pool (opportunity + source-confidence) ──────────────
+
+class _SC:
+    """Minimal source-confidence result stub used to drive pool ordering."""
+
+    def __init__(self, score: float):
+        self.score = score
+
+
+def test_lower_opportunity_higher_confidence_reaches_evaluation(slot, sat_config, history):
+    """A candidate ranked last by opportunity but first by source-confidence
+    reaches evaluation via the combined pool (and would not without it)."""
+    weak = _src(kind="secondary", exact=False)
+    cands = [_candidate(url=f"https://c{i}.com/{i}", opp_score=90 - i * 5, sources=(weak,))
+             for i in range(6)]
+    sc_results = {c.candidate_id: _SC(50) for c in cands}
+    sc_results[cands[5].candidate_id] = _SC(95)  # lowest opportunity, highest confidence
+
+    result = admit_to_slot(
+        slot, cands, history=history, saturation_config=sat_config,
+        scoring_config=_scoring_config(), now=NOW, sc_results=sc_results,
+    )
+    evaluated_ids = {ev.candidate_id for ev in result.evaluated_candidates}
+    assert cands[5].candidate_id in evaluated_ids
+
+    # Without source-confidence ordering, the last-by-opportunity candidate is
+    # outside the top-N and is not evaluated.
+    result_no_sc = admit_to_slot(
+        slot, cands, history=history, saturation_config=sat_config,
+        scoring_config=_scoring_config(), now=NOW,
+    )
+    assert cands[5].candidate_id not in {
+        ev.candidate_id for ev in result_no_sc.evaluated_candidates}
+
+
+def test_duplicate_candidates_count_once(slot, sat_config, history):
+    """A candidate in both the opportunity and confidence top-N is evaluated once."""
+    weak = _src(kind="secondary", exact=False)
+    cands = [_candidate(url=f"https://c{i}.com/{i}", opp_score=90 - i * 5, sources=(weak,))
+             for i in range(8)]
+    sc_results = {c.candidate_id: _SC(50) for c in cands}
+    sc_results[cands[0].candidate_id] = _SC(99)  # top by both opportunity and confidence
+    result = admit_to_slot(
+        slot, cands, history=history, saturation_config=sat_config,
+        scoring_config=_scoring_config(), now=NOW, sc_results=sc_results,
+    )
+    evaluated_ids = [ev.candidate_id for ev in result.evaluated_candidates]
+    assert len(evaluated_ids) == len(set(evaluated_ids))
+
+
+def test_candidate_cap_enforced(slot, sat_config, history):
+    """At most 2 * maximum_candidates_to_evaluate candidates are evaluated."""
+    weak = _src(kind="secondary", exact=False)
+    cands = []
+    sc_results = {}
+    # 10 high-opportunity/low-confidence candidates...
+    for i in range(10):
+        c = _candidate(url=f"https://hi{i}.com/{i}", opp_score=100 - i, sources=(weak,))
+        cands.append(c)
+        sc_results[c.candidate_id] = _SC(i)  # low confidence (0..9)
+    # ...and 5 low-opportunity/high-confidence candidates.
+    for i in range(5):
+        c = _candidate(url=f"https://lo{i}.com/{i}", opp_score=50 - i, sources=(weak,))
+        cands.append(c)
+        sc_results[c.candidate_id] = _SC(100 - i)  # high confidence (100..96)
+    result = admit_to_slot(
+        slot, cands, history=history, saturation_config=sat_config,
+        scoring_config=_scoring_config(), now=NOW, sc_results=sc_results,
+    )
+    # top 5 by opportunity + top 5 by confidence (disjoint) → capped at 10.
+    assert len(result.evaluated_candidates) == 10
+
+
+def test_top_opportunity_candidates_remain_included(slot, sat_config, history):
+    """The top-N candidates by opportunity score are still evaluated."""
+    weak = _src(kind="secondary", exact=False)
+    cands = [_candidate(url=f"https://c{i}.com/{i}", opp_score=100 - i, sources=(weak,))
+             for i in range(8)]
+    sc_results = {c.candidate_id: _SC(50) for c in cands}
+    result = admit_to_slot(
+        slot, cands, history=history, saturation_config=sat_config,
+        scoring_config=_scoring_config(), now=NOW, sc_results=sc_results,
+    )
+    evaluated_ids = {ev.candidate_id for ev in result.evaluated_candidates}
+    for c in cands[:5]:
+        assert c.candidate_id in evaluated_ids
+
+
+def test_deterministic_ordering(slot, sat_config, history):
+    """Evaluation order is deterministic: opportunity desc, confidence desc, index."""
+    weak = _src(kind="secondary", exact=False)
+    cands = [_candidate(url=f"https://c{i}.com/{i}", opp_score=80, sources=(weak,))
+             for i in range(6)]
+    sc_results = {cands[i].candidate_id: _SC(50 + i) for i in range(6)}
+    result = admit_to_slot(
+        slot, cands, history=history, saturation_config=sat_config,
+        scoring_config=_scoring_config(), now=NOW, sc_results=sc_results,
+    )
+    evaluated_ids = [ev.candidate_id for ev in result.evaluated_candidates]
+    # Equal opportunity → ordered by confidence desc → highest-confidence first.
+    assert evaluated_ids[0] == cands[5].candidate_id
+    result2 = admit_to_slot(
+        slot, cands, history=history, saturation_config=sat_config,
+        scoring_config=_scoring_config(), now=NOW, sc_results=sc_results,
+    )
+    assert [ev.candidate_id for ev in result2.evaluated_candidates] == evaluated_ids
+
+
+def test_gates_remain_unchanged(slot, sat_config, history):
+    """The combined pool only changes evaluation order; admission gates still apply."""
+    weak = _src(kind="secondary", exact=False)
+    cands = [_candidate(url="https://highconf.com/1", opp_score=50, sources=(weak,))]
+    sc_results = {cands[0].candidate_id: _SC(99)}  # high ordering confidence only
+    result = admit_to_slot(
+        slot, cands, history=history, saturation_config=sat_config,
+        scoring_config=_scoring_config(), now=NOW, sc_results=sc_results,
+    )
+    # High ordering confidence does not override the real source-confidence gate.
+    assert result.status == SKIPPED_NO_CANDIDATE
+    assert result.evaluated_candidates[0].status == REJECTED
+
+
 # ── Slot-specific thresholds ────────────────────────────────────────────────
 
 def test_intelligence_brief_enforces_higher_threshold(sat_config, history):
