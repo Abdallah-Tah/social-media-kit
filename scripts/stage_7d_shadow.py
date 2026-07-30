@@ -33,6 +33,7 @@ import datetime as dt
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -259,10 +260,42 @@ def process_candidates(limit: int = 50) -> tuple[list, dict]:
 
 # ── Shadow slot execution ────────────────────────────────────────────────────
 
-def run_shadow_slot(slot_time: str, content_type: str, candidates: list,
+# Slot-level watchdog: a single slot must not block the whole run indefinitely.
+# The pipeline is deterministic, but a hung draft/LLM call must not stall the
+# 24h run. SIGALRM interrupts the single-threaded slot execution cleanly.
+SLOT_TIMEOUT_SECONDS = int(os.environ.get("STAGE7D_SLOT_TIMEOUT_SECONDS", "900"))
+
+
+class SlotTimeout(Exception):
+    pass
+
+
+def _on_slot_timeout(signum, frame):
+    raise SlotTimeout()
+
+
+def _persist_slot_result(report: dict, date: str, slot_time: str, slot_id: str) -> None:
+    """Write the per-slot result file — always, even for not-found/timed-out, so
+    the dashboard never shows a slot as perpetually 'running' for lack of a file."""
+    SHADOW_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    fname = f"{date}_{slot_time.replace(':', '')}_{slot_id}.json"
+    result_path = SHADOW_STATE_DIR / fname
+    try:
+        result_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        report["result_path"] = str(result_path)
+    except OSError as e:
+        report["result_path"] = f"write_error:{e}"
+
+
+def run_shadow_slot(slot_time: str, slot_id: str, candidates: list,
                     date: str, batch: dict) -> dict:
-    """Run the shadow pipeline for one slot and capture full metrics."""
-    print(f"\n  ── Shadow slot {slot_time} {content_type} ({date}) ──")
+    """Run the shadow pipeline for one slot and capture full metrics.
+
+    ``slot_id`` is the slot identifier from SHADOW_SLOTS (e.g. midday_authority).
+    The pipeline resolves each slot to a concrete content type per weekday, so the
+    result is matched by ``slot_id`` (not by content type).
+    """
+    print(f"\n  ── Shadow slot {slot_time} {slot_id} ({date}) ──")
     t0 = time.monotonic()
 
     inp = PipelineInput(
@@ -274,17 +307,23 @@ def run_shadow_slot(slot_time: str, content_type: str, candidates: list,
     result = run_pipeline(inp)
     latency_ms = int((time.monotonic() - t0) * 1000)
 
-    # Find this slot's result.
+    # Match by slot_id: the pipeline's content_type varies per weekday, so matching
+    # by content_type fails for slots like midday_authority (root-cause fix).
     slot_result = next(
-        (sr for sr in result.slot_results if sr.content_type == content_type),
+        (sr for sr in result.slot_results if sr.slot_id == slot_id),
         None,
     )
     if slot_result is None:
-        return {
-            "slot_time": slot_time, "content_type": content_type, "date": date,
+        report = {
+            "slot_time": slot_time, "content_type": slot_id, "date": date,
             "outcome": "slot_not_found", "latency_ms": latency_ms, **batch,
-            "error": f"Slot {content_type} not found in pipeline results",
+            "error": f"Slot {slot_id} not found in pipeline results",
+            "result_path": "",
         }
+        _persist_slot_result(report, date, slot_time, slot_id)
+        print(f"     outcome=slot_not_found (no pipeline result for slot_id={slot_id})")
+        print(f"     persisted={report['result_path']}")
+        return report
 
     # Source-confidence details for every scored candidate in this slot.
     sc_details = []
@@ -309,7 +348,8 @@ def run_shadow_slot(slot_time: str, content_type: str, candidates: list,
 
     report = {
         "slot_time": slot_time,
-        "content_type": content_type,
+        "content_type": slot_id,
+        "resolved_content_type": slot_result.content_type,
         "date": date,
         "outcome": slot_result.outcome,
         "selected_candidate_id": slot_result.candidate_id,
@@ -330,14 +370,7 @@ def run_shadow_slot(slot_time: str, content_type: str, candidates: list,
     }
 
     # Persist per-slot result.
-    SHADOW_STATE_DIR.mkdir(parents=True, exist_ok=True)
-    fname = f"{date}_{slot_time.replace(':', '')}_{content_type}.json"
-    result_path = SHADOW_STATE_DIR / fname
-    try:
-        result_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-        report["result_path"] = str(result_path)
-    except OSError as e:
-        report["result_path"] = f"write_error:{e}"
+    _persist_slot_result(report, date, slot_time, slot_id)
 
     # Console summary.
     print(f"     outcome={slot_result.outcome} sc={slot_result.source_confidence} "
@@ -355,6 +388,69 @@ def run_shadow_slot(slot_time: str, content_type: str, candidates: list,
         print(f"     admission_reasons={admission_reasons}")
     print(f"     persisted={report['result_path']}")
     return report
+
+
+def _run_slot_with_timeout(slot_time: str, slot_id: str, candidates: list,
+                           date: str, batch: dict, timeout: int) -> dict:
+    """Run one slot under a SIGALRM watchdog so a single slot cannot stall the run.
+
+    On timeout (or error) write a result file recording the stage and partial
+    batch metrics, then return so the run continues safely toward final
+    reporting. Never publishes or notifies; never corrupts existing results.
+    """
+    signal.signal(signal.SIGALRM, _on_slot_timeout)
+    signal.alarm(timeout)
+    try:
+        return run_shadow_slot(slot_time, slot_id, candidates, date, batch)
+    except SlotTimeout:
+        print(f"  ⚠️  Slot {slot_id} exceeded {timeout}s watchdog; marking timed_out.")
+        report = {
+            "slot_time": slot_time, "content_type": slot_id, "date": date,
+            "outcome": "timed_out",
+            "error": f"slot exceeded {timeout}s watchdog (STAGE7D_SLOT_TIMEOUT_SECONDS)",
+            "pipeline_latency_ms": timeout * 1000,
+            "result_path": "",
+            **batch,
+        }
+        _persist_slot_result(report, date, slot_time, slot_id)
+        return report
+    except Exception as e:  # noqa: BLE001 — keep the run alive
+        import traceback
+        print(f"  ERROR in slot {slot_id}: {e}")
+        traceback.print_exc()
+        report = {
+            "slot_time": slot_time, "content_type": slot_id, "date": date,
+            "outcome": "slot_error", "error": str(e), "result_path": "", **batch,
+        }
+        _persist_slot_result(report, date, slot_time, slot_id)
+        return report
+    finally:
+        signal.alarm(0)  # always cancel the alarm
+
+
+def _write_progress(phase: str, active_slot: str | None = None,
+                    iteration: int = 0, extra: dict | None = None) -> None:
+    """Write a progress heartbeat the dashboard reads to detect stalls.
+
+    Updated each iteration and around slot execution so the dashboard can show
+    the current phase, the last-progress timestamp, and a stalled warning when
+    nothing has progressed for a while. Best-effort; never raises.
+    """
+    progress = {
+        "phase": phase,
+        "active_slot": active_slot,
+        "iteration": iteration,
+        "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "slot_timeout_seconds": SLOT_TIMEOUT_SECONDS,
+    }
+    if extra:
+        progress.update(extra)
+    try:
+        SHADOW_STATE_DIR.mkdir(parents=True, exist_ok=True)
+        (SHADOW_STATE_DIR / "progress.json").write_text(
+            json.dumps(progress, indent=2), encoding="utf-8")
+    except OSError:
+        pass
 
 
 # ── Scheduling helpers ───────────────────────────────────────────────────────
@@ -441,6 +537,7 @@ def main() -> int:
         local_date = now_local.strftime("%Y-%m-%d")
         local_min = now_local.hour * 60 + now_local.minute
         iteration += 1
+        _write_progress("checking_schedule", iteration=iteration)
 
         # ── Completion check ───────────────────────────────────────────────
         elapsed = now_utc - start_utc
@@ -456,13 +553,14 @@ def main() -> int:
 
         # ── Which slots are in window and not yet run today? ───────────────
         slots_to_run = []
-        for slot_time, content_type in SHADOW_SLOTS:
+        for slot_time, slot_id in SHADOW_SLOTS:
             if abs(local_min - _slot_minutes(slot_time)) <= 30:
                 if (local_date, slot_time) not in executed_slots:
-                    slots_to_run.append((slot_time, content_type))
+                    slots_to_run.append((slot_time, slot_id))
 
         if not slots_to_run:
             # Sleep, but not past the next window or completion point.
+            _write_progress("idle", iteration=iteration)
             time.sleep(300)
             continue
 
@@ -472,6 +570,7 @@ def main() -> int:
         print("=" * 78)
 
         # Process the live candidate batch once for this iteration.
+        _write_progress("fetching_candidates", iteration=iteration)
         try:
             merged, batch = process_candidates(limit=50)
         except Exception as e:  # noqa: BLE001 — keep the run alive
@@ -483,10 +582,12 @@ def main() -> int:
 
         total_api_cost += batch.get("extraction_cost_usd", 0.0)
 
-        for slot_time, content_type in slots_to_run:
-            report = run_shadow_slot(slot_time, content_type, merged, local_date, batch)
+        for slot_time, slot_id in slots_to_run:
+            _write_progress("running_slot", active_slot=slot_id, iteration=iteration)
+            report = _run_slot_with_timeout(slot_time, slot_id, merged, local_date, batch,
+                                            SLOT_TIMEOUT_SECONDS)
             executed_slots.add((local_date, slot_time))
-            executed_types.add(content_type)
+            executed_types.add(slot_id)
             all_slot_results.append(report)
 
         print(f"\n  Executed types so far: {sorted(executed_types)} "
