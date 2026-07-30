@@ -275,20 +275,32 @@ def _map_slot_result(data: dict[str, Any], tz: dt.tzinfo, fallback_path: str) ->
             seen_reasons.add(r)
             admission_reasons.append(r)
 
+    # A recovered slot (rebuilt from the orchestrator pipeline file) lacks the
+    # batch funnel metrics; report them as unavailable (null) rather than a
+    # misleading 0, and flag the slot as recovered so the UI can say so.
+    recovered = bool(data.get("recovery_note"))
+
+    def _batch(key: str):
+        val = data.get(key)
+        if val is None:
+            return None if recovered else 0
+        return _to_int(val, 0)
+
     return {
         "slot_id": slot_id,
         "content_type": slot_id,
         "scheduled_at": _scheduled_at(date_str, slot_time, tz),
         "completed_at": completed_at,
         "status": _slot_status(str(outcome) if outcome else None),
-        "candidates_received": _to_int(data.get("candidates_received"), 0),
-        "candidates_enriched": _to_int(data.get("candidates_enriched"), 0),
-        "candidates_merged": _to_int(data.get("candidates_merged"), 0),
-        "evidence_urls_fetched": _to_int(data.get("urls_fetched"), 0),
-        "evidence_fetch_failures": _to_int(data.get("evidence_fetch_failures"), 0),
-        "extraction_successes": _to_int(data.get("extraction_claims_accepted"), 0),
-        "extraction_failures": _to_int(data.get("extraction_claims_rejected"), 0),
-        "extraction_llm_calls": _to_int(data.get("extraction_llm_calls"), 0),
+        "recovered": recovered,
+        "candidates_received": _batch("candidates_received"),
+        "candidates_enriched": _batch("candidates_enriched"),
+        "candidates_merged": _batch("candidates_merged"),
+        "evidence_urls_fetched": _batch("urls_fetched"),
+        "evidence_fetch_failures": _batch("evidence_fetch_failures"),
+        "extraction_successes": _batch("extraction_claims_accepted"),
+        "extraction_failures": _batch("extraction_claims_rejected"),
+        "extraction_llm_calls": _batch("extraction_llm_calls"),
         "top_source_confidence_scores": top_scores,
         "selected_candidate": data.get("selected_candidate_id") or None,
         "selected_format": data.get("selected_format") or None,

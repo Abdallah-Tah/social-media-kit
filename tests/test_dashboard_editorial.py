@@ -161,7 +161,13 @@ def test_service_not_started(server, shadow_dir):
 
 
 def test_running_with_no_slot_results(server, shadow_dir, monkeypatch):
-    write_timing(shadow_dir)
+    import datetime as dt
+    # Anchor the timing window relative to the real current time so the expected
+    # slots are always in the future (the test must not depend on the wall clock
+    # having a particular value).
+    start = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=1)
+    completion = start + dt.timedelta(hours=24)
+    write_timing(shadow_dir, start=start.isoformat(), completion=completion.isoformat())
     write_safety_before(shadow_dir)
     set_running(monkeypatch, pid=99999)
 
@@ -169,8 +175,8 @@ def test_running_with_no_slot_results(server, shadow_dir, monkeypatch):
     assert status == 200
     assert body["service"]["status"] == "running"
     assert body["service"]["pid"] == 99999
-    assert body["service"]["started_at"] == "2026-07-29T16:09:31-04:00"
-    assert body["service"]["planned_completion_at"] == "2026-07-30T16:09:31-04:00"
+    assert body["service"]["started_at"] == start.isoformat()
+    assert body["service"]["planned_completion_at"] == completion.isoformat()
     assert isinstance(body["service"]["time_remaining_seconds"], int)
     # Three expected slots, all waiting, none completed.
     assert body["progress"]["slots_expected"] == 3
@@ -209,6 +215,39 @@ def test_one_completed_slot(server, shadow_dir, monkeypatch):
         "artifact_not_allowed", "source_confidence_below_threshold", "practical_value_missing",
     ]
     assert body["aggregate"]["ready_in_shadow"] == 1
+
+
+def test_recovered_slot_reports_null_funnel(server, shadow_dir, monkeypatch):
+    """A slot recovered from the orchestrator pipeline file lacks batch metrics;
+    the endpoint reports them as null (not a misleading 0) and flags recovered."""
+    write_timing(shadow_dir)
+    write_safety_before(shadow_dir)
+    set_running(monkeypatch)
+    # A recovered result file: has scores + recovery_note, but NO batch fields.
+    (shadow_dir / "2026-07-30_1200_midday_authority.json").write_text(json.dumps({
+        "slot_time": "12:00",
+        "content_type": "midday_authority",
+        "date": "2026-07-30",
+        "outcome": "skipped_no_candidate",
+        "top_5_scores": [70, 55, 55, 55, 55],
+        "admission_reasons": ["artifact_not_allowed", "source_confidence_below_threshold"],
+        "recovery_note": "Recovered from orchestrator pipeline file.",
+    }), encoding="utf-8")
+
+    status, body = _get(server + "/api/editorial/stage7d-status")
+    assert status == 200
+    slot = next(s for s in body["slots"] if s["slot_id"] == "midday_authority")
+    assert slot["recovered"] is True
+    assert slot["status"] == "completed"
+    assert slot["shadow_outcome"] == "skipped_no_candidate"
+    # Scores are recovered from the pipeline evaluations.
+    assert slot["top_source_confidence_scores"] == [70, 55, 55, 55, 55]
+    # Batch funnel metrics were not persisted -> null, not a misleading 0.
+    assert slot["candidates_received"] is None
+    assert slot["candidates_enriched"] is None
+    assert slot["candidates_merged"] is None
+    assert slot["evidence_urls_fetched"] is None
+    assert slot["extraction_llm_calls"] is None
 
 
 def test_all_three_slots_completed(server, shadow_dir, monkeypatch):

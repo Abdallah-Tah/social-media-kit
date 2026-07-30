@@ -395,14 +395,15 @@ export interface Stage7dSlot {
   scheduled_at: string | null
   completed_at: string | null
   status: Stage7dSlotStatus
-  candidates_received: number
-  candidates_enriched: number
-  candidates_merged: number
-  evidence_urls_fetched: number
-  evidence_fetch_failures: number
-  extraction_successes: number
-  extraction_failures: number
-  extraction_llm_calls: number
+  recovered?: boolean
+  candidates_received: number | null
+  candidates_enriched: number | null
+  candidates_merged: number | null
+  evidence_urls_fetched: number | null
+  evidence_fetch_failures: number | null
+  extraction_successes: number | null
+  extraction_failures: number | null
+  extraction_llm_calls: number | null
   top_source_confidence_scores: number[]
   selected_candidate: string | null
   selected_format: string | null

@@ -188,9 +188,13 @@ function ScoreBars({ scores }: { scores: number[] }) {
 
 // ── Candidate funnel (received → enriched → merged) ─────────────────────────
 
-function Funnel({ received, enriched, merged }: { received: number; enriched: number; merged: number }) {
-  const max = Math.max(received, enriched, merged, 1)
-  const rows: Array<[string, number]> = [
+function Funnel({ received, enriched, merged }: { received: number | null; enriched: number | null; merged: number | null }) {
+  // Recovered slots have no persisted funnel metrics.
+  if (received == null && enriched == null && merged == null) {
+    return <p className={`${MONO} text-[11px] text-[#52525b]`}>// funnel metrics not persisted (recovered slot)</p>
+  }
+  const max = Math.max(received ?? 0, enriched ?? 0, merged ?? 0, 1)
+  const rows: Array<[string, number | null]> = [
     ['received', received],
     ['enriched', enriched],
     ['merged', merged],
@@ -203,10 +207,10 @@ function Funnel({ received, enriched, merged }: { received: number; enriched: nu
           <div className="flex-1 h-1.5 rounded-[2px] bg-[#1c1c20] overflow-hidden">
             <div
               className="h-full rounded-[2px]"
-              style={{ width: `${(n / max) * 100}%`, background: label === 'merged' ? '#3d7fff' : '#005cff', opacity: label === 'merged' ? 1 : 0.55 }}
+              style={{ width: `${((n ?? 0) / max) * 100}%`, background: label === 'merged' ? '#3d7fff' : '#005cff', opacity: label === 'merged' ? 1 : 0.55 }}
             />
           </div>
-          <span className={`${MONO} text-[11px] text-[#a1a1aa] w-7 text-right shrink-0`}>{n}</span>
+          <span className={`${MONO} text-[11px] text-[#a1a1aa] w-7 text-right shrink-0`}>{n ?? '—'}</span>
         </div>
       ))}
     </div>
@@ -253,6 +257,15 @@ function SlotCard({ slot }: { slot: Stage7dSlot }) {
           <div className={`${MONO} text-[11px] text-[#52525b] mt-0.5`}>{fmtTime(slot.scheduled_at)}</div>
         </div>
         <div className="flex items-center gap-2.5 shrink-0">
+          {slot.recovered && (
+            <span
+              className={`${MONO} text-[10px] uppercase tracking-[0.1em] px-1.5 py-0.5 rounded-[3px] border`}
+              style={{ color: '#fbbf24', borderColor: 'rgba(251,191,36,0.3)', background: 'rgba(251,191,36,0.06)' }}
+              title="Recovered from the orchestrator pipeline file; batch metrics unavailable"
+            >
+              recovered
+            </span>
+          )}
           <StatusBadge label={slot.status === 'completed' ? '● completed' : slot.status === 'running' ? '● running' : slot.status === 'failed' ? '● failed' : 'waiting'} tone={tone} />
           <ChevronDown className={`h-4 w-4 text-[#71717a] transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
         </div>
