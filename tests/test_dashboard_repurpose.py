@@ -1,9 +1,11 @@
 """Tests for Reddit/Pinterest tools, repurpose mode, and the dashboard API."""
 import json
+import os
 import sys
 import threading
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 
@@ -14,7 +16,11 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from agent.config import AgentConfig, load_profile          # noqa: E402
 from agent.tools import ToolBox, TOOL_SCHEMAS               # noqa: E402
 from agent.prompts import build_repurpose_goal, PLATFORM_TOOLS  # noqa: E402
-from agent import cli, history, repurpose, dashboard        # noqa: E402
+from agent import cli, history, repurpose, dashboard, dashboard_auth  # noqa: E402
+
+# Password used by the dashboard-API tests; the server fixture installs it so
+# the helpers can log in and exercise the authenticated API.
+_TEST_DASHBOARD_PASSWORD = "repurpose-test-password"
 
 
 def _cfg(**kw):
@@ -90,16 +96,35 @@ def test_repurpose_live_records_history(tmp_path, monkeypatch):
 
 # ── Dashboard HTTP API (real server, localhost) ──────────────────────────
 @pytest.fixture
-def server():
+def server(monkeypatch):
+    monkeypatch.setenv(dashboard_auth.PASSWORD_ENV, _TEST_DASHBOARD_PASSWORD)
     srv = dashboard.ThreadingHTTPServer(("127.0.0.1", 0), dashboard._make_handler())
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{srv.server_address[1]}"
     srv.shutdown()
 
 
+_SESSION_COOKIES = {}
+
+
+def _session_cookie(url):
+    """Log in once per server and cache the session cookie for API calls."""
+    p = urlparse(url)
+    base = f"{p.scheme}://{p.netloc}"
+    if base not in _SESSION_COOKIES:
+        data = json.dumps({"password": _TEST_DASHBOARD_PASSWORD}).encode("utf-8")
+        req = urllib.request.Request(base + "/api/login", data=data, method="POST")
+        req.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            set_cookie = r.headers.get("Set-Cookie", "")
+        _SESSION_COOKIES[base] = set_cookie.split(";")[0].strip()
+    return _SESSION_COOKIES[base]
+
+
 def _get(url, follow_redirects=False):
     req = urllib.request.Request(url, method="GET")
     req.add_header("Accept", "text/html")
+    req.add_header("Cookie", _session_cookie(url))
     try:
         with urllib.request.urlopen(req, timeout=5) as r:
             final_url = r.geturl()
@@ -110,6 +135,7 @@ def _get(url, follow_redirects=False):
 
 def _get_with_headers(url):
     req = urllib.request.Request(url, method="GET")
+    req.add_header("Cookie", _session_cookie(url))
     with urllib.request.urlopen(req, timeout=5) as r:
         return r.status, r.read(), dict(r.headers)
 
@@ -117,6 +143,7 @@ def _post_json(url, payload):
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/json")
+    req.add_header("Cookie", _session_cookie(url))
     with urllib.request.urlopen(req, timeout=5) as r:
         return r.status, r.read()
 
@@ -125,6 +152,7 @@ def _patch_json(url, payload):
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="PATCH")
     req.add_header("Content-Type", "application/json")
+    req.add_header("Cookie", _session_cookie(url))
     with urllib.request.urlopen(req, timeout=5) as r:
         return r.status, r.read()
 
@@ -263,7 +291,8 @@ def test_dashboard_port_in_use_is_friendly(capsys):
 def test_dashboard_run_dry(server):
     payload = json.dumps({"mode": "run", "input": "", "dry_run": True}).encode()
     req = urllib.request.Request(server + "/api/run", data=payload,
-                                 headers={"Content-Type": "application/json"})
+                                 headers={"Content-Type": "application/json",
+                                          "Cookie": _session_cookie(server + "/api/run")})
     with urllib.request.urlopen(req, timeout=5) as r:
         data = json.loads(r.read())
     # Empty input is rejected cleanly (no crash, structured error).

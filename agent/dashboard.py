@@ -17,8 +17,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
+from . import dashboard_auth
 from . import history
-from .config import AgentConfig, ROOT, list_profiles, load_profile
+from .config import AgentConfig, ROOT, list_profiles, load_env, load_profile
 from .dashboard_automation import register_routes as automation_routes
 from .dashboard_campaigns import register_routes as campaign_routes
 from .dashboard_connections import register_routes as connection_routes
@@ -36,6 +37,7 @@ FRONTEND_DIST = ROOT / "frontend" / "dist"
 # Routes that should be served by the React SPA index.html.
 REACT_ROUTES = {
     "/",
+    "/login",
     "/intelligence",
     "/feed",
     "/drafts",
@@ -46,6 +48,9 @@ REACT_ROUTES = {
     "/settings",
     "/assistant",
 }
+
+# API paths that do not require a session (the login handshake itself).
+PUBLIC_API_PATHS = {"/api/login", "/api/logout", "/api/auth/check"}
 
 FILE_CATEGORIES = ("news", "tutorials", "videos", "images", "other")
 ROOT_FRONTEND_ASSETS = {"/favicon.svg", "/robots.txt", "/manifest.webmanifest"}
@@ -191,13 +196,45 @@ def _make_handler():
         def log_message(self, *a):
             pass
 
-        def _send(self, code, body, ctype="application/json"):
+        def _send(self, code, body, ctype="application/json", headers=None):
             data = body if isinstance(body, bytes) else json.dumps(body).encode()
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
+            for name, value in (headers or ()):
+                self.send_header(name, value)
             self.end_headers()
             self.wfile.write(data)
+
+        # ── Authentication ────────────────────────────────────────────────
+        def _authenticated(self) -> bool:
+            return dashboard_auth.is_authenticated(self.headers.get("Cookie"))
+
+        def _require_auth(self) -> bool:
+            """Send 401 and return False unless the request has a valid session."""
+            if self._authenticated():
+                return True
+            self._send(401, {"ok": False, "error": "unauthorized"})
+            return False
+
+        def _handle_login(self, body):
+            password = str((body or {}).get("password", ""))
+            if not dashboard_auth.check_password(password):
+                return self._send(401, {"ok": False, "error": "invalid password"})
+            token = dashboard_auth.create_session_token()
+            return self._send(
+                200, {"ok": True},
+                headers=[("Set-Cookie", dashboard_auth.session_cookie_header(token))],
+            )
+
+        def _handle_logout(self):
+            return self._send(
+                200, {"ok": True},
+                headers=[("Set-Cookie", dashboard_auth.clear_cookie_header())],
+            )
+
+        def _handle_auth_check(self):
+            return self._send(200, {"ok": True, "authenticated": self._authenticated()})
 
         def _read_json(self):
             length = int(self.headers.get("Content-Length", "0"))
@@ -273,6 +310,16 @@ def _make_handler():
                 return self._serve_spa_index()
             if self._is_file_like_path(path):
                 return self._send(404, {"error": "not found"})
+
+            # Public auth endpoint (no session required).
+            if path == "/api/auth/check":
+                return self._handle_auth_check()
+            # Gate every other API route (and the legacy HTML dashboards) behind
+            # a valid session. Static assets and the SPA index served above stay
+            # public so the login page itself can load.
+            if (self._is_api_path(path) and path not in PUBLIC_API_PATHS) or path.startswith("/legacy/"):
+                if not self._require_auth():
+                    return
 
             # Legacy HTML dashboards.
             if path == "/legacy/dashboard":
@@ -380,6 +427,15 @@ def _make_handler():
             path = urlparse(self.path).path
             query = parse_qs(urlparse(self.path).query)
             body = self._read_json()
+            # Public auth handshake (no session required).
+            if path == "/api/login":
+                return self._handle_login(body)
+            if path == "/api/logout":
+                return self._handle_logout()
+            # Every other API route requires a valid session.
+            if self._is_api_path(path):
+                if not self._require_auth():
+                    return
             if path == "/api/upload":
                 return self._upload()
             if path == "/api/analytics/sync":
@@ -417,6 +473,9 @@ def _make_handler():
             path = urlparse(self.path).path
             query = parse_qs(urlparse(self.path).query)
             body = self._read_json()
+            if self._is_api_path(path):
+                if not self._require_auth():
+                    return
             if self._is_automation_api(path):
                 result = automation_routes(path, query, body)
                 status = 404 if isinstance(result, dict) and result.get("error") == "not found" else 200
@@ -504,6 +563,10 @@ def _make_handler():
 
 
 def serve(host="127.0.0.1", port=8800):
+    # Load secrets (config/secrets.env) so DASHBOARD_PASSWORD is available, and
+    # ensure a password exists so the publicly-exposed dashboard is never open.
+    load_env()
+    dashboard_auth.ensure_password()
     from .automation import start_scheduler
     start_scheduler()
     try:

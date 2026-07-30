@@ -14,6 +14,7 @@ import { Route as SocialRouteImport } from './routes/social'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SchedulerRouteImport } from './routes/scheduler'
 import { Route as IntelligenceRouteImport } from './routes/intelligence'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as FeedRouteImport } from './routes/feed'
 import { Route as DraftsRouteImport } from './routes/drafts'
 import { Route as AssistantRouteImport } from './routes/assistant'
@@ -43,6 +44,11 @@ const SchedulerRoute = SchedulerRouteImport.update({
 const IntelligenceRoute = IntelligenceRouteImport.update({
   id: '/intelligence',
   path: '/intelligence',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FeedRoute = FeedRouteImport.update({
@@ -78,6 +84,7 @@ export interface FileRoutesByFullPath {
   '/drafts': typeof DraftsRoute
   '/feed': typeof FeedRoute
   '/intelligence': typeof IntelligenceRoute
+  '/login': typeof LoginRoute
   '/scheduler': typeof SchedulerRoute
   '/settings': typeof SettingsRoute
   '/social': typeof SocialRoute
@@ -90,6 +97,7 @@ export interface FileRoutesByTo {
   '/drafts': typeof DraftsRoute
   '/feed': typeof FeedRoute
   '/intelligence': typeof IntelligenceRoute
+  '/login': typeof LoginRoute
   '/scheduler': typeof SchedulerRoute
   '/settings': typeof SettingsRoute
   '/social': typeof SocialRoute
@@ -103,6 +111,7 @@ export interface FileRoutesById {
   '/drafts': typeof DraftsRoute
   '/feed': typeof FeedRoute
   '/intelligence': typeof IntelligenceRoute
+  '/login': typeof LoginRoute
   '/scheduler': typeof SchedulerRoute
   '/settings': typeof SettingsRoute
   '/social': typeof SocialRoute
@@ -117,6 +126,7 @@ export interface FileRouteTypes {
     | '/drafts'
     | '/feed'
     | '/intelligence'
+    | '/login'
     | '/scheduler'
     | '/settings'
     | '/social'
@@ -129,6 +139,7 @@ export interface FileRouteTypes {
     | '/drafts'
     | '/feed'
     | '/intelligence'
+    | '/login'
     | '/scheduler'
     | '/settings'
     | '/social'
@@ -141,6 +152,7 @@ export interface FileRouteTypes {
     | '/drafts'
     | '/feed'
     | '/intelligence'
+    | '/login'
     | '/scheduler'
     | '/settings'
     | '/social'
@@ -154,6 +166,7 @@ export interface RootRouteChildren {
   DraftsRoute: typeof DraftsRoute
   FeedRoute: typeof FeedRoute
   IntelligenceRoute: typeof IntelligenceRoute
+  LoginRoute: typeof LoginRoute
   SchedulerRoute: typeof SchedulerRoute
   SettingsRoute: typeof SettingsRoute
   SocialRoute: typeof SocialRoute
@@ -195,6 +208,13 @@ declare module '@tanstack/react-router' {
       path: '/intelligence'
       fullPath: '/intelligence'
       preLoaderRoute: typeof IntelligenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/feed': {
@@ -242,6 +262,7 @@ const rootRouteChildren: RootRouteChildren = {
   DraftsRoute: DraftsRoute,
   FeedRoute: FeedRoute,
   IntelligenceRoute: IntelligenceRoute,
+  LoginRoute: LoginRoute,
   SchedulerRoute: SchedulerRoute,
   SettingsRoute: SettingsRoute,
   SocialRoute: SocialRoute,

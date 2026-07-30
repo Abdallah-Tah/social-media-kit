@@ -16,24 +16,46 @@ from pathlib import Path
 import pytest
 
 from agent import dashboard
+from agent import dashboard_auth
 from agent import dashboard_editorial as de
 
 MODULE_SOURCE = Path(de.__file__).read_text(encoding="utf-8")
+
+_TEST_PASSWORD = "editorial-test-password"
+_SESSION_COOKIES: dict[str, str] = {}
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
 @pytest.fixture
-def server():
+def server(monkeypatch):
+    monkeypatch.setenv(dashboard_auth.PASSWORD_ENV, _TEST_PASSWORD)
     srv = dashboard.ThreadingHTTPServer(("127.0.0.1", 0), dashboard._make_handler())
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{srv.server_address[1]}"
     srv.shutdown()
 
 
+def _session_cookie(url: str) -> str:
+    """Log in once per server and cache the session cookie."""
+    from urllib.parse import urlparse
+    p = urlparse(url)
+    base = f"{p.scheme}://{p.netloc}"
+    if base not in _SESSION_COOKIES:
+        data = json.dumps({"password": _TEST_PASSWORD}).encode()
+        req = urllib.request.Request(base + "/api/login", data=data, method="POST")
+        req.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            set_cookie = r.headers.get("Set-Cookie", "")
+        _SESSION_COOKIES[base] = set_cookie.split(";")[0].strip()
+    return _SESSION_COOKIES[base]
+
+
 def _get(url: str) -> tuple[int, dict]:
+    req = urllib.request.Request(url, method="GET")
+    req.add_header("Cookie", _session_cookie(url))
     try:
-        with urllib.request.urlopen(url, timeout=10) as r:
+        with urllib.request.urlopen(req, timeout=10) as r:
             return r.status, json.loads(r.read().decode())
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read().decode())

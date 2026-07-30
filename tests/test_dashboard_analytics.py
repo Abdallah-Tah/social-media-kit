@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import threading
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch, MagicMock
+from urllib.parse import urlparse
 
 import pytest
 
@@ -16,24 +18,47 @@ if str(KIT) not in sys.path:
     sys.path.insert(0, str(KIT))
 
 from agent import dashboard
+from agent import dashboard_auth
 from agent.analytics_connectors.blog import _write_cache, BlogAnalytics
+
+_ANALYTICS_PASSWORD = "analytics-test-password"
+_SESSION_COOKIES: dict[str, str] = {}
 
 
 def _start_server():
+    os.environ[dashboard_auth.PASSWORD_ENV] = _ANALYTICS_PASSWORD
     srv = dashboard.ThreadingHTTPServer(("127.0.0.1", 0), dashboard._make_handler())
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return f"http://127.0.0.1:{srv.server_address[1]}", srv
 
 
+def _session_cookie(url: str) -> str:
+    """Log in once per server and cache the session cookie."""
+    p = urlparse(url)
+    base = f"{p.scheme}://{p.netloc}"
+    if base not in _SESSION_COOKIES:
+        body = json.dumps({"password": _ANALYTICS_PASSWORD}).encode("utf-8")
+        req = urllib.request.Request(base + "/api/login", data=body, method="POST",
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            set_cookie = r.headers.get("Set-Cookie", "")
+        _SESSION_COOKIES[base] = set_cookie.split(";")[0].strip()
+    return _SESSION_COOKIES[base]
+
+
 def _get(url, headers=None):
-    req = urllib.request.Request(url, method="GET", headers=headers or {})
+    headers = dict(headers or {})
+    headers["Cookie"] = _session_cookie(url)
+    req = urllib.request.Request(url, method="GET", headers=headers)
     with urllib.request.urlopen(req, timeout=5) as r:
         return r.status, r.read(), r.geturl()
 
 
 def _post(url, data):
     body = json.dumps(data).encode("utf-8")
-    req = urllib.request.Request(url, method="POST", data=body, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(url, method="POST", data=body,
+                                 headers={"Content-Type": "application/json",
+                                          "Cookie": _session_cookie(url)})
     with urllib.request.urlopen(req, timeout=5) as r:
         return r.status, json.loads(r.read().decode("utf-8"))
 

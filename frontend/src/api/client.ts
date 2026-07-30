@@ -29,6 +29,13 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     ...options,
   })
+  // Session missing/expired → bounce to the login page. The login and
+  // auth-check endpoints are excluded so they can surface a 401 themselves
+  // (e.g. "wrong password") instead of triggering a redirect loop.
+  if (resp.status === 401 && path !== '/login' && path !== '/auth/check') {
+    window.location.href = '/login'
+    throw new Error('HTTP 401: unauthorized')
+  }
   if (!resp.ok) {
     const text = await resp.text().catch(() => 'Unknown error')
     throw new Error(`HTTP ${resp.status}: ${text}`)
@@ -38,6 +45,15 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   getState: () => request<Record<string, unknown>>('/state'),
+
+  // ── Auth ────────────────────────────────────────────────────────────────
+  login: (password: string) =>
+    request<{ ok: boolean; error?: string }>('/login', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    }),
+  logout: () => request<{ ok: boolean }>('/logout', { method: 'POST' }),
+  checkAuth: () => request<{ ok: boolean; authenticated: boolean }>('/auth/check'),
 
   getStage7dStatus: () => request<Stage7dStatus>('/editorial/stage7d-status'),
 
