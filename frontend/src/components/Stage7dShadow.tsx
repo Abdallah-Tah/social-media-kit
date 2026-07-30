@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  ShieldOff, Activity, CheckCircle2, XCircle, Clock, AlertTriangle, Eye, Loader2,
+  ShieldOff, Activity, CheckCircle2, XCircle, Clock, AlertTriangle, Eye, Loader2, ChevronDown,
 } from 'lucide-react'
 
 import { api } from '@/api/client'
@@ -97,36 +98,56 @@ function SlotDetail({ label, value }: { label: string; value: React.ReactNode })
 function SlotCard({ slot }: { slot: Stage7dSlot }) {
   const isPending = slot.status === 'waiting' || slot.status === 'running'
   const scores = Array.isArray(slot.top_source_confidence_scores) ? slot.top_source_confidence_scores : []
+  const reasons = Array.isArray(slot.admission_reasons) ? slot.admission_reasons : []
+  // Default expanded so results are visible immediately; the user can collapse.
+  const [open, setOpen] = useState(true)
   return (
     <div className="rounded-lg border bg-muted/10 p-3 space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between gap-2 cursor-pointer"
+      >
+        <div className="min-w-0 text-left">
           <div className="text-sm font-medium truncate">{slot.slot_id || slot.content_type || 'slot'}</div>
           <div className="text-xs text-muted-foreground">{fmtTime(slot.scheduled_at)}</div>
         </div>
-        <SlotBadge status={slot.status} />
-      </div>
-
-      {isPending ? (
-        <p className="text-xs text-muted-foreground">
-          {slot.status === 'running' ? 'Pipeline running…' : 'Waiting for scheduled time.'}
-        </p>
-      ) : (
-        <div className="space-y-1">
-          <SlotDetail label="Shadow outcome" value={slot.shadow_outcome ?? '—'} />
-          <SlotDetail label="Admission" value={slot.admission_result ?? '—'} />
-          <SlotDetail label="Selected candidate" value={slot.selected_candidate ? slot.selected_candidate.slice(0, 16) : '—'} />
-          <SlotDetail label="Selected format" value={slot.selected_format ?? '—'} />
-          <SlotDetail label="Quality score" value={fmtNum(slot.quality_score)} />
-          <SlotDetail label="Readiness" value={slot.readiness_status ?? '—'} />
-          <SlotDetail label="Top SC scores" value={scores.length ? scores.join(', ') : '—'} />
-          <SlotDetail label="Candidates recv/enriched" value={`${fmtNum(slot.candidates_received)} / ${fmtNum(slot.candidates_enriched)}`} />
-          <SlotDetail label="Evidence URLs" value={fmtNum(slot.evidence_urls_fetched)} />
-          <SlotDetail label="Extraction +/−" value={`${fmtNum(slot.extraction_successes)} / ${fmtNum(slot.extraction_failures)}`} />
-          <SlotDetail label="Latency" value={slot.latency_ms != null ? `${slot.latency_ms}ms` : '—'} />
-          <SlotDetail label="API cost" value={fmtCost(slot.api_cost_usd)} />
-          <SlotDetail label="Result path" value={slot.result_path ? slot.result_path.split('/').slice(-1)[0] : '—'} />
+        <div className="flex items-center gap-2 shrink-0">
+          <SlotBadge status={slot.status} />
+          <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
         </div>
+      </button>
+
+      {open && (
+        isPending ? (
+          <p className="text-xs text-muted-foreground">
+            {slot.status === 'running' ? 'Pipeline running…' : 'Waiting for scheduled time.'}
+          </p>
+        ) : (
+          <div className="space-y-1">
+            <SlotDetail label="Shadow outcome" value={slot.shadow_outcome ?? '—'} />
+            <SlotDetail label="Admission" value={slot.admission_result ?? '—'} />
+            {reasons.length > 0 && (
+              <div className="flex flex-wrap gap-1 pt-0.5">
+                {reasons.map((r) => (
+                  <Badge key={r} variant="outline" className="text-[10px] border-red-500/30 text-red-400">{r}</Badge>
+                ))}
+              </div>
+            )}
+            <SlotDetail label="Selected candidate" value={slot.selected_candidate ? slot.selected_candidate.slice(0, 16) : '—'} />
+            <SlotDetail label="Selected format" value={slot.selected_format ?? '—'} />
+            <SlotDetail label="Quality score" value={fmtNum(slot.quality_score)} />
+            <SlotDetail label="Readiness" value={slot.readiness_status ?? '—'} />
+            <SlotDetail label="Top SC scores" value={scores.length ? scores.join(', ') : '—'} />
+            <SlotDetail label="Candidate funnel" value={`${fmtNum(slot.candidates_received)} → ${fmtNum(slot.candidates_enriched)} → ${fmtNum(slot.candidates_merged)}`} />
+            <SlotDetail label="Evidence URLs" value={`${fmtNum(slot.evidence_urls_fetched)} fetched / ${fmtNum(slot.evidence_fetch_failures)} failed`} />
+            <SlotDetail label="Claims accepted/rejected" value={`${fmtNum(slot.extraction_successes)} / ${fmtNum(slot.extraction_failures)}`} />
+            <SlotDetail label="Extraction calls" value={fmtNum(slot.extraction_llm_calls)} />
+            <SlotDetail label="Latency" value={slot.latency_ms != null ? `${slot.latency_ms}ms` : '—'} />
+            <SlotDetail label="API cost" value={fmtCost(slot.api_cost_usd)} />
+            <SlotDetail label="Result path" value={slot.result_path ? slot.result_path.split('/').slice(-1)[0] : '—'} />
+          </div>
+        )
       )}
     </div>
   )

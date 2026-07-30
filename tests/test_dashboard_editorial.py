@@ -91,12 +91,19 @@ def write_slot(d: Path, date: str, slot_time: str, content_type: str,
         "readiness_status": extra.get("readiness_status", "ready"),
         "admission_status": extra.get("admission_status", "admitted"),
         "reason_codes": extra.get("reason_codes", []),
+        "admission_reasons": extra.get("admission_reasons", [
+            "artifact_not_allowed", "source_confidence_below_threshold",
+            "practical_value_missing", "artifact_not_allowed",
+        ]),
         "top_5_scores": extra.get("top_5_scores", [72, 68, 65, 61, 58]),
         "candidates_received": extra.get("candidates_received", 50),
         "candidates_enriched": extra.get("candidates_enriched", 50),
+        "candidates_merged": extra.get("candidates_merged", 10),
         "urls_fetched": extra.get("urls_fetched", 12),
+        "evidence_fetch_failures": extra.get("evidence_fetch_failures", 0),
         "extraction_claims_accepted": extra.get("extraction_claims_accepted", 3),
         "extraction_claims_rejected": extra.get("extraction_claims_rejected", 1),
+        "extraction_llm_calls": extra.get("extraction_llm_calls", 10),
         "pipeline_latency_ms": extra.get("pipeline_latency_ms", 1500),
         "extraction_cost_usd": extra.get("extraction_cost_usd", 0.012),
         "result_path": extra.get("result_path", f"/state/editorial/shadow/stage_7d/{fname}"),
@@ -168,6 +175,17 @@ def test_one_completed_slot(server, shadow_dir, monkeypatch):
     assert slot["selected_format"] == "technical_analysis"
     assert slot["quality_score"] == 81
     assert slot["top_source_confidence_scores"] == [72, 68, 65, 61, 58]
+    # New funnel / extraction / rejection-reason fields.
+    assert slot["candidates_received"] == 50
+    assert slot["candidates_enriched"] == 50
+    assert slot["candidates_merged"] == 10
+    assert slot["evidence_urls_fetched"] == 12
+    assert slot["evidence_fetch_failures"] == 0
+    assert slot["extraction_llm_calls"] == 10
+    # Duplicate reasons in the source file are deduplicated, order preserved.
+    assert slot["admission_reasons"] == [
+        "artifact_not_allowed", "source_confidence_below_threshold", "practical_value_missing",
+    ]
     assert body["aggregate"]["ready_in_shadow"] == 1
 
 

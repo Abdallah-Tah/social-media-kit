@@ -397,13 +397,17 @@ export interface Stage7dSlot {
   status: Stage7dSlotStatus
   candidates_received: number
   candidates_enriched: number
+  candidates_merged: number
   evidence_urls_fetched: number
+  evidence_fetch_failures: number
   extraction_successes: number
   extraction_failures: number
+  extraction_llm_calls: number
   top_source_confidence_scores: number[]
   selected_candidate: string | null
   selected_format: string | null
   admission_result: string | null
+  admission_reasons: string[]
   quality_score: number | null
   readiness_status: string | null
   shadow_outcome: string | null

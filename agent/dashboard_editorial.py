@@ -262,6 +262,19 @@ def _map_slot_result(data: dict[str, Any], tz: dt.tzinfo, fallback_path: str) ->
     if fp is not None:
         completed_at = fp.isoformat()
 
+    # Distinct admission/rejection reason codes, order-preserving. The shadow
+    # runner accumulates reasons per evaluated candidate (so they repeat); the
+    # panel wants the distinct set.
+    raw_reasons = data.get("admission_reasons") or data.get("reason_codes") or []
+    if not isinstance(raw_reasons, list):
+        raw_reasons = []
+    seen_reasons: set[str] = set()
+    admission_reasons: list[str] = []
+    for r in raw_reasons:
+        if isinstance(r, str) and r and r not in seen_reasons:
+            seen_reasons.add(r)
+            admission_reasons.append(r)
+
     return {
         "slot_id": slot_id,
         "content_type": slot_id,
@@ -270,13 +283,17 @@ def _map_slot_result(data: dict[str, Any], tz: dt.tzinfo, fallback_path: str) ->
         "status": _slot_status(str(outcome) if outcome else None),
         "candidates_received": _to_int(data.get("candidates_received"), 0),
         "candidates_enriched": _to_int(data.get("candidates_enriched"), 0),
+        "candidates_merged": _to_int(data.get("candidates_merged"), 0),
         "evidence_urls_fetched": _to_int(data.get("urls_fetched"), 0),
+        "evidence_fetch_failures": _to_int(data.get("evidence_fetch_failures"), 0),
         "extraction_successes": _to_int(data.get("extraction_claims_accepted"), 0),
         "extraction_failures": _to_int(data.get("extraction_claims_rejected"), 0),
+        "extraction_llm_calls": _to_int(data.get("extraction_llm_calls"), 0),
         "top_source_confidence_scores": top_scores,
         "selected_candidate": data.get("selected_candidate_id") or None,
         "selected_format": data.get("selected_format") or None,
         "admission_result": data.get("admission_status") or (str(outcome) if outcome else None),
+        "admission_reasons": admission_reasons,
         "quality_score": data.get("editorial_quality"),
         "readiness_status": data.get("readiness_status") or None,
         "shadow_outcome": str(outcome) if outcome else None,
@@ -379,13 +396,17 @@ def _pending_slot(exp: dict[str, Any], status: str) -> dict[str, Any]:
         "status": status,
         "candidates_received": 0,
         "candidates_enriched": 0,
+        "candidates_merged": 0,
         "evidence_urls_fetched": 0,
+        "evidence_fetch_failures": 0,
         "extraction_successes": 0,
         "extraction_failures": 0,
+        "extraction_llm_calls": 0,
         "top_source_confidence_scores": [],
         "selected_candidate": None,
         "selected_format": None,
         "admission_result": None,
+        "admission_reasons": [],
         "quality_score": None,
         "readiness_status": None,
         "shadow_outcome": None,
