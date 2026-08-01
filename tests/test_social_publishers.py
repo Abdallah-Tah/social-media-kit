@@ -27,11 +27,14 @@ SAMPLE_PUBLISHED_DRAFT = {
     # Must satisfy the content-quality guard in agent/social_drafts.py: a
     # specific title and a substantive body, not "Title"/"Body" stand-ins.
     "title": "Rate limiting Laravel queues without losing jobs",
+    # The opening 115 characters matter: that slice becomes the X post, and the
+    # publish gate requires a concrete fact in it. A body whose specifics arrive
+    # only in sentence three produces an X draft that says nothing.
     "body": (
-        "Laravel queue workers will happily run the same job twice when a worker "
-        "is restarted mid-execution, because the reserved_at timestamp is cleared "
-        "before the handler finishes. That double execution stays invisible until "
-        "it charges a customer twice.\n\n"
+        "Laravel 11 queue workers run the same job twice when a worker restarts "
+        "mid-execution, because reserved_at is cleared before the handler "
+        "finishes. That double execution stays invisible until it charges a "
+        "customer twice.\n\n"
         "Wrap the handler in an atomic Redis lock keyed on the job payload hash "
         "and release it only after the database transaction commits."
     ),
@@ -114,9 +117,12 @@ def test_dry_run_does_not_publish(tmp_path):
         assert result["ok"] is True
         assert result["dry_run"] is True
         mock_post.assert_not_called()
+        # The draft keeps its status: a rehearsal that retires the draft means
+        # the real publish never happens.
         loaded = load_social_draft(sd.draft_id)
-        assert loaded.status == "published"
-        assert result["published_url"]
+        assert loaded.status == "approved"
+        assert not loaded.published_at
+        assert result["would_publish"] is True
     finally:
         social_drafts.SOCIAL_DRAFTS_DIR = original_dir
 
@@ -173,6 +179,29 @@ def test_publish_direct_adapter_unsupported_platform():
     result = publish("pinterest", {"text": "x"})
     assert result["ok"] is False
     assert "unsupported" in result["error"]
+
+
+def test_fit_tweet_preserves_the_trailing_link():
+    """A blind 280-char cut destroyed the URL, publishing a dead link."""
+    from agent.social_publishers import _fit_tweet
+    url = "https://buildwithabdallah.com/tutorials/gpt-5-5-agents-sdk-openai-evolution"
+    text = "word " * 60 + "\n\n" + url
+    out = _fit_tweet(text)
+    assert len(out) <= 280
+    assert out.endswith(url)
+
+
+def test_fit_tweet_leaves_short_posts_untouched():
+    from agent.social_publishers import _fit_tweet
+    text = "A short post.\n\nhttps://buildwithabdallah.com/x"
+    assert _fit_tweet(text) == text
+
+
+def test_fit_tweet_without_a_link_trims_on_a_word_boundary():
+    from agent.social_publishers import _fit_tweet
+    out = _fit_tweet("alpha beta " * 40)
+    assert len(out) <= 280
+    assert not out.endswith("alph")
 
 
 if __name__ == "__main__":

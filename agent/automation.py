@@ -350,13 +350,31 @@ def _job_intelligence_run(dry_run: bool) -> dict[str, Any]:
 
 def _job_publish_due(dry_run: bool) -> dict[str, Any]:
     from .social_drafts import publish_due_social_drafts
-    result = publish_due_social_drafts(dry_run=dry_run)
+    try:
+        max_per_run = int(os.environ.get("SMKIT_PUBLISH_MAX_PER_RUN", "3"))
+    except ValueError:
+        max_per_run = 3
+    result = publish_due_social_drafts(dry_run=dry_run, max_per_run=max_per_run)
     results = result.get("results", {})
     published = sum(1 for v in results.values() if v.get("ok"))
-    failed = sum(1 for v in results.values() if not v.get("ok") and not v.get("skipped"))
+    retried = sum(1 for v in results.values() if v.get("retryable"))
+    failed = sum(
+        1 for v in results.values()
+        if not v.get("ok") and not v.get("skipped") and not v.get("retryable")
+    )
+    message = f"Publish due: {published} published, {retried} rescheduled, {failed} failed"
+    if failed:
+        first = next(
+            (v.get("error", "") for v in results.values()
+             if not v.get("ok") and not v.get("skipped") and not v.get("retryable")),
+            "",
+        )
+        message = f"{message} — {first}"
     return {
-        "ok": True,
-        "message": f"Publish due: {published} published, {failed} failed",
+        # A run where every post was rejected is not a success. Reporting ok
+        # unconditionally left the dashboard green while nothing shipped.
+        "ok": failed == 0,
+        "message": message,
         "dry_run": dry_run,
         "results": results,
     }
@@ -405,32 +423,42 @@ def _scheduler_loop() -> None:
     import time
     while True:
         time.sleep(60)
-        with _lock:
-            config = _load_config()
-        now = dt.datetime.now(dt.timezone.utc)
-        for job_id, cfg in config.items():
-            if not cfg.get("enabled"):
-                continue
-            interval_hours = cfg.get("interval_hours", 1)
-            last_run = cfg.get("last_run")
-            if last_run:
-                try:
-                    last_dt = dt.datetime.fromisoformat(last_run)
-                    if (now - last_dt).total_seconds() < interval_hours * 3600:
-                        continue
-                except ValueError:
-                    pass
-            dry_run = cfg.get("dry_run", True)
-            result = _execute_job(job_id, dry_run)
-            ok = result.get("ok", False)
-            message = result.get("message", result.get("error", ""))
-            _append_log(job_id, ok, message, dry_run)
+        # The loop body is guarded as a whole: this thread is the only thing
+        # driving every automation, and an unhandled error anywhere in it
+        # (a corrupt state file, a full disk) would kill the thread silently
+        # and stop all scheduled publishing with no signal anywhere.
+        try:
             with _lock:
-                config2 = _load_config()
-                config2[job_id]["last_run"] = now.isoformat()
-                config2[job_id]["last_result"] = "ok" if ok else "error"
-                config2[job_id]["last_error"] = "" if ok else message
-                _save_config(config2)
+                config = _load_config()
+            now = dt.datetime.now(dt.timezone.utc)
+            for job_id, cfg in config.items():
+                if not cfg.get("enabled"):
+                    continue
+                interval_hours = cfg.get("interval_hours", 1)
+                last_run = cfg.get("last_run")
+                if last_run:
+                    try:
+                        last_dt = dt.datetime.fromisoformat(last_run)
+                        if (now - last_dt).total_seconds() < interval_hours * 3600:
+                            continue
+                    except ValueError:
+                        pass
+                dry_run = cfg.get("dry_run", True)
+                result = _execute_job(job_id, dry_run)
+                ok = result.get("ok", False)
+                message = result.get("message", result.get("error", ""))
+                _append_log(job_id, ok, message, dry_run)
+                with _lock:
+                    config2 = _load_config()
+                    config2[job_id]["last_run"] = now.isoformat()
+                    config2[job_id]["last_result"] = "ok" if ok else "error"
+                    config2[job_id]["last_error"] = "" if ok else message
+                    _save_config(config2)
+        except Exception as exc:  # noqa: BLE001 — the thread must never die
+            try:
+                _append_log("scheduler", False, f"scheduler loop error: {exc}", False)
+            except Exception:
+                pass
 
 
 def start_scheduler() -> None:

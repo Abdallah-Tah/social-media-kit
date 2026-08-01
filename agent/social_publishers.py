@@ -102,12 +102,35 @@ def _publish_threads(draft: dict[str, Any], dry_run: bool = False) -> dict[str, 
         return _result(False, error=f"Threads error: {exc}")
 
 
+def _fit_tweet(text: str, limit: int = 280) -> str:
+    """Trim a post to X's limit without destroying the trailing link.
+
+    A blind ``text[:280]`` cut the URL mid-string whenever the copy ran long,
+    publishing a dead link. The link is the point of the post, so the prose
+    gives way instead — trimmed at a word boundary.
+    """
+    import re
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    urls = re.findall(r"https?://\S+", text)
+    if not urls:
+        return text[:limit].rsplit(" ", 1)[0]
+    tail = urls[-1]
+    body = text[: text.rindex(tail)].rstrip()
+    budget = limit - len(tail) - 2  # room for the separating blank line
+    if budget <= 0:
+        return tail[:limit]
+    trimmed = body[:budget].rsplit(" ", 1)[0].rstrip(" .,;:—-")
+    return f"{trimmed}\n\n{tail}"
+
+
 def _publish_x(draft: dict[str, Any], dry_run: bool = False) -> dict[str, Any]:
     if dry_run:
         return _result(True, published_url="https://x.com/dry-run", dry_run=True)
     try:
         from x_poster import post_tweet
-        text = draft.get("text", "")[:280]
+        text = _fit_tweet(draft.get("text", ""))
         result = post_tweet(text)
         if result and result.get("id"):
             return _result(True, published_url=f"https://x.com/i/web/status/{result['id']}")

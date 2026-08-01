@@ -501,9 +501,16 @@ async function scheduleSelectedSocial(){
  const approvedIds=Array.from(document.querySelectorAll('.social-select:checked[data-status=approved]')).map(cb=>cb.value);
  if(approvedIds.length!==ids.length){alert('Only approved drafts can be scheduled');return}
  if(!ids.length){alert('Select at least one social draft');return}
- const when=prompt('Schedule for (ISO datetime, e.g. 2026-07-10T09:00:00-04:00):');
+ const when=prompt('Schedule first post for (ISO datetime, e.g. 2026-07-10T09:00:00-04:00):');
  if(!when){return}
- const data=await (await fetch('/api/social_drafts/schedule',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ids,scheduled_at:when})})).json();
+ // Spacing matters once more than one draft is selected: an identical
+ // timestamp on every draft fires the whole batch in a single run.
+ let stagger=0;
+ if(ids.length>1){
+  const raw=prompt('Minutes between posts (blank = all at once):','180');
+  stagger=parseInt(raw,10)||0;
+ }
+ const data=await (await fetch('/api/social_drafts/schedule',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ids,scheduled_at:when,stagger_minutes:stagger})})).json();
  const results=data.results||{};
  const summary=Object.entries(results).map(([id,r])=>{
   const draftEl=Array.from(document.querySelectorAll('.social-select')).find(cb=>cb.value===id);
@@ -866,7 +873,11 @@ def handle_schedule_social(body: dict[str, Any]) -> dict[str, Any]:
     """Schedule selected approved social drafts."""
     ids = body.get("ids", [])
     scheduled_at = body.get("scheduled_at", "")
-    return schedule_social_drafts(ids, scheduled_at)
+    try:
+        stagger_minutes = int(body.get("stagger_minutes") or 0)
+    except (TypeError, ValueError):
+        stagger_minutes = 0
+    return schedule_social_drafts(ids, scheduled_at, stagger_minutes=stagger_minutes)
 
 
 def handle_create_social_drafts(draft_id: str, body: dict[str, Any]) -> dict[str, Any]:

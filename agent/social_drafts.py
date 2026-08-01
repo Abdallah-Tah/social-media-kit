@@ -24,6 +24,22 @@ SUPPORTED_PLATFORMS = {
     "linkedin", "facebook", "x", "threads", "reddit", "newsletter", "youtube",
 }
 
+# A scheduled_at written without an offset means the local wall clock the
+# operator typed, not UTC. Reading it as UTC published posts hours early.
+LOCAL_TZ = dt.datetime.now().astimezone().tzinfo
+
+# A draft is retried a bounded number of times before it is parked as failed,
+# so a permanently-rejected post can never occupy the queue forever.
+MAX_PUBLISH_ATTEMPTS = 5
+
+# Platform quota rejections resolve on their own at the next local day.
+_QUOTA_MARKERS = ("limit reached", "daily limit", "quota")
+# Transport-level hiccups are worth one more attempt shortly after.
+_TRANSIENT_MARKERS = (
+    "rate limit", "429", "timed out", "timeout", "temporarily",
+    "502", "503", "504", "connection reset", "connection aborted",
+)
+
 
 @dataclass
 class SocialDraft:
@@ -45,6 +61,7 @@ class SocialDraft:
     updated_at: str = ""
     history: list[dict[str, Any]] = field(default_factory=list)
     campaign_id: str = ""
+    attempts: int = 0
 
     def __post_init__(self):
         if not self.draft_id:
@@ -78,10 +95,47 @@ class SocialDraft:
             "updated_at": self.updated_at,
             "history": self.history,
             "campaign_id": self.campaign_id,
+            "attempts": self.attempts,
         }
 
     def touch(self) -> None:
         self.updated_at = dt.datetime.now(dt.timezone.utc).isoformat()
+
+
+def _parse_when(value: str) -> dt.datetime:
+    """Parse a scheduled_at string, treating a naive value as local time.
+
+    The scheduler compares against ``now`` in UTC, so a naive string had to be
+    given *some* zone. Assuming UTC published every locally-typed time early by
+    the size of the UTC offset; assuming local matches what the operator meant.
+    """
+    when = dt.datetime.fromisoformat(value)
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=LOCAL_TZ)
+    return when
+
+
+def _next_local_day(now: dt.datetime) -> dt.datetime:
+    """Just after midnight local time — when platform daily quotas reset."""
+    local = now.astimezone(LOCAL_TZ)
+    return (local + dt.timedelta(days=1)).replace(
+        hour=0, minute=5, second=0, microsecond=0
+    )
+
+
+def _retry_plan(error: str, now: dt.datetime) -> tuple[dt.datetime, str] | None:
+    """When a failure is worth retrying, return (retry_at, reason).
+
+    A quota rejection ("daily news limit reached") is not a broken draft — the
+    post is fine and the platform simply has no room today. Burning it to
+    ``failed`` is what left a backlog of drafts needing a manual retry.
+    """
+    text = (error or "").lower()
+    if any(marker in text for marker in _QUOTA_MARKERS):
+        return _next_local_day(now), "platform daily limit"
+    if any(marker in text for marker in _TRANSIENT_MARKERS):
+        return now + dt.timedelta(hours=1), "transient platform error"
+    return None
 
 
 def _social_draft_path(draft_id: str) -> Path:
@@ -98,7 +152,12 @@ def _extract_summary(body: str, max_chars: int = 240) -> str:
     for paragraph in re.split(r"\n\s*\n", body):
         text = re.sub(r"^\s{0,3}#{1,6}\s+", "", paragraph, flags=re.M)
         text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
-        text = re.sub(r"[*`_]", "", text)
+        # Unwrap emphasis, but only where the marker wraps a word. Blanket
+        # stripping of "_" also ate the underscore inside identifiers, so
+        # `reserved_at` went out to LinkedIn as "reservedat".
+        text = re.sub(r"(?<![\w*])\*{1,2}([^*\n]+)\*{1,2}(?![\w*])", r"\1", text)
+        text = re.sub(r"(?<![\w_])_{1,2}([^_\n]+)_{1,2}(?![\w_])", r"\1", text)
+        text = text.replace("`", "")
         text = re.sub(r"\s+", " ", text).strip(" -")
         if len(text) >= 80 and not _contains_placeholder(text):
             return _truncate(text, max_chars)
@@ -136,19 +195,85 @@ def _quality_error(title: str, body: str, summary: str = "") -> str | None:
     return None
 
 
-def _social_post_quality_error(title: str, text: str) -> str | None:
+_URL_RE = re.compile(r"https?://\S+")
+# Something checkable. Two families count, because technical specificity is not
+# always numeric: "the reserved_at timestamp is cleared before the handler
+# finishes" names a real mechanism and carries no digit at all.
+#
+#   measurements — a version, count, percentage, duration, or CVE. A bare
+#                  four-digit year is excluded: "in 2026" is not a fact about
+#                  the thing being described.
+#   identifiers  — backticked code, snake_case, a call, a path, a CONSTANT.
+#                  Deliberately NOT plain CamelCase, which would match any
+#                  brand name and let "OpenAI has improved their API" through.
+_CONCRETE_FACT_RE = re.compile(
+    r"\bCVE-\d{4}-\d{4,}\b"
+    r"|\b\d+\.\d+(?:\.\d+)?\b"
+    r"|\b\d+\s?(?:%|percent|ms|x|k|m|bn|gb|mb|kb|hours?|minutes?|days?|weeks?)\b"
+    r"|\b(?!\d{4}\b)\d[\d,]*\b"
+    r"|`[^`]+`"
+    r"|\b[a-z][a-z0-9]*_[a-z0-9_]+\b"
+    r"|\b\w+\([^)]*\)"
+    r"|(?:^|\s)/[\w.-]+(?:/[\w.-]+)+"
+    r"|\b[A-Z][A-Z0-9]{2,}_[A-Z0-9_]+\b",
+    re.I,
+)
+# Feed-derived drafts carry a provenance marker that is not prose.
+_BOILERPLATE_RE = re.compile(r"\bsource:\s*\w+", re.I)
+
+
+# Minimum prose (URL and boilerplate excluded) before a post says anything.
+# X is held lower on purpose: the whole post is 280 characters including the
+# link, so its copy is ~115 by construction and the general floor rejected
+# every X draft outright.
+_MIN_PROSE_CHARS = 100
+_MIN_PROSE_CHARS_SHORTFORM = 60
+_SHORTFORM_PLATFORMS = {"x", "threads"}
+
+
+def _social_post_quality_error(title: str, text: str,
+                               platform: str | None = None) -> str | None:
     if not title or len(title.strip()) < 12:
         return "social draft needs a specific title before publishing"
-    if len(re.sub(r"\s+", "", text or "")) < 100:
-        return "social draft is too short to publish"
     if _contains_placeholder(title) or _contains_placeholder(text):
         return "social draft contains placeholder copy and cannot be published"
+
+    # Measure the *prose*. A link and a "Source: hackernews" tag are not copy,
+    # and counting them let a post that was nothing but the headline repeated
+    # three times clear both the length and the distinct-term checks — a long
+    # URL alone contributes a dozen "terms".
+    prose = _BOILERPLATE_RE.sub(" ", _URL_RE.sub(" ", text or ""))
+    floor = (_MIN_PROSE_CHARS_SHORTFORM
+             if (platform or "").lower() in _SHORTFORM_PLATFORMS
+             else _MIN_PROSE_CHARS)
+    if len(re.sub(r"\s+", "", prose)) < floor:
+        return "social draft is too short to publish"
+
     title_terms = set(re.findall(r"[a-z0-9]+", title.lower()))
-    post_terms = re.findall(r"[a-z0-9]+", text.lower())
+    post_terms = re.findall(r"[a-z0-9]+", prose.lower())
     non_title_terms = [term for term in post_terms if term not in title_terms]
     if title.lower() in text.lower() and len(non_title_terms) < 18:
         return "social draft mostly repeats its headline and cannot be published"
+
+    # A post has to carry one concrete, checkable fact. "OpenAI has updated
+    # their API to improve usability and performance for developers" is a
+    # grammatical sentence that tells a developer nothing — it survived every
+    # other check here because it is long enough and does not repeat the title.
+    # A number, version, or CVE is the cheapest reliable proxy for specificity.
+    if not _CONCRETE_FACT_RE.search(prose):
+        return "social draft states no concrete fact (no version, number, or measure)"
     return None
+
+
+def social_post_quality_error(title: str, text: str,
+                              platform: str | None = None) -> str | None:
+    """Why this copy cannot be published, or None if it is publishable.
+
+    Public wrapper so a publishing lane can reject bad copy at generation time,
+    with a line in its own log, instead of discovering it hours later when the
+    scheduler parks the draft for review.
+    """
+    return _social_post_quality_error(title, text, platform)
 
 
 def _format_hashtags(tags: list[str]) -> list[str]:
@@ -348,13 +473,34 @@ def delete_social_draft(draft_id: str) -> bool:
     return False
 
 
-def schedule_social_drafts(draft_ids: list[str], scheduled_at: str) -> dict[str, Any]:
+def schedule_social_drafts(
+    draft_ids: list[str],
+    scheduled_at: str,
+    stagger_minutes: int = 0,
+) -> dict[str, Any]:
     """Schedule approved social drafts for future publishing.
 
     Only drafts with status=approved can be scheduled. Sets status=scheduled
     and stores the ISO datetime. Immediate publishing does not happen.
+
+    ``stagger_minutes`` spaces successive drafts out from ``scheduled_at``.
+    Without it every selected draft carries the identical timestamp and the
+    whole batch fires in a single run — which reads as a burst on the feed and
+    walks straight into the platform daily limits.
     """
-    results = {}
+    results: dict[str, Any] = {}
+    try:
+        base = _parse_when(scheduled_at)
+    except ValueError:
+        return {
+            "ok": True,
+            "results": {
+                draft_id: {"ok": False, "error": "invalid scheduled_at datetime"}
+                for draft_id in draft_ids
+            },
+        }
+
+    offset = 0
     for draft_id in draft_ids:
         draft = load_social_draft(draft_id)
         if draft is None:
@@ -363,13 +509,13 @@ def schedule_social_drafts(draft_ids: list[str], scheduled_at: str) -> dict[str,
         if draft.status != "approved":
             results[draft_id] = {"ok": False, "error": f"draft must be approved, current status: {draft.status}"}
             continue
-        try:
-            dt.datetime.fromisoformat(scheduled_at)
-        except ValueError:
-            results[draft_id] = {"ok": False, "error": "invalid scheduled_at datetime"}
-            continue
+        when = base + dt.timedelta(minutes=stagger_minutes * offset)
+        offset += 1
         draft.status = "scheduled"
-        draft.scheduled_at = scheduled_at
+        # Store normalized and tz-aware so the queue never re-guesses the zone.
+        draft.scheduled_at = when.isoformat()
+        draft.attempts = 0
+        draft.error = ""
         save_social_draft(draft)
         results[draft_id] = {"ok": True, "draft": draft.to_dict()}
     return {"ok": True, "results": results}
@@ -389,42 +535,96 @@ def publish_social_draft(draft_id: str, dry_run: bool = False) -> dict[str, Any]
         return {"ok": False, "error": "social draft not found"}
     if draft.status not in {"approved", "scheduled"}:
         return {"ok": False, "error": f"social draft must be approved or scheduled, current status: {draft.status}"}
-    error = _social_post_quality_error(draft.title, draft.text)
+
+    now = dt.datetime.now(dt.timezone.utc)
+    was_scheduled = draft.status == "scheduled"
+
+    error = _social_post_quality_error(draft.title, draft.text, draft.platform)
     if error:
+        # A scheduled draft that fails the gate can never pass it unedited, so
+        # leaving it queued made the hourly publisher retry it forever. Park it
+        # for review instead — it leaves the queue and stays visible.
+        if was_scheduled and not dry_run:
+            draft.status = "needs_review"
+            draft.error = error
+            draft.history.append({
+                "ts": now.isoformat(),
+                "from": "scheduled",
+                "to": "needs_review",
+                "note": f"quality gate: {error}",
+            })
+            draft.touch()
+            save_social_draft(draft)
         return {"ok": False, "error": error}
 
     result = publish(draft.platform, draft.to_dict(), dry_run=dry_run)
+    if dry_run:
+        # A rehearsal must leave the queue exactly as it found it. Recording a
+        # dry run as published — with a placeholder URL — retired every draft
+        # it touched, and `publish_due` ships with dry_run enabled by default.
+        return {**result, "dry_run": True, "would_publish": bool(result.get("ok"))}
     if result.get("ok"):
         draft.status = "published"
         draft.published_url = result.get("published_url", "")
-        draft.published_at = dt.datetime.now(dt.timezone.utc).isoformat()
+        draft.published_at = now.isoformat()
         draft.error = ""
     else:
-        draft.status = "failed"
-        draft.error = result.get("error", "publish failed")
+        failure = result.get("error", "publish failed")
+        draft.error = failure
+        draft.attempts = (draft.attempts or 0) + 1
+        plan = _retry_plan(failure, now) if was_scheduled else None
+        if plan and draft.attempts < MAX_PUBLISH_ATTEMPTS:
+            retry_at, reason = plan
+            draft.status = "scheduled"
+            draft.scheduled_at = retry_at.isoformat()
+            draft.history.append({
+                "ts": now.isoformat(),
+                "from": "scheduled",
+                "to": "scheduled",
+                "note": f"retry {draft.attempts}/{MAX_PUBLISH_ATTEMPTS} at {retry_at.isoformat()} ({reason})",
+            })
+            result = {**result, "retryable": True, "retry_at": retry_at.isoformat()}
+        else:
+            draft.status = "failed"
     save_social_draft(draft)
     return result
 
 
-def publish_due_social_drafts(dry_run: bool = False) -> dict[str, Any]:
+def publish_due_social_drafts(dry_run: bool = False, max_per_run: int = 0) -> dict[str, Any]:
     """Publish scheduled social drafts whose scheduled_at has passed.
 
     Skips future scheduled drafts. Returns per-id results.
+
+    ``max_per_run`` (0 = unlimited) caps how many drafts one pass may publish.
+    A backlog — the dashboard was down, or a day of drafts came due together —
+    otherwise drains as a single burst the moment the scheduler comes back.
+    Oldest due first, so nothing starves behind a newer draft.
     """
     now = dt.datetime.now(dt.timezone.utc)
-    results = {}
+    results: dict[str, Any] = {}
+    due: list[tuple[dt.datetime, str]] = []
+
     for data in list_social_drafts(status="scheduled"):
         draft_id = data.get("draft_id")
         scheduled_at = data.get("scheduled_at", "")
         try:
-            when = dt.datetime.fromisoformat(scheduled_at)
-            if when.tzinfo is None:
-                when = when.replace(tzinfo=dt.timezone.utc)
+            when = _parse_when(scheduled_at)
         except ValueError:
             results[draft_id] = {"ok": False, "error": "invalid scheduled_at"}
             continue
         if when > now:
             results[draft_id] = {"ok": False, "error": "scheduled for the future", "skipped": True}
+            continue
+        due.append((when, draft_id))
+
+    due.sort(key=lambda item: item[0])
+    for index, (_, draft_id) in enumerate(due):
+        if max_per_run and index >= max_per_run:
+            results[draft_id] = {
+                "ok": False,
+                "error": f"deferred — run cap of {max_per_run} reached",
+                "skipped": True,
+            }
             continue
         results[draft_id] = publish_social_draft(draft_id, dry_run=dry_run)
     return {"ok": True, "results": results}

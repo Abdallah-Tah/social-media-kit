@@ -17,8 +17,8 @@
     "label": "Publish Scheduled Posts",
     "description": "Publish social drafts whose scheduled_at time has passed.",
     "interval_hours": 1,
-    "enabled": false,
-    "dry_run": true
+    "enabled": true,
+    "dry_run": false
   },
   "analytics_sync": {
     "label": "Analytics Sync",
