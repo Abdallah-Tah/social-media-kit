@@ -177,6 +177,9 @@ def choose_story(candidates, titles, spec):
         "source URL when one is available.\n\n"
         f"ALREADY PUBLISHED — do not repeat any of these subjects, even from a new angle:\n{avoid}\n\n"
         f"CANDIDATES:\n{options}\n\n"
+        "Return 2-3 source_urls where the candidates support it: the official/primary source "
+        "first, then any independent coverage of the SAME story. Corroboration is what separates "
+        "a report from a rumour. Only return one URL if genuinely nothing else covers this.\n\n"
         "Return STRICT JSON: "
         '{"title":"clear news-analysis headline","slug":"kebab-case","source_urls":["https://..."],'
         '"why_it_matters":"one sentence"}'
@@ -194,12 +197,26 @@ def choose_story(candidates, titles, spec):
     }
 
 
+# Minimum extracted source text before the writer is allowed to run. The
+# prompt instructs the model to use ONLY the provided sources; when extraction
+# returns almost nothing it has no choice but to write from memory, which is
+# how a 1,170-word article shipped behind a press release that yielded 250
+# characters. Raise/lower with NEWS_MIN_SOURCE_CHARS.
+MIN_SOURCE_CHARS = int(os.environ.get("NEWS_MIN_SOURCE_CHARS", "800"))
+
+
 def fetch_sources(urls):
     source_blocks = []
     for url in urls:
         text = CR.extract_article(url, max_chars=3500)
         source_blocks.append(f"URL: {url}\nEXTRACT:\n{text}")
     return "\n\n---\n\n".join(source_blocks)
+
+
+def extracted_chars(source_text):
+    """Characters of real source prose, excluding the URL/EXTRACT scaffolding."""
+    stripped = re.sub(r"URL: \S+|EXTRACT:|^-+$", "", source_text or "", flags=re.M)
+    return len(re.sub(r"\s+", "", stripped))
 
 
 def write_news_article(story, source_text, spec):
@@ -221,6 +238,22 @@ def write_news_article(story, source_text, spec):
         f"- Include these exact H2 sections, in this order:\n{sections}\n\n"
         f"Section guidance:\n{spec['brief']}\n\n"
         "- The Sources section must list every source URL used as Markdown links.\n"
+        # These mirror content_formats.substance_issues(). Stating them here
+        # lets the writer satisfy the gate instead of merely failing it.
+        + (f"- Include at least {spec['min_code']} fenced code blocks with language labels: the actual "
+           "command, config, diff, or API call a developer runs. Real copy-pasteable code taken from "
+           "or directly implied by the sources — never a prose description of code, never invented "
+           "API surface.\n" if spec.get("min_code") else "")
+        + "- Cite every source you were given, not just the first. Where two sources cover the same "
+        "claim, link both — one link is a single unverified voice.\n"
+        "- If this is a security story, name the specific CVE identifiers (CVE-YYYY-NNNNN) from "
+        "the sources, or link the vendor's security advisory. A security article that names no "
+        "vulnerability is not publishable — if the sources do not identify one, say plainly which "
+        "advisory is pending rather than padding the section.\n"
+        "- If the headline names a version number, discuss that exact version in the body.\n"
+        "- Avoid these filler words; they add length without meaning: ever-evolving, landscape, "
+        "pivotal, crucial, vital, comprehensive, myriad, plethora, testament, paradigm, delve, "
+        "underscore, streamline, compelling, 'it is worth noting', 'significant milestone'.\n"
         "- What I'll Be Watching is the FINAL section.\n"
         "- Never write generic conclusions like 'Time will tell', 'The future looks bright', or 'Developers should stay tuned'. Provide a specific takeaway.\n"
         "- After drafting, review and remove repetitive phrasing, generic AI language, and obvious summary-style sentences.\n\n"
@@ -296,11 +329,15 @@ def ensure_required_sections(body, source_urls):
     return text
 
 
-def news_quality_issues(body, format_id=DEFAULT_NEWS_FORMAT):
+def news_quality_issues(body, format_id=DEFAULT_NEWS_FORMAT, title=""):
     issues = CF.quality_issues("news", body, format_id)
     if "## Sources" in body and body.rfind("## Sources") > body.rfind("## What I'll Be Watching"):
         issues.append("What I'll Be Watching must be the final section")
+    # Shape is not substance: the structural gate passed a security piece that
+    # named no CVE and cited only Wikipedia.
+    issues.extend(CF.substance_issues(title, body))
     return issues
+
 
 
 def publish_social(title, body, url, cover):
@@ -311,6 +348,9 @@ def publish_social(title, body, url, cover):
     else:
         fb_poster.post_text(text, link=url)
 
+    # No X here on purpose. Every X post is billed, so X carries the weekly
+    # GitHub roundup only (scripts/github_roundup.py) — never the 5×/day news
+    # lane, which would spend on 5 posts a day indefinitely.
     token, _ = LI.fetch_org_token()
     if not token:
         print("⚠️ LinkedIn skipped: no token")
@@ -368,11 +408,21 @@ def main():
         print("news slug already published — skipping this cycle (no publish)")
         return 0
     source_text = fetch_sources(story["source_urls"])
+    grounded = extracted_chars(source_text)
+    if grounded < MIN_SOURCE_CHARS:
+        print(f"news: source extraction yielded only {grounded} chars "
+              f"(need {MIN_SOURCE_CHARS}) — refusing to write an ungrounded article")
+        return 1
+    print(f"sources extracted: {grounded} chars")
     body = write_news_article(story, source_text, spec)
     wc = len(body.split())
     source_hits = sum(1 for u in story["source_urls"] if u in body)
-    print(f"article: {wc} words, sources linked: {source_hits}")
-    issues = news_quality_issues(body, fmt)
+    distinct = len({CF._host(u) for u in CF.source_urls(body)})
+    fences = body.count("```") // 2
+    print(f"article: {wc} words, sources linked: {source_hits}, "
+          f"distinct source hosts: {distinct}, code blocks: {fences} "
+          f"(min_code={spec.get('min_code', 0)}, NEWS_MIN_SOURCES={CF.MIN_SOURCES})")
+    issues = news_quality_issues(body, fmt, title=story["title"])
     if wc < 750 or source_hits < 1 or issues:
         if issues:
             print("quality issues: " + "; ".join(issues))
@@ -418,7 +468,7 @@ def main():
 
     url = f"{SITE}/tutorials/{post.get('slug', story['slug'])}"
     li_ok = publish_social(story["title"], body, url, cover)
-    print(f"News social: Facebook attempted, LinkedIn={'ok' if li_ok else 'failed/skipped'}")
+    print(f"News social: Facebook attempted, LinkedIn={'ok' if li_ok else 'failed/skipped'}, X=off (roundup only)")
     return 0
 
 
