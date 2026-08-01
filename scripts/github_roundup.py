@@ -237,6 +237,74 @@ def build_social(items: list[dict], url: str, topic: str) -> str:
     return "\n".join(out)
 
 
+def build_x_social(items: list[dict], url: str, topic: str) -> str:
+    """A 280-character version of the roundup.
+
+    The numbered list in ``build_social`` runs to thousands of characters, so X
+    gets the headline figure plus as many repos as fit. Truncating the long post
+    would cut the link, which is the only part that carries the rest.
+    """
+    from agent.social_publishers import _fit_tweet
+    total = sum(i["weekly_stars"] for i in items)
+    label = {"ai": "AI", "devtools": "developer tool", "all": "open-source"}.get(topic, "open-source")
+    head = f"{len(items)} {label} repos gained {total:,} GitHub stars this week."
+    lines = [head, ""]
+    for it in items:
+        candidate = lines + [f"{it['name']} +{it['weekly_stars']:,}"]
+        # Keep the link's room reserved while deciding what else fits.
+        if len("\n".join(candidate)) + len(url) + 2 > 280:
+            break
+        lines = candidate
+    return _fit_tweet("\n".join(lines) + f"\n\n{url}")
+
+
+def x_already_posted(slug: str) -> bool:
+    """Has this roundup already gone to X? Every X post is billed."""
+    for run in (_load_ledger().get("runs") or []):
+        if run.get("slug") == slug and run.get("x_posted"):
+            return True
+    return False
+
+
+def mark_x_posted(slug: str, tweet_url: str) -> None:
+    data = _load_ledger()
+    runs = data.get("runs") or []
+    for run in reversed(runs):
+        if run.get("slug") == slug:
+            run["x_posted"] = tweet_url or True
+            break
+    data["runs"] = runs
+    os.makedirs(os.path.dirname(LEDGER), exist_ok=True)
+    tmp = LEDGER + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=2)
+    os.replace(tmp, LEDGER)
+
+
+def publish_to_x(items: list[dict], live_url: str, topic: str, slug: str) -> None:
+    """Post the roundup to X exactly once.
+
+    X is the only billed channel, so it carries this weekly roundup and nothing
+    else — the 5x/day news lane deliberately does not touch it. The ledger guard
+    means re-running the script for the same slug will not pay twice.
+    """
+    if x_already_posted(slug):
+        print(f"X: already posted for {slug} — skipping (billed channel, once only)")
+        return
+    try:
+        from x_poster import post_tweet
+        text = build_x_social(items, live_url, topic)
+        result = post_tweet(text)
+        if result and result.get("id"):
+            tweet_url = f"https://x.com/i/web/status/{result['id']}"
+            mark_x_posted(slug, tweet_url)
+            print(f"X: posted {tweet_url}")
+        else:
+            print(f"X: failed — {result}")
+    except Exception as exc:
+        print(f"x post failed (non-fatal): {exc}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--topic", default="ai", choices=["ai", "devtools", "all"])
@@ -272,7 +340,9 @@ def main() -> int:
     url = f"{SITE}/tutorials/{slug}"
     if args.dry_run or not args.publish:
         print("=== DRY RUN — no cover, no site publish, no social ===")
-        print("\n--- social post ---\n" + build_social(items, url, topic))
+        print("\n--- social post (Facebook / LinkedIn) ---\n" + build_social(items, url, topic))
+        x_text = build_x_social(items, url, topic)
+        print(f"\n--- X post ({len(x_text)}/280 chars, billed, once per roundup) ---\n{x_text}")
         return 0
 
     cover = IG.generate_cover(
@@ -325,6 +395,8 @@ def main() -> int:
                 print(f"LinkedIn: {'ok' if res else 'failed'}")
     except Exception as exc:
         print(f"linkedin post failed (non-fatal): {exc}")
+
+    publish_to_x(items, live_url, topic, post.get("slug", slug))
     return 0
 
 

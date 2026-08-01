@@ -137,3 +137,38 @@ def make_news_social_copy(title, body, url, model="gpt-4o-mini", shape_id=None):
     value = f"This one breaks down {title} and what it means for people actually shipping code."
     return (shape["fallback"].format(value=value)
             + f"\n\nRead it here:\n{url}\n\n#SoftwareDevelopment #TechNews #BuildWithAbdallah")
+
+
+def make_x_social_copy(title, body, url, model="gpt-4o-mini"):
+    """Return an X post that fits in 280 characters *including* the link.
+
+    X is the one channel with a hard limit, so this does not share the shape
+    rotation used by the Facebook/LinkedIn copy — those shapes assume room for
+    a multi-paragraph post plus a hashtag line, and truncating one to fit
+    produced a post that stopped mid-sentence. The prose budget here is
+    whatever is left after the URL, so the link always survives intact.
+    """
+    budget = 280 - len(url) - 2  # blank line between prose and link
+    prompt = (
+        "Write ONE short post for X (Twitter) for Abdallah, a full-stack developer. English is his "
+        "second language, so write in SIMPLE, natural, human English. This is developer news, not a "
+        "tutorial. No hype, no ad tone, no AI-polish.\n\n"
+        f"HARD LIMIT: at most {min(budget, 200)} characters. Two sentences maximum.\n"
+        "State one concrete, specific fact from the article, then why it matters to someone shipping "
+        "code. Only state facts that appear in the excerpt below. Never invent a version number, "
+        "benchmark, or date, and attribute vendor figures as vendor-reported.\n"
+        "No hashtags. No emojis. No link — the link is added afterwards. No markdown.\n\n"
+        f"ARTICLE TITLE: {title}\n"
+        f"ARTICLE BODY EXCERPT: {(body or '')[:1200]}\n\n"
+        "Output ONLY the post text."
+    )
+    prose = _generate(prompt, model, temperature=0.55)
+    if not prose:
+        # Deterministic fallback: the article's own opening, trimmed to budget.
+        para = next((p.strip() for p in _strip_md(body or "").split("\n\n")
+                     if len(p.strip()) > 120 and not p.strip().startswith("#")), "")
+        prose = para or f"New write-up: {title}."
+    prose = " ".join(prose.split())
+    if len(prose) > budget:
+        prose = prose[:budget].rsplit(" ", 1)[0].rstrip(" .,;:—-")
+    return f"{prose}\n\n{url}"
