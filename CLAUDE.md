@@ -51,17 +51,28 @@ node remotion/render.mjs --id Short --props <props.json> --out out.mp4 [--audio 
 
 ## Publishing cadence
 
-The blog + LinkedIn are a live demonstration of what the bot produces, so news
-throughput is deliberate — the volume IS the demo. Format rotation is what keeps
-five posts a day from reading as five copies of the same post.
+The blog + LinkedIn are a live demonstration of what the bot produces, so the bar
+is depth per piece, not throughput. Format rotation keeps consecutive posts from
+reading as copies of each other.
 
-- News: **5×/day** at 08:00, 11:00, 14:00, 17:00, 20:00 (`bwa-news-publish.sh`)
+- News: **2×/day** at 08:00 and 17:00 (`bwa-news-publish.sh`)
 - Tutorials: **Mon/Wed/Fri 09:00** (`bwa-cron-publish.sh`)
-- GitHub roundup: weekly, not yet on cron
-- LinkedIn: `DAILY_LIMITS` in `scripts/linkedin_policy.py` — news 5, tutorial 1, roundup 1
+- GitHub roundup: **Sundays 10:00** (`bwa-roundup-publish.sh`) — the only
+  scheduled job that posts to X
+- LinkedIn: `DAILY_LIMITS` in `scripts/linkedin_policy.py` — news 2, tutorial 1,
+  roundup 1. **Keep this in step with the cron cadence**: a limit above it does
+  nothing, below it silently drops posts.
+
+**News was 5×/day until 2026-08-01.** The volume was the demo, and it stopped
+demonstrating competence: measured across 111 articles, the news lane averaged
+~1,000 words, **1.2 source hosts, and zero code blocks**, while the tutorial lane
+(which enforces `min_code` 4-6) produced 2,000-word articles with real code. Five
+slots a day is more than any pipeline can source, verify, and write well. The cut
+to 2 buys depth per piece; do not raise it without raising `min_code`,
+`NEWS_MIN_SOURCES`, and checking the block rate in `logs/smkit-news.log`.
 
 **The registry must stay larger than the daily post count.** With 8 news formats and
-5 posts/day, each day draws a different subset; if the two numbers ever match, every
+2 posts/day, each day draws a different subset; if the two numbers ever match, every
 day would run the identical format sequence.
 
 ## Feed LLM enrichment (`agent/feed.py`) — bounded on purpose

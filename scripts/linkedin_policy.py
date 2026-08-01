@@ -13,12 +13,14 @@ from pathlib import Path
 KIT = Path(__file__).resolve().parents[1]
 LEDGER = KIT / "content" / "linkedin_daily_posts.json"
 LOCAL_TZ = _dt.datetime.now().astimezone().tzinfo
-MAX_DAILY = 5  # back-compat alias (news limit)
-# Per-kind daily LinkedIn limits. News runs high on purpose: the blog and feed
-# are a live demonstration of what the bot produces, so throughput IS the point.
-# Format rotation (scripts/content_formats.py) is what keeps five posts a day
-# from reading as five copies of the same post.
-DAILY_LIMITS = {"news": 5, "tutorial": 1, "roundup": 1, "project": 2}
+MAX_DAILY = 2  # back-compat alias (news limit)
+# Per-kind daily LinkedIn limits, matched to the cron cadence.
+#
+# News was 5/day when throughput was the demo. It stopped demonstrating anything
+# once the articles behind it carried no code and a single source, so the lane
+# was cut to 2/day on 2026-08-01 and this follows it. Keep the two in step: a
+# limit above the cadence does nothing, and below it silently drops posts.
+DAILY_LIMITS = {"news": 2, "tutorial": 1, "roundup": 1, "project": 2}
 
 
 def _day_entries(data: dict, today: str) -> list:
