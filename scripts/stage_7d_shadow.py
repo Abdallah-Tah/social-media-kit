@@ -50,6 +50,12 @@ from agent.config import load_env  # noqa: E402
 
 load_env()
 
+# This is the explicit manual shadow run, so evidence retrieval/extraction are
+# enabled here unless explicitly overridden (they default to off everywhere else
+# to avoid paid calls outside intentional shadow runs).
+os.environ.setdefault("EDITORIAL_EVIDENCE_RETRIEVAL_ENABLED", "true")
+os.environ.setdefault("EDITORIAL_EVIDENCE_EXTRACTION_ENABLED", "true")
+
 from agent.editorial.flags import (  # noqa: E402
     editorial_slots_enabled,
     editorial_zoneinfo,

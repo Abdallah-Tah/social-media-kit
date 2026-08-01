@@ -44,7 +44,8 @@ KIT = Path(__file__).resolve().parents[2]
 EVIDENCE_CACHE_PATH = KIT / "content" / "feed" / "evidence_cache.json"
 
 # Configuration defaults
-DEFAULT_EVIDENCE_RETRIEVAL_ENABLED = True
+# Evidence retrieval is OFF by default (paid/network-heavy); enable explicitly.
+DEFAULT_EVIDENCE_RETRIEVAL_ENABLED = False
 DEFAULT_MAX_CANDIDATES_PER_RUN = 10
 DEFAULT_MAX_URLS_PER_CANDIDATE = 5
 DEFAULT_TIMEOUT_SECONDS = 10
@@ -105,7 +106,9 @@ def load_evidence_retrieval_config() -> EvidenceRetrievalConfig:
         return frozenset(d.strip().lower() for d in val.split(",") if d.strip())
 
     return EvidenceRetrievalConfig(
-        enabled=os.environ.get("EVIDENCE_RETRIEVAL_ENABLED", "true").lower() in ("true", "1", "yes"),
+        enabled=os.environ.get(
+            "EDITORIAL_EVIDENCE_RETRIEVAL_ENABLED",
+            os.environ.get("EVIDENCE_RETRIEVAL_ENABLED", "false")).lower() in ("true", "1", "yes"),
         max_candidates_per_run=int(os.environ.get("EVIDENCE_RETRIEVAL_MAX_CANDIDATES", DEFAULT_MAX_CANDIDATES_PER_RUN)),
         max_urls_per_candidate=int(os.environ.get("EVIDENCE_RETRIEVAL_MAX_URLS", DEFAULT_MAX_URLS_PER_CANDIDATE)),
         timeout_seconds=int(os.environ.get("EVIDENCE_RETRIEVAL_TIMEOUT", DEFAULT_TIMEOUT_SECONDS)),

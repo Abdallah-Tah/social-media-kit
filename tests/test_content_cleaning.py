@@ -207,3 +207,67 @@ def test_no_publisher_or_notification_side_effects():
     forbidden = {"linkedin_poster", "x_poster", "twitter", "telegram",
                  "newsletter", "facebook", "blog_publisher", "notifier"}
     assert not (imported & forbidden), f"forbidden imports: {imported & forbidden}"
+
+
+class TestSourceQualityFilter:
+    """The pre-extraction source-quality filter records skip reasons with no LLM call."""
+
+    def test_aggregator_redirect_skipped(self):
+        from agent.editorial.content_cleaning import assess_source_quality, SKIP_AGGREGATOR_REDIRECT
+        diag = {"usable_text": True, "failure_reason": None}
+        usable, reason = assess_source_quality(
+            "https://news.google.com/rss/articles/xyz", "<html>...</html>", diag, set())
+        assert usable is False
+        assert reason == SKIP_AGGREGATOR_REDIRECT
+
+    def test_unsupported_domain_skipped(self):
+        from agent.editorial.content_cleaning import assess_source_quality, SKIP_UNSUPPORTED_DOMAIN
+        diag = {"usable_text": True, "failure_reason": None}
+        usable, reason = assess_source_quality(
+            "https://reddit.com/r/programming/x", "<html>...</html>", diag, set())
+        assert usable is False
+        assert reason == SKIP_UNSUPPORTED_DOMAIN
+
+    def test_javascript_only_skipped(self):
+        from agent.editorial.content_cleaning import assess_source_quality, SKIP_JAVASCRIPT_ONLY
+        diag = {"usable_text": True, "failure_reason": None}
+        js_html = '<html><body><div id="root"></div><script>var x=1;</script></body></html>'
+        usable, reason = assess_source_quality(
+            "https://example.com/page", js_html, diag, set())
+        assert usable is False
+        assert reason == SKIP_JAVASCRIPT_ONLY
+
+    def test_insufficient_text_skipped(self):
+        from agent.editorial.content_cleaning import assess_source_quality, SKIP_INSUFFICIENT_TEXT
+        diag = {"usable_text": False, "failure_reason": "insufficient_clean_text"}
+        usable, reason = assess_source_quality(
+            "https://example.com/page", "<html>short</html>", diag, set())
+        assert usable is False
+        assert reason == SKIP_INSUFFICIENT_TEXT
+
+    def test_no_readable_content_skipped(self):
+        from agent.editorial.content_cleaning import assess_source_quality, SKIP_NO_READABLE_CONTENT
+        diag = {"usable_text": False, "failure_reason": "empty_content"}
+        usable, reason = assess_source_quality(
+            "https://example.com/page", "", diag, set())
+        assert usable is False
+        assert reason == SKIP_NO_READABLE_CONTENT
+
+    def test_duplicate_source_skipped(self):
+        from agent.editorial.content_cleaning import assess_source_quality, SKIP_DUPLICATE_SOURCE
+        from agent.feed import canonical_url
+        diag = {"usable_text": True, "failure_reason": None}
+        url = "https://example.com/article?utm_source=x"
+        seen = {canonical_url(url)}
+        usable, reason = assess_source_quality(url, "<html>content</html>", diag, seen)
+        assert usable is False
+        assert reason == SKIP_DUPLICATE_SOURCE
+
+    def test_usable_direct_source_passes(self):
+        from agent.editorial.content_cleaning import assess_source_quality
+        diag = {"usable_text": True, "failure_reason": None}
+        usable, reason = assess_source_quality(
+            "https://openai.com/blog/gpt-5",
+            "<html><article>Real article content here.</article></html>", diag, set())
+        assert usable is True
+        assert reason is None

@@ -217,3 +217,88 @@ def clean_fetched_evidence(fetched_evidence: list[dict[str, Any]], fallback_text
             "failure_reason": result["failure_reason"],
         })
     return cleaned, diagnostics
+
+
+# ── Source-quality filter (pre-extraction, no LLM call) ──────────────────────
+# Skip reasons are recorded WITHOUT an LLM call so low-value pages never incur a
+# paid extraction.
+SKIP_AGGREGATOR_REDIRECT = "aggregator_redirect"
+SKIP_NO_READABLE_CONTENT = "no_readable_content"
+SKIP_JAVASCRIPT_ONLY = "javascript_only"
+SKIP_INSUFFICIENT_TEXT = "insufficient_text"
+SKIP_DUPLICATE_SOURCE = "duplicate_source"
+SKIP_UNSUPPORTED_DOMAIN = "unsupported_domain"
+
+# Domains never worth a paid extraction: aggregators, redirectors, social feeds.
+_UNSUPPORTED_DOMAINS = frozenset({
+    "news.google.com", "news.yahoo.com", "msn.com", "flipboard.com",
+    "feedly.com", "feedburner.com", "reddit.com", "twitter.com", "x.com",
+    "facebook.com", "instagram.com", "linkedin.com", "tiktok.com",
+    "youtube.com", "youtu.be", "medium.com", "substack.com", "biztoc.com",
+    "newsbreak.com",
+})
+
+# High-value direct sources that are preferred (informational; used to rank).
+PREFERRED_DOMAINS = frozenset({
+    "github.com", "arxiv.org", "aclanthology.org", "ieee.org", "acm.org",
+    "nature.com", "springer.com", "docs.python.org", "developer.mozilla.org",
+    "readthedocs.io", "developer.apple.com", "developer.android.com",
+})
+
+# URL patterns that indicate an aggregator/redirect page.
+_AGGREGATOR_REDIRECT_PATTERN = re.compile(
+    r"(news\.google\.com/rss/articles|/rss/articles|/rss/|/url\?|/aclk\?|"
+    r"feedburner|feedproxy|/redirect)", re.I)
+_JS_ONLY_BODY_PATTERN = re.compile(
+    r'<div[^>]*id=["\']?(root|app|__next|__nuxt)["\']?[^>]*>\s*</div>', re.I)
+
+
+def is_aggregator_redirect(url: str, raw_html: str = "") -> bool:
+    """Detect aggregator/redirect URLs (Google News redirects, RSS redirectors)."""
+    if _AGGREGATOR_REDIRECT_PATTERN.search(url or ""):
+        return True
+    head = (raw_html or "")[:5000].lower()
+    if 'http-equiv="refresh"' in head or "http-equiv='refresh'" in head:
+        return True
+    return False
+
+
+def is_javascript_only(raw_html: str) -> bool:
+    """Detect pages whose body is essentially empty (JS-rendered shell)."""
+    if not raw_html:
+        return False
+    head = raw_html[:10000]
+    if _JS_ONLY_BODY_PATTERN.search(head):
+        return True
+    if re.search(r"<body[^>]*>\s*</body>", head, re.I):
+        return True
+    return False
+
+
+def assess_source_quality(url: str, raw_html: str, cleaning_diag: dict[str, Any],
+                          seen_canonical: set[str],
+                          unsupported_domains: frozenset[str] = _UNSUPPORTED_DOMAINS,
+                          ) -> tuple[bool, str | None]:
+    """Assess source quality before any paid extraction (no LLM call).
+
+    Returns (usable, skip_reason). skip_reason is one of the SKIP_* constants
+    when the source should be skipped, else None.
+    """
+    from agent.feed import canonical_url
+    from .models import registrable_domain
+
+    canonical = canonical_url(url)
+    if canonical and canonical in seen_canonical:
+        return False, SKIP_DUPLICATE_SOURCE
+    domain = registrable_domain(url)
+    if domain in unsupported_domains:
+        return False, SKIP_UNSUPPORTED_DOMAIN
+    if is_aggregator_redirect(url, raw_html):
+        return False, SKIP_AGGREGATOR_REDIRECT
+    if is_javascript_only(raw_html):
+        return False, SKIP_JAVASCRIPT_ONLY
+    if not cleaning_diag.get("usable_text"):
+        if cleaning_diag.get("failure_reason") == "insufficient_clean_text":
+            return False, SKIP_INSUFFICIENT_TEXT
+        return False, SKIP_NO_READABLE_CONTENT
+    return True, None

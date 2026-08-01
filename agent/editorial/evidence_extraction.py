@@ -35,7 +35,8 @@ EXTRACTION_CACHE_PATH = KIT / "content" / "feed" / "evidence_extraction_cache.js
 EXTRACTION_SCHEMA_VERSION = 1
 
 # Configuration defaults
-DEFAULT_EXTRACTION_ENABLED = True
+# LLM extraction is OFF by default (paid); enable explicitly.
+DEFAULT_EXTRACTION_ENABLED = False
 DEFAULT_MAX_CANDIDATES_PER_RUN = 10
 DEFAULT_MAX_INPUT_CHARS = 50000
 DEFAULT_DAILY_BUDGET_USD = 5.0
@@ -56,7 +57,7 @@ class ExtractionConfig:
 def load_extraction_config() -> ExtractionConfig:
     """Load config from environment or use defaults."""
     return ExtractionConfig(
-        enabled=os.environ.get("EDITORIAL_EVIDENCE_EXTRACTION_ENABLED", "true").lower() in ("true", "1", "yes"),
+        enabled=os.environ.get("EDITORIAL_EVIDENCE_EXTRACTION_ENABLED", "false").lower() in ("true", "1", "yes"),
         max_candidates_per_run=int(os.environ.get("EDITORIAL_EVIDENCE_EXTRACTION_MAX_CANDIDATES", DEFAULT_MAX_CANDIDATES_PER_RUN)),
         max_input_chars=int(os.environ.get("EDITORIAL_EVIDENCE_EXTRACTION_MAX_INPUT_CHARS", DEFAULT_MAX_INPUT_CHARS)),
         daily_budget_usd=float(os.environ.get("EDITORIAL_EVIDENCE_EXTRACTION_DAILY_BUDGET_USD", DEFAULT_DAILY_BUDGET_USD)),
@@ -305,11 +306,37 @@ def extract_structured_evidence(
 
         # Clean the fetched evidence (strip page boilerplate) before extraction so
         # the input budget is spent on article text, not raw HTML chrome.
-        from .content_cleaning import clean_fetched_evidence
+        from .content_cleaning import assess_source_quality, clean_fetched_evidence
+        from agent.feed import canonical_url
         fallback_text = str(candidate_dict.get("summary", "") or candidate_dict.get("title", "") or "")
         cleaned_evidence, cleaning_diags = clean_fetched_evidence(
             fetched_evidence, fallback_text=fallback_text)
         metrics.setdefault("cleaning_diagnostics", []).extend(cleaning_diags)
+
+        # Source-quality filter: skip low-value sources BEFORE any paid extraction
+        # (aggregator redirects, JS-only pages, no readable body, insufficient
+        # text, duplicate canonical URLs, unsupported domains). Skip reasons are
+        # recorded without an LLM call.
+        seen_canonical: set[str] = set()
+        filtered_evidence: list[dict[str, Any]] = []
+        for raw, cleaned, diag in zip(fetched_evidence, cleaned_evidence, cleaning_diags):
+            url = raw.get("url", "")
+            usable, skip_reason = assess_source_quality(
+                url, raw.get("content", ""), diag, seen_canonical)
+            if usable:
+                filtered_evidence.append(cleaned)
+                canonical = canonical_url(url)
+                if canonical:
+                    seen_canonical.add(canonical)
+            else:
+                metrics.setdefault("source_quality_skips", []).append(
+                    {"url": url, "skip_reason": skip_reason})
+        cleaned_evidence = filtered_evidence
+
+        if not cleaned_evidence:
+            # No usable evidence after filtering; skip extraction (no LLM call).
+            merged_candidates.append(candidate)
+            continue
 
         # Check cache
         cand_fp = candidate_fingerprint(candidate_dict)
