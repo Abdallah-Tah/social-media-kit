@@ -86,14 +86,26 @@ def _search_searxng(query, count):
 
     Set SEARXNG_URL to your instance (self-hosted is most reliable), e.g.
     https://searxng.example.com. Public instances often enable JSON output.
+
+    The engine list is pinned rather than left to the instance default. A
+    default SearXNG asks Brave/DuckDuckGo/Startpage, and all three CAPTCHA or
+    rate-limit a server that queries them ~70×/day — the instance then answers
+    200 with an empty ``results`` array, which reads as "nothing was written
+    about this" rather than "every engine refused". Override with
+    SEARXNG_ENGINES (comma-separated) if these get blocked in turn.
     """
     base = os.environ.get("SEARXNG_URL", "").rstrip("/")
     if not base:
         return []
+    # Order matters more than count. On developer queries Bing and Mojeek
+    # return the brand match ("Next.js security patch" → the Next plc clothing
+    # site); Yahoo returns nextjs.org/blog/CVE-… . Yahoo leads for that reason.
+    engines = os.environ.get("SEARXNG_ENGINES", "yahoo,bing,mojeek").strip()
     try:
         resp = requests.get(
             f"{base}/search",
-            params={"q": query, "format": "json", "safesearch": 1},
+            params={"q": query, "format": "json", "safesearch": 1,
+                    "engines": engines},
             headers={"User-Agent": _UA, "Accept": "application/json"},
             timeout=15,
         )
