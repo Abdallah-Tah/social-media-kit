@@ -80,7 +80,7 @@ def fetch_org_token():
 
 
 def post_org(text, image_path=None, title="", description="", token=None, author=None,
-             post_kind=None):
+             post_kind=None, article_url=""):
     """Publish a UGC share to the LinkedIn organization page."""
     ok, reason = linkedin_policy.allowed(post_kind)
     if not ok:
@@ -142,6 +142,20 @@ def post_org(text, image_path=None, title="", description="", token=None, author
              "shareMediaCategory": "IMAGE" if media else "NONE"}
     if media:
         share["media"] = media
+    elif article_url:
+        # With shareMediaCategory NONE, LinkedIn picks the FIRST URL in the body
+        # to build the link card. A ranked list puts a GitHub repo there, so the
+        # post ended up advertising someone else's project. Declaring the article
+        # explicitly pins the card to buildwithabdallah.com. ARTICLE + originalUrl
+        # is standard ugcPosts — no unsupported behaviour, and the repo links in
+        # the body stay clickable.
+        share["shareMediaCategory"] = "ARTICLE"
+        share["media"] = [{
+            "status": "READY",
+            "originalUrl": article_url,
+            **({"title": {"text": title[:200]}} if title else {}),
+            **({"description": {"text": description[:300]}} if description else {}),
+        }]
     payload = {
         "author": author,
         "lifecycleState": "PUBLISHED",
