@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.join(KIT, "scripts"))
 import blog_publisher as BP
 import content_formats as CF
 import image_generator as IG
+import social_formatters as SF
 
 SITE = "https://buildwithabdallah.com"
 DRAFTS = os.path.join(KIT, "content", "drafts")
@@ -216,46 +217,39 @@ def build_article(items: list[dict], topic: str) -> tuple[str, str, str]:
     return title, slug, "\n".join(lines)
 
 
-def build_social(items: list[dict], url: str, topic: str) -> str:
-    """The numbered-list social post, in the shape that performs for this format."""
-    total = sum(i["weekly_stars"] for i in items)
-    label = {"ai": "AI Open-Source", "devtools": "Developer Tool", "all": "Open-Source"}.get(
-        topic, "Open-Source")
-    out = [
-        f"{len(items)} {label} Projects That Exploded on GitHub This Week",
-        "",
-        f"Together, these {len(items)} repositories gained {total:,} GitHub stars in just one week.",
-        "",
-    ]
-    for rank, it in enumerate(items, 1):
-        desc = it["description"] or ""
-        if len(desc) > 160:
-            desc = desc[:157].rsplit(" ", 1)[0] + "..."
-        out += [f"{rank}. {it['name']} (+{it['weekly_stars']:,} stars)", desc, it["url"], ""]
-    out += ["Which repo are you trying first, and which one did I miss?", "",
-            f"Full list: {url}", "", "#OpenSource #GitHub #DeveloperTools"]
-    return "\n".join(out)
+X_LABELS = {"ai": "AI", "devtools": "developer tool", "all": "open-source"}
+
+# A thread is billed per post. Capping it keeps a freak 30-repo week from
+# turning one roundup into a thirty-post charge.
+MAX_THREAD_POSTS = int(os.environ.get("ROUNDUP_X_MAX_THREAD_POSTS", "8"))
 
 
-def build_x_social(items: list[dict], url: str, topic: str) -> str:
-    """A 280-character version of the roundup.
+def build_content(items: list[dict], url: str, topic: str, use_llm: bool = True):
+    """Platform-neutral content — ranks, totals and prose, before rendering."""
+    return SF.build_roundup_content(
+        items, article_url=url, topic=topic,
+        label=X_LABELS.get(topic, "open-source"), use_llm=use_llm,
+    )
 
-    The numbered list in ``build_social`` runs to thousands of characters, so X
-    gets the headline figure plus as many repos as fit. Truncating the long post
-    would cut the link, which is the only part that carries the rest.
+
+def build_social(items: list[dict], url: str, topic: str, use_llm: bool = True) -> str:
+    """The LinkedIn/Facebook post: hook, ranked entries, observations, CTA."""
+    return SF.LinkedInRoundupFormatter().render(build_content(items, url, topic, use_llm))
+
+
+def build_x_social(items: list[dict], url: str, topic: str, use_llm: bool = True) -> str:
+    """The single-post X form, for when a thread isn't wanted.
+
+    Kept because one post is one charge; `build_x_thread` is the richer form.
     """
-    from agent.social_publishers import _fit_tweet
-    total = sum(i["weekly_stars"] for i in items)
-    label = {"ai": "AI", "devtools": "developer tool", "all": "open-source"}.get(topic, "open-source")
-    head = f"{len(items)} {label} repos gained {total:,} GitHub stars this week."
-    lines = [head, ""]
-    for it in items:
-        candidate = lines + [f"{it['name']} +{it['weekly_stars']:,}"]
-        # Keep the link's room reserved while deciding what else fits.
-        if len("\n".join(candidate)) + len(url) + 2 > 280:
-            break
-        lines = candidate
-    return _fit_tweet("\n".join(lines) + f"\n\n{url}")
+    content = build_content(items, url, topic, use_llm)
+    return SF.XRoundupFormatter().render_single(content)
+
+
+def build_x_thread(items: list[dict], url: str, topic: str, use_llm: bool = True) -> list[str]:
+    """The X thread, already validated against the weighted character limit."""
+    content = build_content(items, url, topic, use_llm)
+    return SF.XRoundupFormatter().render_thread(content)
 
 
 def x_already_posted(slug: str) -> bool:
@@ -281,20 +275,51 @@ def mark_x_posted(slug: str, tweet_url: str) -> None:
     os.replace(tmp, LEDGER)
 
 
-def publish_to_x(items: list[dict], live_url: str, topic: str, slug: str) -> None:
+def publish_to_x(items: list[dict], live_url: str, topic: str, slug: str,
+                 thread: bool = True) -> None:
     """Post the roundup to X exactly once.
 
     X is the only billed channel, so it carries this weekly roundup and nothing
-    else — the 5x/day news lane deliberately does not touch it. The ledger guard
-    means re-running the script for the same slug will not pay twice.
+    else — the news lane deliberately does not touch it. The ledger guard means
+    re-running the script for the same slug will not pay twice.
+
+    A thread is billed per post. If the rendered thread exceeds MAX_THREAD_POSTS
+    this falls back to the single-post form rather than quietly multiplying the
+    bill.
     """
     if x_already_posted(slug):
         print(f"X: already posted for {slug} — skipping (billed channel, once only)")
         return
     try:
-        from x_poster import post_tweet
-        text = build_x_social(items, live_url, topic)
-        result = post_tweet(text)
+        import x_poster
+
+        posts = []
+        if thread:
+            try:
+                posts = build_x_thread(items, live_url, topic)
+            except SF.XPostTooLong as exc:
+                print(f"X: thread rejected by the length check ({exc}); using one post")
+            if len(posts) > MAX_THREAD_POSTS:
+                print(f"X: thread would be {len(posts)} billed posts "
+                      f"(cap {MAX_THREAD_POSTS}); using one post")
+                posts = []
+
+        if len(posts) > 1:
+            result = x_poster.post_thread(posts)
+            if result and result.get("ids"):
+                tweet_url = f"https://x.com/i/web/status/{result['ids'][0]}"
+                # Recorded even on a partial thread: the first post is public,
+                # so a re-run must not pay for it a second time.
+                mark_x_posted(slug, tweet_url)
+                print(f"X: posted {result['posted']}/{len(posts)} → {tweet_url}")
+                if result.get("error"):
+                    print(f"X: thread incomplete — {result['error']}")
+            else:
+                print(f"X: failed — {result}")
+            return
+
+        text = posts[0] if posts else build_x_social(items, live_url, topic)
+        result = x_poster.post_tweet(text)
         if result and result.get("id"):
             tweet_url = f"https://x.com/i/web/status/{result['id']}"
             mark_x_posted(slug, tweet_url)
@@ -312,6 +337,10 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--publish", action="store_true",
                     help="Publish live to the blog + Facebook + LinkedIn")
+    ap.add_argument("--no-llm", action="store_true",
+                    help="Render deterministically, without the prose model")
+    ap.add_argument("--no-thread", action="store_true",
+                    help="Post a single X post instead of a thread (1 charge, not N)")
     args = ap.parse_args()
 
     items, topic = collect(args.topic, args.limit)
@@ -340,9 +369,25 @@ def main() -> int:
     url = f"{SITE}/tutorials/{slug}"
     if args.dry_run or not args.publish:
         print("=== DRY RUN — no cover, no site publish, no social ===")
-        print("\n--- social post (Facebook / LinkedIn) ---\n" + build_social(items, url, topic))
-        x_text = build_x_social(items, url, topic)
-        print(f"\n--- X post ({len(x_text)}/280 chars, billed, once per roundup) ---\n{x_text}")
+        content = build_content(items, url, topic, use_llm=not args.no_llm)
+
+        print("\n--- LinkedIn preview " + "-" * 40)
+        print(SF.LinkedInRoundupFormatter().render(content))
+
+        xf = SF.XRoundupFormatter()
+        try:
+            posts = xf.render_thread(content)
+        except SF.XPostTooLong as exc:
+            print(f"\n--- X preview: cannot fit ({exc}) ---")
+            return 1
+        note = "billed per post" if len(posts) > 1 else "single post"
+        print(f"\n--- X preview ({len(posts)} post(s), {note}) " + "-" * 20)
+        for i, total, width, limit in xf.char_counts(posts):
+            print(f"\nPost {i}/{total}   {width} / {limit}")
+            print(posts[i - 1])
+        if len(posts) > MAX_THREAD_POSTS:
+            print(f"\n⚠️  {len(posts)} posts exceeds the {MAX_THREAD_POSTS}-post cap; "
+                  f"a live run would post the single-post form instead.")
         return 0
 
     cover = IG.generate_cover(
@@ -368,7 +413,8 @@ def main() -> int:
     print(f"Published: Post ID {post.get('id')}, Slug: {post.get('slug')}")
     record_roundup(post.get("slug", slug), items)
 
-    text = build_social(items, live_url, topic)
+    content = build_content(items, live_url, topic, use_llm=not args.no_llm)
+    text = SF.LinkedInRoundupFormatter().render(content)
     local = (cover or {}).get("path")
     try:
         import fb_poster
@@ -391,12 +437,16 @@ def main() -> int:
             if not token:
                 print("⚠️ LinkedIn skipped: no token")
             else:
-                res = LI.post_org(text, token=token, post_kind="roundup")
+                # article_url pins the link card to buildwithabdallah.com rather
+                # than the first GitHub repo in the body.
+                res = LI.post_org(text, token=token, post_kind="roundup",
+                                  title=title, article_url=live_url)
                 print(f"LinkedIn: {'ok' if res else 'failed'}")
     except Exception as exc:
         print(f"linkedin post failed (non-fatal): {exc}")
 
-    publish_to_x(items, live_url, topic, post.get("slug", slug))
+    publish_to_x(items, live_url, topic, post.get("slug", slug),
+                 thread=not args.no_thread)
     return 0
 
 

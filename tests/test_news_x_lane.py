@@ -76,19 +76,57 @@ def test_roundup_x_post_leads_with_the_star_total():
 
 
 def test_roundup_posts_to_x_once_then_never_again(tmp_path, monkeypatch):
+    """One roundup, one publish. A thread is several posts but still one run."""
     import github_roundup as GR
     monkeypatch.setattr(GR, "LEDGER", str(tmp_path / "roundups.json"))
     GR.record_roundup("github-roundup-week", ITEMS)
 
     with patch("x_poster.post_tweet", return_value={"id": "42"}) as mock_tweet:
         GR.publish_to_x(ITEMS, URL, "ai", "github-roundup-week")
-    assert mock_tweet.call_count == 1
+    assert mock_tweet.call_count >= 1
     assert GR.x_already_posted("github-roundup-week")
 
     # A re-run of the same roundup must not pay twice.
     with patch("x_poster.post_tweet") as mock_again:
         GR.publish_to_x(ITEMS, URL, "ai", "github-roundup-week")
     mock_again.assert_not_called()
+
+
+def test_no_thread_flag_costs_exactly_one_post(tmp_path, monkeypatch):
+    """Each thread post is billed, so the single-post form must stay reachable."""
+    import github_roundup as GR
+    monkeypatch.setattr(GR, "LEDGER", str(tmp_path / "roundups.json"))
+    GR.record_roundup("github-roundup-week", ITEMS)
+    with patch("x_poster.post_tweet", return_value={"id": "42"}) as mock_tweet:
+        GR.publish_to_x(ITEMS, URL, "ai", "github-roundup-week", thread=False)
+    assert mock_tweet.call_count == 1
+
+
+def test_thread_over_the_cap_falls_back_to_one_post(tmp_path, monkeypatch):
+    """A freak 30-repo week must not silently become a 30-post charge."""
+    import github_roundup as GR
+    monkeypatch.setattr(GR, "LEDGER", str(tmp_path / "roundups.json"))
+    monkeypatch.setattr(GR, "MAX_THREAD_POSTS", 2)
+    GR.record_roundup("github-roundup-week", ITEMS)
+    with patch("x_poster.post_tweet", return_value={"id": "42"}) as mock_tweet:
+        GR.publish_to_x(ITEMS, URL, "ai", "github-roundup-week")
+    assert mock_tweet.call_count == 1
+
+
+def test_partial_thread_is_recorded_so_a_rerun_does_not_repost(tmp_path, monkeypatch):
+    """The first post is already public; a retry must not pay for it again."""
+    import github_roundup as GR
+    monkeypatch.setattr(GR, "LEDGER", str(tmp_path / "roundups.json"))
+    GR.record_roundup("github-roundup-week", ITEMS)
+    calls = {"n": 0}
+
+    def flaky(*a, **k):
+        calls["n"] += 1
+        return {"id": "42"} if calls["n"] == 1 else {"error": "rate limited"}
+
+    with patch("x_poster.post_tweet", side_effect=flaky):
+        GR.publish_to_x(ITEMS, URL, "ai", "github-roundup-week")
+    assert GR.x_already_posted("github-roundup-week")
 
 
 def test_failed_x_post_is_not_recorded_as_posted(tmp_path, monkeypatch):
