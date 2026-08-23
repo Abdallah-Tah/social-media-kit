@@ -173,13 +173,16 @@ def _upload_media(credentials, media_path):
     return None
 
 
-def post_tweet(text, credentials=None, media_path=None):
+def post_tweet(text, credentials=None, media_path=None, reply_to=None):
     """Post a tweet via X API v2 using OAuth 2.0.
 
     Returns {"id", "url", "raw"} on success, {"error", "status_code"} on an API
     rejection, or None when credentials are missing. The failure dict is TRUTHY —
     callers must check for an "id", never `if result:`, or a rejected post gets
     reported as live.
+
+    `reply_to` chains this post under an existing tweet id, which is how a
+    thread is built; see `post_thread`.
     """
     if not credentials:
         credentials = get_credentials()
@@ -187,6 +190,8 @@ def post_tweet(text, credentials=None, media_path=None):
         return None
 
     payload = {"text": text}
+    if reply_to:
+        payload["reply"] = {"in_reply_to_tweet_id": str(reply_to)}
     if media_path:
         media_id = _upload_media(credentials, media_path)
         if media_id:
@@ -209,6 +214,43 @@ def post_tweet(text, credentials=None, media_path=None):
         detail = resp.text[:800]
         print(f"❌ X API error ({resp.status_code}): {detail}")
         return {"error": detail, "status_code": resp.status_code}
+
+
+def post_thread(posts, credentials=None, media_path=None):
+    """Post a list of texts as a chained thread.
+
+    Returns {"ids", "url", "posted", "error"}. Every post is billed separately,
+    so a 6-post thread costs six times a single tweet — callers should decide
+    deliberately (see MAX_THREAD_POSTS in github_roundup).
+
+    A mid-thread failure stops immediately and reports what did go out. It does
+    not roll back: the earlier posts are already public, and deleting them would
+    destroy a partially-useful thread that can be finished by hand.
+    """
+    if not posts:
+        return {"ids": [], "posted": 0, "error": "no posts"}
+    if not credentials:
+        credentials = get_credentials()
+    if not credentials:
+        return None
+
+    ids, root_url = [], ""
+    for i, text in enumerate(posts):
+        result = post_tweet(
+            text,
+            credentials=credentials,
+            media_path=media_path if i == 0 else None,
+            reply_to=ids[-1] if ids else None,
+        )
+        if not result or not result.get("id"):
+            detail = (result or {}).get("error", "no credentials")
+            print(f"❌ thread stopped at post {i + 1}/{len(posts)}: {detail}")
+            return {"ids": ids, "url": root_url, "posted": len(ids), "error": detail}
+        ids.append(result["id"])
+        if i == 0:
+            root_url = result.get("url", "")
+
+    return {"ids": ids, "url": root_url, "posted": len(ids), "error": None}
 
 
 def delete_tweet(tweet_id, credentials=None):
