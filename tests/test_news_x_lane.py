@@ -92,14 +92,24 @@ def test_roundup_posts_to_x_once_then_never_again(tmp_path, monkeypatch):
     mock_again.assert_not_called()
 
 
-def test_no_thread_flag_costs_exactly_one_post(tmp_path, monkeypatch):
-    """Each thread post is billed, so the single-post form must stay reachable."""
+def test_default_costs_exactly_one_post(tmp_path, monkeypatch):
+    """Threading is billed per post, so it must never be the default."""
     import github_roundup as GR
     monkeypatch.setattr(GR, "LEDGER", str(tmp_path / "roundups.json"))
     GR.record_roundup("github-roundup-week", ITEMS)
     with patch("x_poster.post_tweet", return_value={"id": "42"}) as mock_tweet:
-        GR.publish_to_x(ITEMS, URL, "ai", "github-roundup-week", thread=False)
+        GR.publish_to_x(ITEMS, URL, "ai", "github-roundup-week")
     assert mock_tweet.call_count == 1
+
+
+def test_thread_is_opt_in_and_posts_every_part(tmp_path, monkeypatch):
+    import github_roundup as GR
+    monkeypatch.setattr(GR, "LEDGER", str(tmp_path / "roundups.json"))
+    monkeypatch.setattr(GR, "MAX_THREAD_POSTS", 20)
+    GR.record_roundup("github-roundup-week", ITEMS)
+    with patch("x_poster.post_tweet", return_value={"id": "42"}) as mock_tweet:
+        GR.publish_to_x(ITEMS, URL, "ai", "github-roundup-week", thread=True)
+    assert mock_tweet.call_count > 1
 
 
 def test_thread_over_the_cap_falls_back_to_one_post(tmp_path, monkeypatch):
@@ -109,7 +119,7 @@ def test_thread_over_the_cap_falls_back_to_one_post(tmp_path, monkeypatch):
     monkeypatch.setattr(GR, "MAX_THREAD_POSTS", 2)
     GR.record_roundup("github-roundup-week", ITEMS)
     with patch("x_poster.post_tweet", return_value={"id": "42"}) as mock_tweet:
-        GR.publish_to_x(ITEMS, URL, "ai", "github-roundup-week")
+        GR.publish_to_x(ITEMS, URL, "ai", "github-roundup-week", thread=True)
     assert mock_tweet.call_count == 1
 
 
@@ -125,7 +135,7 @@ def test_partial_thread_is_recorded_so_a_rerun_does_not_repost(tmp_path, monkeyp
         return {"id": "42"} if calls["n"] == 1 else {"error": "rate limited"}
 
     with patch("x_poster.post_tweet", side_effect=flaky):
-        GR.publish_to_x(ITEMS, URL, "ai", "github-roundup-week")
+        GR.publish_to_x(ITEMS, URL, "ai", "github-roundup-week", thread=True)
     assert GR.x_already_posted("github-roundup-week")
 
 

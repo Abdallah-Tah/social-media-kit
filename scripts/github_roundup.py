@@ -276,16 +276,16 @@ def mark_x_posted(slug: str, tweet_url: str) -> None:
 
 
 def publish_to_x(items: list[dict], live_url: str, topic: str, slug: str,
-                 thread: bool = True) -> None:
+                 thread: bool = False) -> None:
     """Post the roundup to X exactly once.
 
     X is the only billed channel, so it carries this weekly roundup and nothing
     else — the news lane deliberately does not touch it. The ledger guard means
     re-running the script for the same slug will not pay twice.
 
-    A thread is billed per post. If the rendered thread exceeds MAX_THREAD_POSTS
-    this falls back to the single-post form rather than quietly multiplying the
-    bill.
+    A thread is billed PER POST, so one costs as much as a week of single posts.
+    Threading is therefore opt-in (`--thread`), not the default, and is capped at
+    MAX_THREAD_POSTS so a freak week cannot quietly multiply the bill.
     """
     if x_already_posted(slug):
         print(f"X: already posted for {slug} — skipping (billed channel, once only)")
@@ -339,8 +339,8 @@ def main() -> int:
                     help="Publish live to the blog + Facebook + LinkedIn")
     ap.add_argument("--no-llm", action="store_true",
                     help="Render deterministically, without the prose model")
-    ap.add_argument("--no-thread", action="store_true",
-                    help="Post a single X post instead of a thread (1 charge, not N)")
+    ap.add_argument("--thread", action="store_true",
+                    help="Post X as a thread (billed PER POST; default is one post)")
     args = ap.parse_args()
 
     items, topic = collect(args.topic, args.limit)
@@ -374,20 +374,27 @@ def main() -> int:
         print("\n--- LinkedIn preview " + "-" * 40)
         print(SF.LinkedInRoundupFormatter().render(content))
 
+        # Preview exactly what a live run would post, so the rehearsal shows the
+        # real bill: one post unless --thread was asked for.
         xf = SF.XRoundupFormatter()
         try:
-            posts = xf.render_thread(content)
+            posts = xf.render_thread(content) if args.thread else [xf.render_single(content)]
         except SF.XPostTooLong as exc:
             print(f"\n--- X preview: cannot fit ({exc}) ---")
             return 1
-        note = "billed per post" if len(posts) > 1 else "single post"
-        print(f"\n--- X preview ({len(posts)} post(s), {note}) " + "-" * 20)
+        if args.thread and len(posts) > MAX_THREAD_POSTS:
+            print(f"\n⚠️  thread would be {len(posts)} posts, over the "
+                  f"{MAX_THREAD_POSTS} cap — a live run would post one instead.")
+            posts = [xf.render_single(content)]
+
+        charge = "1 charge" if len(posts) == 1 else f"{len(posts)} charges"
+        print(f"\n--- X preview ({len(posts)} post(s), {charge}) " + "-" * 20)
         for i, total, width, limit in xf.char_counts(posts):
             print(f"\nPost {i}/{total}   {width} / {limit}")
             print(posts[i - 1])
-        if len(posts) > MAX_THREAD_POSTS:
-            print(f"\n⚠️  {len(posts)} posts exceeds the {MAX_THREAD_POSTS}-post cap; "
-                  f"a live run would post the single-post form instead.")
+        if not args.thread:
+            print("\n(single post is the default; --thread renders the full "
+                  "thread and is billed per post)")
         return 0
 
     cover = IG.generate_cover(
@@ -445,8 +452,7 @@ def main() -> int:
     except Exception as exc:
         print(f"linkedin post failed (non-fatal): {exc}")
 
-    publish_to_x(items, live_url, topic, post.get("slug", slug),
-                 thread=not args.no_thread)
+    publish_to_x(items, live_url, topic, post.get("slug", slug), thread=args.thread)
     return 0
 
 

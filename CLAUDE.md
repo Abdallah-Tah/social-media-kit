@@ -38,7 +38,8 @@ system prompt via `agent/prompts.py`).
 /usr/bin/python3 scripts/auto_publish.py                       # tutorial (cron: Mon/Wed/Fri 09:00)
 /usr/bin/python3 scripts/news_publish.py --dry-run             # news (cron: daily 12:00)
 /usr/bin/python3 scripts/github_roundup.py --dry-run           # GitHub roundup
-/usr/bin/python3 scripts/github_roundup.py --topic ai --publish # LIVE: blog + FB + LinkedIn
+/usr/bin/python3 scripts/github_roundup.py --topic ai --publish # LIVE: blog + FB + LinkedIn + X
+/usr/bin/python3 scripts/github_roundup.py --publish --thread    # LIVE: X as a thread — billed PER POST
 
 # Quality enforcement pass (runs right after a tutorial publish)
 /usr/bin/python3 scripts/enforce_published_quality.py --latest
@@ -173,6 +174,14 @@ blog article + cover + Facebook/LinkedIn post (`post_kind="roundup"`).
   it falls back to `all` and **relabels the headline** — never pad an "AI" list with
   unrelated repos, which would make the title describe contents that aren't there.
 - `content/github_roundups.json` tracks the last 30 runs so you can see repeats.
+- **Rendering is per-platform** (`scripts/social_formatters.py`): LinkedIn gets the
+  full post, X gets its own renderer. Rank, star delta, total and repo count are
+  computed in Python and the headline is derived from the list it prints, so they
+  cannot drift; the model only writes prose, and a rewritten summary may replace
+  an existing description but never fill a blank one.
+- **X posts once, as a single post.** `--thread` is opt-in because every post in a
+  thread is billed separately — a 7-post thread costs seven times a single post.
+  `MAX_THREAD_POSTS` (8) caps it; over the cap it falls back to one post.
 - Not on cron yet. `--dry-run` prints the article + the exact social post.
 
 ## Hard project rules (from `config/taco_rules.md` — enforced, do not violate)
