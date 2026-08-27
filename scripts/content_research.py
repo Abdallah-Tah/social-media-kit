@@ -12,6 +12,7 @@ import os
 import sys
 import re
 import html
+import time
 from datetime import datetime, date
 from urllib.parse import quote_plus, urlparse, parse_qs, unquote
 
@@ -219,10 +220,30 @@ def _search_duckduckgo(query, count):
     return results
 
 
+_BROWSER_HEADERS = {
+    "User-Agent": _UA,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+
 def extract_article(url, max_chars=5000):
-    """Extract readable text from a URL."""
+    """Extract readable text from a URL.
+
+    Bot-protected sites (e.g. openai.com behind Cloudflare) 403 a bare
+    "Mozilla/5.0" UA, which made the news lane trip MIN_SOURCE_CHARS on
+    every OpenAI story (2026-08-26/27). Fetch with full browser headers
+    first; Cloudflare also 403s in short bursts when the same IP hammers,
+    so retry once with backoff before falling back to the r.jina.ai reader.
+    """
     try:
-        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        resp = requests.get(url, headers=_BROWSER_HEADERS, timeout=15)
+        if resp.status_code in (401, 403, 429):
+            time.sleep(2)
+            resp = requests.get(url, headers=_BROWSER_HEADERS, timeout=15)
+        if resp.status_code in (401, 403, 429):
+            resp = requests.get("https://r.jina.ai/" + url,
+                                headers={"User-Agent": _UA}, timeout=30)
         resp.raise_for_status()
 
         # Remove HTML tags

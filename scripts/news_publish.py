@@ -103,9 +103,177 @@ def recent_titles(n=40):
         return []
 
 
-def collect_candidates():
+# Topic-stem blocklist: derive normalized product/framework names from recent
+# post titles and reject any candidate whose title is anchored on the same
+# subject, even when the new headline is worded differently. This is what kills
+# the "Docker Desktop's Latest Update" loop — once a topic is in the blocklist,
+# any new candidate whose leading tokens match is filtered out before the
+# picker sees it.
+_BLOCKLIST_LOOKBACK_DAYS = int(os.environ.get("NEWS_TOPIC_BLOCK_DAYS", "14"))
+# Leading lowercase cue words ("how", "what", "why", "behind") that begin a
+# headline but aren't the subject. These are SKIPPED, not stop-the-stem.
+_LEADING_CUES = {
+    "how", "what", "why", "behind", "inside", "with", "the", "a", "an",
+    "first", "next", "new", "deep", "deep-dive", "hands-on", "untangling",
+    "decoding", "unbundling", "unpacking",
+}
+# Lowercase glue words that appear between proper-noun tokens in a product name
+# ("GPT and Agents", "Berkshire of Software"). These are SKIPPED while we have
+# a stem, but still stop the stem if seen before any subject token.
+_GLUE = {"and", "of", "the", "at", "on", "in"}
+# Generic shape/article verbs that mark "the subject phrase has ended" — these
+# stop the stem. They include action verbs, shape nouns
+# ("release", "update", "hands-on"), and article-framing words ("latest",
+# "new", "critical", "official"). Case-insensitive comparison via lower().
+_SHAPE_VERBS = {
+    # action / verbs
+    "is", "are", "was", "were", "be", "gets", "drops", "brings", "adds",
+    "unveils", "debuts", "rolls", "lands", "ships", "shipped", "promises",
+    "forces", "rethink", "sunset", "moves", "transforms", "introduces",
+    "announces", "announced", "releases", "released", "launches", "updates",
+    "patches", "enhances", "improves", "boosts", "cuts", "raises", "lowers",
+    "hits", "vulnerability", "evolution", "evolving", "evolves", "pivots",
+    "leap", "leaps", "transition", "behind", "review", "walkthrough", "dive",
+    # shape nouns / framing words
+    "release", "release:", "update", "update:", "patch", "security", "launch",
+    "beta", "rc", "ga", "rtm", "preview", "alpha", "official", "video",
+    "hands-on", "deep-dive", "deep", "first", "look", "toward", "towards",
+    "latest", "new", "next", "now", "here", "needs", "before", "after",
+    "checks", "tested", "measured", "critical", "irrelevant", "others",
+    "decade", "official", "hands-on", "tested", "guide", "explainer", "deeper",
+    # generic connective/word forms that often appear capitalized in titles
+    "your", "their", "its", "with", "without", "for", "from", "into",
+    "year", "month", "week", "today", "tomorrow", "yesterday",
+    # vendor names that aren't themselves the *line* (e.g. "Microsoft Build")
+    "build", "io", "ignite", "wwdc", "aws", "summit", "keynote",
+}
+
+
+def _stem(title):
+    """Extract a normalized leading-product-phrase stem from a title.
+
+    Reads the initial proper-noun run of a headline (capitalized or version-
+    like tokens, optionally preceded by cue words like "How"/"Inside"), and
+    stops at the first lowercase shape/article verb. Product names typically
+    start with a capital; descriptions of the article itself ("release",
+    "hands-on", "review", "gets", "drops") are lowercase and start the tail.
+
+      "Docker Desktop's Latest Update Enhances Developer Experience" → "docker desktop"
+      "Laravel's Managed Queues and Scale-to-Zero" → "laravel managed queues"
+      "Kubernetes v1.36 Release: …" → "kubernetes"
+      "Next.js Security Patch" → "next.js"
+      "GPT-5.5 and Agents SDK" → "gpt-5.5 agents sdk"
+      "How Claude Code Transforms from CLI to …" → "claude code"
+      "Workday's New AI Agent Tools" → "workday"
+      "Seven Enhancements Your Nuxt 4 App Needs…" → "seven enhancements"
+    """
+    if not title:
+        return ""
+    # Strip possessives, keep hyphens/periods/plus for things like "next.js".
+    t = re.sub(r"'s\b|'(?=\s|$)", " ", title)
+    t = re.sub(r"[^A-Za-z0-9 .\-+]", " ", t)
+    parts = [p for p in t.split() if p]
+    stem = []
+    seen_subject = False
+    for p in parts:
+        pl = p.lower().strip(".,")
+        if not pl:
+            continue
+        # First tokens may be lowercase cue words ("How", "What") — skip until
+        # we hit the actual subject, but don't keep skipping past it.
+        if not seen_subject and pl in _LEADING_CUES:
+            continue
+        # Stop at a lowercase shape verb ("Transforms", "Gets", "Release")
+        # — the headline is now describing the article, not the subject.
+        if pl in _SHAPE_VERBS:
+            break
+        # A lowercase word that isn't a known acronym/extension ends the subject.
+        if p[0].islower() and pl not in {"js", "ts", "cs", "ui", "sdk", "api", "cli", "ai"}:
+            if not seen_subject:
+                continue
+            # Glue between proper nouns ("GPT and Agents SDK") — skip, don't stop.
+            if stem and pl in _GLUE:
+                continue
+            break
+        seen_subject = True
+        # Stop at a STANDALONE version/DOT-number that follows a product
+        # ("kubernetes v1.36 release" → "kubernetes"). Don't fire on a
+        # dotted-tail product token like "gpt-5.5" — that's part of the name.
+        if re.fullmatch(r"v\d+(\.\d+)*", pl) and stem:
+            break
+        stem.append(pl.rstrip(":"))
+        if len(stem) >= 4:
+            break
+    return " ".join(stem)
+
+
+def recent_topic_blocklist(titles):
+    """Return a set of normalized topic stems to exclude from candidate choice."""
+    return {s for t in titles if (s := _stem(t))}
+
+
+def _candidate_blocked(title, blocklist):
+    s = _stem(title)
+    if not s:
+        return False
+    # Exact stem match, or the candidate's stem starts with a blocked one
+    # ("docker desktop" blocks "docker desktop update" without the reverse hit).
+    for b in blocklist:
+        if s == b or s.startswith(b + " ") or b.startswith(s + " "):
+            return True
+    return False
+
+
+def _feed_candidates(blocklist, seen_urls, limit):
+    """Pull ranked items from the in-process feed (agent.feed.build_feed).
+
+    The feed is already being fetched + ranked 8×/day by the dashboard's
+    scheduler. When the live search providers go down (which they did for a
+    week straight — every news run opened with "Search returned no results
+    from any provider"), reusing the feed means the picker still has real,
+    current, interest-matched stories instead of falling back to whatever the
+    model remembers about "Docker Desktop".
+
+    Opt-in: NEWS_FEED_AS_SOURCE=1. Uses use_llm=False so this adds zero cost
+    beyond the (already-scheduled) feed fetch — enrichment has its own budget.
+    """
+    if os.environ.get("NEWS_FEED_AS_SOURCE", "0").lower() not in ("1", "true", "yes"):
+        return []
+    try:
+        from agent.feed import build_feed
+        items = build_feed(use_llm=False, include_seen=False, limit=limit * 2)
+    except Exception as e:
+        print(f"⚠️ feed-as-source disabled: {e}")
+        return []
+    out = []
+    for it in items:
+        url = (it.url or "").strip()
+        title = (it.title or "").strip()
+        if not url or not title or url in seen_urls:
+            continue
+        if blocklist and _candidate_blocked(title, blocklist):
+            continue
+        seen_urls.add(url)
+        out.append({
+            "title": title,
+            "url": url,
+            "description": it.summary or it.reason or "",
+            "source": it.source or "",
+        })
+        if len(out) >= limit:
+            break
+    if out:
+        print(f"feed-as-source: {len(out)} ranked items injected ahead of live search")
+    return out
+
+
+def collect_candidates(blocklist=None):
     seen = set()
     year = datetime.date.today().year
+    blocklist = blocklist or set()
+    # Feed items first — they are the highest-signal, lowest-cost source we
+    # already pay for. Live web search fills out the rest of the pool.
+    candidates = _feed_candidates(blocklist, seen, limit=18)
     # Collect per-query so we can interleave round-robin. Otherwise the first
     # queries fill the pool and later queries (AI / Forward Future) get
     # truncated out before the story picker ever sees them.
@@ -121,6 +289,8 @@ def collect_candidates():
             title = item.get("title", "").strip()
             if not url or not title or url in seen:
                 continue
+            if blocklist and _candidate_blocked(title, blocklist):
+                continue
             host = re.sub(r"^www\.", "", requests.utils.urlparse(url).netloc.lower())
             if any(bad in host for bad in LOW_VALUE_DOMAINS):
                 continue
@@ -134,12 +304,13 @@ def collect_candidates():
         per_query.append(bucket)
 
     # Round-robin interleave so every query is represented in the final pool.
-    candidates = []
+    interleaved = []
     for rank in range(max((len(b) for b in per_query), default=0)):
         for bucket in per_query:
             if rank < len(bucket):
-                candidates.append(bucket[rank])
-    return candidates[:36]
+                interleaved.append(bucket[rank])
+    candidates.extend(interleaved)
+    return candidates[:48]
 
 
 def _chat(messages, max_tokens=1200, temperature=0.35, json_mode=False):
@@ -153,12 +324,19 @@ def _chat(messages, max_tokens=1200, temperature=0.35, json_mode=False):
     return result.text
 
 
-def choose_story(candidates, titles, spec):
-    avoid = "\n".join(f"- {t}" for t in titles if t)
+def choose_story(candidates, titles, spec, blocklist=None):
+    blocklist = blocklist or set()
+    avoid_titles = "\n".join(f"- {t}" for t in titles if t)
+    avoid_topics = "\n".join(f"- {s}" for s in sorted(blocklist)) if blocklist else ""
     options = "\n".join(
         f"{i+1}. {c['title']}\n   {c['url']}\n   {c.get('description','')[:220]}"
         for i, c in enumerate(candidates)
     )
+    avoid_block = (
+        f"SUBJECTS ALREADY COVERED IN THE LAST {_BLOCKLIST_LOOKBACK_DAYS} DAYS — do not pick "
+        "any candidate whose leading product/framework topic matches one of these stems, even "
+        "worded differently:\n" + avoid_topics + "\n\n"
+    ) if avoid_topics else ""
     prompt = (
         "Pick ONE developer-news story for Build With Abdallah. Prefer official or primary sources, "
         "recent product/framework/API releases, security updates, or platform changes that developers "
@@ -175,7 +353,8 @@ def choose_story(candidates, titles, spec):
         "sources: when one of them covers a concrete AI development, you may pick it and cite the "
         "forwardfuture.ai URL in source_urls, but always also include the underlying official/primary "
         "source URL when one is available.\n\n"
-        f"ALREADY PUBLISHED — do not repeat any of these subjects, even from a new angle:\n{avoid}\n\n"
+        + avoid_block +
+        f"ALREADY PUBLISHED — do not repeat any of these subjects, even from a new angle:\n{avoid_titles}\n\n"
         f"CANDIDATES:\n{options}\n\n"
         "Return 2-3 source_urls where the candidates support it: the official/primary source "
         "first, then any independent coverage of the SAME story. Corroboration is what separates "
@@ -391,27 +570,45 @@ def linkedin_person_urn(token):
 
 
 def main():
-    candidates = collect_candidates()
+    recent = recent_titles(n=max(40, _BLOCKLIST_LOOKBACK_DAYS * 2 + 6))
+    blocklist = recent_topic_blocklist(recent)
+    candidates = collect_candidates(blocklist=blocklist)
     if len(candidates) < 3:
-        print("news publish failed: not enough grounded candidates")
+        if blocklist:
+            print(f"news publish failed: only {len(candidates)} candidates "
+                  f"after filtering {len(blocklist)} recent topic stems. "
+                  f"Broaden sources or extend blocklist window.")
+        else:
+            print("news publish failed: not enough grounded candidates")
         return 1
 
     fmt = CF.pick_format("news")
     spec = CF.get("news", fmt)
     print(f"news format: {fmt} ({spec['label']})")
 
-    story = choose_story(candidates, recent_titles(), spec)
-    print(f"news: {story['title']}\n  slug: {story['slug']}")
-    if slug_in_sitemap(story["slug"]):
-        # The old code had no slug check at all on this lane, which is how the
-        # same Google I/O story shipped twice on consecutive days.
-        print("news slug already published — skipping this cycle (no publish)")
-        return 0
-    source_text = fetch_sources(story["source_urls"])
-    grounded = extracted_chars(source_text)
-    if grounded < MIN_SOURCE_CHARS:
+    # A picked story can still be ungrounded (blocked/paywalled sources), so
+    # retry the picker up to 3 times instead of burning the whole run — the
+    # 2026-08-26/27 streak of dead news runs was one bad pick per cycle.
+    avoid = list(recent)
+    story = source_text = None
+    grounded = 0
+    for _attempt in range(3):
+        story = choose_story(candidates, avoid, spec, blocklist=blocklist)
+        print(f"news: {story['title']}\n  slug: {story['slug']}")
+        if slug_in_sitemap(story["slug"]):
+            # The old code had no slug check at all on this lane, which is how the
+            # same Google I/O story shipped twice on consecutive days.
+            print("news slug already published — skipping this cycle (no publish)")
+            return 0
+        source_text = fetch_sources(story["source_urls"])
+        grounded = extracted_chars(source_text)
+        if grounded >= MIN_SOURCE_CHARS:
+            break
         print(f"news: source extraction yielded only {grounded} chars "
               f"(need {MIN_SOURCE_CHARS}) — refusing to write an ungrounded article")
+        avoid = avoid + [story["title"]]
+    if grounded < MIN_SOURCE_CHARS:
+        print("news publish failed: 3 story picks in a row lacked extractable sources")
         return 1
     print(f"sources extracted: {grounded} chars")
     body = write_news_article(story, source_text, spec)
