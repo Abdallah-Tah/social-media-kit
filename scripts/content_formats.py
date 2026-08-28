@@ -1000,8 +1000,15 @@ def _save_history(data):
     os.replace(tmp, HISTORY_PATH)
 
 
-def record(kind, format_id, slug, title=""):
-    """Append a run to the history so the next pick can rotate away from it."""
+def record(kind, format_id, slug, title="", status="published"):
+    """Append a run to the history so the next pick can rotate away from it.
+
+    Failed runs are recorded too (status="failed") so the LRU rotation does
+    not keep re-picking a format that just died on the quality/source gate —
+    the 2026-08-26/28 news streak was exactly that loop. Slug-keyed lookups
+    (format_for_slug) only ever match published slugs, so failed entries are
+    invisible to the enforcement pass.
+    """
     data = load_history()
     entries = data.get(kind) or []
     entries.append({
@@ -1009,6 +1016,7 @@ def record(kind, format_id, slug, title=""):
         "slug": slug,
         "title": title,
         "date": datetime.date.today().isoformat(),
+        "status": status,
     })
     data[kind] = entries[-60:]
     _save_history(data)

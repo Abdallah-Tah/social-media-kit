@@ -609,6 +609,9 @@ def main():
         avoid = avoid + [story["title"]]
     if grounded < MIN_SOURCE_CHARS:
         print("news publish failed: 3 story picks in a row lacked extractable sources")
+        # Record the failed attempt so the LRU rotation moves on instead of
+        # re-picking the same format every cycle (2026-08-26/28 streak).
+        CF.record("news", fmt, story["slug"], story["title"], status="failed")
         return 1
     print(f"sources extracted: {grounded} chars")
     body = write_news_article(story, source_text, spec)
@@ -624,6 +627,9 @@ def main():
         if issues:
             print("quality issues: " + "; ".join(issues))
         print("news article failed quality gate; no publish")
+        # Record the failed attempt so the LRU rotation moves on instead of
+        # re-picking the same format every cycle (2026-08-26/28 streak).
+        CF.record("news", fmt, story["slug"], story["title"], status="failed")
         return 1
 
     os.makedirs(DRAFTS, exist_ok=True)
