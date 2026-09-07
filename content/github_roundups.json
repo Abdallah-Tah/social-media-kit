@@ -1,0 +1,88 @@
+{
+  "runs": [
+    {
+      "slug": "github-all-roundup-2026-08-02",
+      "date": "2026-08-02",
+      "repos": [
+        "paperswithbacktest/awesome-systematic-trading",
+        "sindresorhus/awesome",
+        "n8n-io/n8n",
+        "openai/whisper",
+        "microsoft/PowerToys",
+        "rustdesk/rustdesk",
+        "grokability/snipe-it",
+        "paperless-ngx/paperless-ngx",
+        "darkroomengineering/lenis",
+        "LibreTranslate/LibreTranslate"
+      ],
+      "x_posted": "https://x.com/i/web/status/2083915975426982076"
+    },
+    {
+      "slug": "github-all-roundup-2026-08-09",
+      "date": "2026-08-09",
+      "repos": [
+        "codecrafters-io/build-your-own-x",
+        "donnemartin/system-design-primer",
+        "goauthentik/authentik",
+        "binwiederhier/ntfy",
+        "SimplifyJobs/Summer2027-Internships",
+        "dgtlmoon/changedetection.io",
+        "NationalSecurityAgency/ghidra",
+        "junegunn/fzf",
+        "khoj-ai/khoj",
+        "veracrypt/VeraCrypt"
+      ],
+      "x_posted": "https://x.com/i/web/status/2086452668977893779"
+    },
+    {
+      "slug": "github-all-roundup-2026-08-16",
+      "date": "2026-08-16",
+      "repos": [
+        "jaywcjlove/awesome-mac",
+        "donnemartin/system-design-primer",
+        "n8n-io/n8n",
+        "goauthentik/authentik",
+        "upscayl/upscayl",
+        "SimplifyJobs/Summer2027-Internships",
+        "calcom/cal.diy",
+        "jesseduffield/lazygit",
+        "binhnguyennus/awesome-scalability",
+        "gitleaks/gitleaks"
+      ],
+      "x_posted": "https://x.com/i/web/status/2088989402533888137"
+    },
+    {
+      "slug": "github-all-roundup-2026-08-23",
+      "date": "2026-08-23",
+      "repos": [
+        "sindresorhus/awesome",
+        "ripienaar/free-for-dev",
+        "immich-app/immich",
+        "nautechsystems/nautilus_trader",
+        "yt-dlp/yt-dlp",
+        "makeplane/plane",
+        "n8n-io/n8n",
+        "PostHog/posthog",
+        "f/prompts.chat",
+        "microsoft/qlib"
+      ],
+      "x_posted": "https://x.com/i/web/status/2091526582590427257"
+    },
+    {
+      "slug": "github-all-roundup-2026-08-30",
+      "date": "2026-08-30",
+      "repos": [
+        "ripienaar/free-for-dev",
+        "yt-dlp/yt-dlp",
+        "makeplane/plane",
+        "PostHog/posthog",
+        "NationalSecurityAgency/ghidra",
+        "nautechsystems/nautilus_trader",
+        "poteto/hiring-without-whiteboards",
+        "lukasz-madon/awesome-remote-job",
+        "withastro/astro",
+        "apache/superset"
+      ]
+    }
+  ]
+}

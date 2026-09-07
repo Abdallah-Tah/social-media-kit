@@ -37,10 +37,13 @@ DRAFTS = os.path.join(KIT, "content", "drafts")
 
 CLUSTERS = {
     "Laravel/PHP": ["laravel", "php", "pennant", "eloquent", "artisan", "symfony", "composer"],
+    "Laravel+JS frameworks": ["inertia", "inertia.js", "livewire", "alpine", "alpine.js", "vue", "nuxt", "react", "next.js", "nextjs", "svelte", "sveltekit", "vite"],
+    "NativePHP": ["nativephp", "native php", "electron", "tauri", "tauri 2", "php desktop"],
     "Python": ["python", "fastapi", "django", "flask", "pydantic", "pandas", "pip"],
+    ".NET/C#": [".net", "c#", "csharp", "asp.net", "blazor", "dotnet", "razor", "ef core", "minimal api"],
+    "VB.NET": ["vb.net", "visual basic", "winforms", "vb language"],
     "React/Next.js": ["react", "next.js", "nextjs", "remix", "jsx"],
     "Vue/Nuxt": ["vue", "nuxt", "pinia", "vite"],
-    ".NET/C#": [".net", "c#", "csharp", "asp.net", "blazor", "dotnet"],
     "C++": ["c++", "cpp", "cmake"],
     "AI agents": ["ai agent", "agents", "llm", "mcp", "rag", "claude", "openai", "pydantic ai"],
     "Automation / DevOps": ["automation", "docker", "ci/cd", "github actions", "cron", "devops"],

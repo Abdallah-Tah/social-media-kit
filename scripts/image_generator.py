@@ -3,9 +3,9 @@
 
 Generates a cover/hero image for an article or post. Tries, in order:
 
-  1. Gemini      — gemini-2.5-flash-image (set GEMINI_API_KEY) — free daily quota
-  2. FAL.ai      — flux-pro/v1.1-ultra (set FAL_KEY) — photoreal, high quality
-  3. OpenAI      — gpt-image-1 (set OPENAI_API_KEY)
+  1. Gemini      — gemini-2.5-flash-image (set GEMINI_API_KEY) — leads by default
+  2. OpenAI      — gpt-image-1 (set OPENAI_API_KEY) — priced fallback on 429
+  3. FAL.ai      — flux-pro/v1.1-ultra (set FAL_KEY) — opt-in via IMAGE_PROVIDER=fal
   4. Local card  — a branded HTML/Playwright card with readable text
 
 Force one with IMAGE_PROVIDER=gemini|fal|openai|card. Returns the local file path
@@ -43,15 +43,16 @@ def _gemini_key():
 
 
 def _auto_provider():
-    # FAL first — Gemini's free image quota is routinely exhausted (429), which
-    # just wastes a call before falling through. FAL is reliable, so lead with it
-    # and keep Gemini/OpenAI as fallbacks in the chain. Override with IMAGE_PROVIDER.
-    if _fal_key():
-        return "fal"
+    # Gemini leads — OpenAI is the priced fallback when Gemini's free quota is
+    # exhausted (429). FAL is disabled by default (exhausted balance + a deleted
+    # FB app made both paid image paths unusable); it can still be forced with
+    # IMAGE_PROVIDER=fal if a fresh FAL_KEY is supplied.
     if _gemini_key():
         return "gemini"
     if os.environ.get("OPENAI_API_KEY"):
         return "openai"
+    if _fal_key():
+        return "fal"
     return "card"
 
 
@@ -395,11 +396,11 @@ def generate_cover(title, prompt=None, out_path=None, provider=None,
 
     order = {
         "source": [_g_card],
-        "gemini": [_g_gemini, _g_fal, _g_openai, _g_card],
+        "gemini": [_g_gemini, _g_openai, _g_card],
         "fal": [_g_fal, _g_gemini, _g_openai, _g_card],
-        "openai": [_g_openai, _g_gemini, _g_fal, _g_card],
+        "openai": [_g_openai, _g_gemini, _g_card],
         "card": [_g_card],
-    }.get(provider, [_g_gemini, _g_fal, _g_openai, _g_card])
+    }.get(provider, [_g_gemini, _g_openai, _g_card])
 
     for fn in order:
         result = fn(title, prompt, out_path, branding)

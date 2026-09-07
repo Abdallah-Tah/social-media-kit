@@ -17,6 +17,25 @@ FB_PAGE_ID = os.environ.get("FB_PAGE_ID", "")
 FB_PAGE_TOKEN = os.environ.get("FB_PAGE_TOKEN", "")
 FB_GRAPH_VERSION = os.environ.get("FB_GRAPH_VERSION", "v21.0")
 
+# Kill switch. The FB app was deleted (OAuthException code 190 on every attempt),
+# so FB posting is bypassed at the code level until a fresh token is supplied.
+# Flip this off (unset FB_DISABLED / set to 0) after re-minting FB_PAGE_TOKEN.
+FB_DISABLED = os.environ.get("FB_DISABLED", "1").lower() not in ("0", "false", "no", "")
+
+
+def _fb_disabled():
+    """Return True when FB is bypassed. Logged once per process to avoid spam."""
+    if not FB_DISABLED:
+        return False
+    if not getattr(_fb_disabled, "_logged", False):
+        print(
+            "⚠️  Facebook bypassed (FB_DISABLED=1). Restore FB_PAGE_TOKEN and "
+            "set FB_DISABLED=0 in config/secrets.env to re-enable."
+        )
+        _fb_disabled._logged = True
+    return True
+
+
 import re as _re
 
 
@@ -35,6 +54,8 @@ def _strip_md(t):
 
 def post_text(message, link=None):
     """Post a text message (with optional link) to the Facebook Page."""
+    if _fb_disabled():
+        return None
     if not FB_PAGE_TOKEN:
         print("❌ FB_PAGE_TOKEN not set. See docs/PLATFORM_SETUP.md")
         return None
@@ -58,6 +79,8 @@ def post_text(message, link=None):
 
 def post_photo(image_path, caption="", link=None):
     """Post a photo (with optional caption) to the Facebook Page."""
+    if _fb_disabled():
+        return None
     if not FB_PAGE_TOKEN:
         print("❌ FB_PAGE_TOKEN not set. See docs/PLATFORM_SETUP.md")
         return None
